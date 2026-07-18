@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GazeUX-Agent Report — {{ session_id }}</title>
+<style>
+  @page { margin: 18mm 16mm 14mm 16mm; }
+
+  :root {
+    --ink: #1c2321;
+    --ink-soft: #5b6460;
+    --paper: #f6f7f5;
+    --rule: #d8d5ce;
+    --accent: #1f6f78;
+    --high: #b23a2e;
+    --high-bg: #f6e6e4;
+    --medium: #a4780a;
+    --medium-bg: #f6eedb;
+    --low: #4b6d5a;
+    --low-bg: #e6ede9;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    background: white;
+    font-size: 10pt;
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  /* ---------- Masthead ---------- */
+  .masthead {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 8px;
+    margin-bottom: 14px;
+  }
+  .masthead .kicker {
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    font-weight: bold;
+    margin-bottom: 2px;
+  }
+  .masthead .title-block { flex-shrink: 0; }
+  .masthead h1 {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 20pt;
+    margin: 0 0 2px 0;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+  }
+  .masthead .subtitle { font-size: 9pt; color: var(--ink-soft); }
+  .masthead .meta {
+    text-align: right;
+    font-size: 8pt;
+    color: var(--ink-soft);
+    font-family: "Courier New", monospace;
+    line-height: 1.6;
+  }
+
+  /* ---------- Severity banner ---------- */
+  .banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px;
+    border-radius: 4px;
+    margin-bottom: 14px;
+    font-size: 10pt;
+    font-weight: bold;
+    page-break-inside: avoid;
+  }
+  .banner-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .banner-critical { background: var(--high-bg); color: var(--high); }
+  .banner-critical .banner-dot { background: var(--high); }
+  .banner-warning { background: var(--medium-bg); color: var(--medium); }
+  .banner-warning .banner-dot { background: var(--medium); }
+  .banner-good { background: var(--low-bg); color: var(--low); }
+  .banner-good .banner-dot { background: var(--low); }
+
+  .summary-text {
+    font-size: 10pt;
+    margin: 0 0 16px 0;
+    color: var(--ink);
+  }
+
+  h2.section-title {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 12.5pt;
+    margin: 20px 0 8px 0;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--rule);
+    page-break-after: avoid;
+  }
+
+  /* ---------- Stat cards ---------- */
+  .summary-grid {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 4px;
+    page-break-inside: avoid;
+  }
+  .summary-card {
+    flex: 1;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 8px 10px;
+  }
+  .summary-card .label {
+    font-size: 7pt;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-soft);
+    margin-bottom: 3px;
+  }
+  .summary-card .value {
+    font-family: "Courier New", monospace;
+    font-size: 10.5pt;
+  }
+
+  /* ---------- Heatmap ---------- */
+  .heatmap-block {
+    text-align: center;
+    margin: 8px 0 2px 0;
+    page-break-inside: avoid;
+  }
+  .heatmap-block img { width: 100%; border: 1px solid var(--rule); border-radius: 3px; }
+  .heatmap-caption { font-size: 7.5pt; color: var(--ink-soft); margin-top: 3px; }
+
+  /* ---------- Issues table ---------- */
+  table.issues { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+  table.issues thead { display: table-header-group; }
+  table.issues tr { page-break-inside: avoid; }
+  table.issues th {
+    text-align: left;
+    font-size: 7pt;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink-soft);
+    border-bottom: 1px solid var(--ink);
+    padding: 5px 7px;
+  }
+  table.issues td { padding: 6px 7px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  .severity-pill { display: inline-block; font-size: 7pt; font-weight: bold; padding: 2px 7px; border-radius: 9px; }
+  .severity-High { background: var(--high-bg); color: var(--high); }
+  .severity-Medium { background: var(--medium-bg); color: var(--medium); }
+  .severity-Low { background: var(--low-bg); color: var(--low); }
+  .evidence-text { font-family: "Courier New", monospace; font-size: 7.5pt; color: var(--ink-soft); }
+
+  /* ---------- Recommendation cards ---------- */
+  .rec-card {
+    border: 1px solid var(--rule);
+    border-left: 4px solid var(--ink);
+    border-radius: 2px;
+    padding: 8px 11px;
+    margin-bottom: 8px;
+    page-break-inside: avoid;
+  }
+  .rec-card.support-Strong { border-left-color: var(--low); }
+  .rec-card.support-Weak { border-left-color: var(--medium); }
+  .rec-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+  .rec-element { font-family: "Courier New", monospace; font-size: 7.5pt; color: var(--ink-soft); }
+  .confidence-meter { display: flex; align-items: center; gap: 5px; }
+  .confidence-track { width: 55px; height: 5px; background: var(--rule); border-radius: 3px; overflow: hidden; }
+  .confidence-fill { height: 100%; background: var(--ink); }
+  .confidence-label { font-family: "Courier New", monospace; font-size: 7.5pt; }
+  .rec-text { font-size: 9pt; margin-bottom: 5px; }
+  .rec-evidence-list { margin: 0; padding-left: 15px; font-size: 7.5pt; color: var(--ink-soft); font-family: "Courier New", monospace; }
+
+  .rejected-block {
+    margin-top: 10px;
+    padding: 8px 11px;
+    background: var(--paper);
+    border: 1px dashed var(--rule);
+    border-radius: 3px;
+    font-size: 7.8pt;
+    color: var(--ink-soft);
+    page-break-inside: avoid;
+  }
+  .rejected-block h3 { font-size: 8.5pt; margin: 0 0 5px 0; color: var(--ink); }
+
+  .empty-state { font-size: 9pt; color: var(--ink-soft); font-style: italic; padding: 6px 0; }
+
+  .footer-note {
+    margin-top: 18px;
+    padding-top: 6px;
+    border-top: 1px solid var(--rule);
+    font-size: 7pt;
+    color: var(--ink-soft);
+  }
+</style>
+</head>
+<body>
+
+  <div class="masthead">
+    <div class="title-block">
+      <div class="kicker">Gaze-Driven UX Evaluation</div>
+      <h1>GazeUX-Agent Report</h1>
+      <div class="subtitle">{{ ui_page.replace("_", " ")|title }}</div>
+    </div>
+    <div class="meta">
+      SESSION {{ session_id }}<br>
+      GENERATED {{ generated_at }}
+    </div>
+  </div>
+
+  <div class="banner banner-{{ banner_level }}">
+    <span class="banner-dot"></span>
+    <span>{{ banner_text }}</span>
+  </div>
+
+  <p class="summary-text">{{ summary_html|safe }}</p>
+
+  <div class="summary-grid">
+    <div class="summary-card">
+      <div class="label">First Noticed</div>
+      <div class="value">{{ behavior.first_noticed or "—" }}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Most Attended</div>
+      <div class="value">{{ behavior.most_attended or "—" }}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Attention Scattered</div>
+      <div class="value">{{ "Yes" if behavior.attention_scattered else "No" }}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Issues Found</div>
+      <div class="value">{{ issues|length }}</div>
+    </div>
+  </div>
+
+  {% if heatmap_path %}
+  <div class="heatmap-block">
+    <img src="{{ heatmap_path }}" alt="Attention map and dwell-time chart">
+    <div class="heatmap-caption">Left: attention by page position. Right: share of total gaze time per element, ranked.</div>
+  </div>
+  {% endif %}
+
+  <h2 class="section-title">Usability Issues</h2>
+  {% if issues %}
+  <table class="issues">
+    <thead>
+      <tr><th>Severity</th><th>Issue</th><th>Heuristic</th><th>Evidence</th></tr>
+    </thead>
+    <tbody>
+      {% for issue in issues %}
+      <tr>
+        <td><span class="severity-pill severity-{{ issue.severity }}">{{ issue.severity }}</span></td>
+        <td>{{ issue.issue }}<br><span class="evidence-text">{{ issue.element_id }}</span></td>
+        <td>{{ issue.heuristic }}</td>
+        <td class="evidence-text">{{ issue.evidence }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No usability issues detected against current thresholds.</div>
+  {% endif %}
+
+  <h2 class="section-title">Recommendations</h2>
+  {% if recommendations_kept %}
+    {% for rec in recommendations_kept %}
+    <div class="rec-card support-{{ rec.support }}">
+      <div class="rec-header">
+        <span class="rec-element">{{ rec.element_id }} · {{ rec.support }}</span>
+        <div class="confidence-meter">
+          <div class="confidence-track">
+            <div class="confidence-fill" style="width:{{ (rec.confidence * 100)|round|int }}%;"></div>
+          </div>
+          <span class="confidence-label">{{ "%.2f"|format(rec.confidence) }}</span>
+        </div>
+      </div>
+      <div class="rec-text">{{ rec.recommendation }}</div>
+      <ul class="rec-evidence-list">
+        {% for e in rec.evidence %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="empty-state">No recommendations passed verification for this session.</div>
+  {% endif %}
+
+  {% if recommendations_rejected %}
+  <div class="rejected-block">
+    <h3>Filtered by verification ({{ recommendations_rejected|length }})</h3>
+    {% for rec in recommendations_rejected %}
+    <div style="margin-bottom:5px;"><em>{{ rec.recommendation }}</em> — {{ rec.evidence|join("; ") }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="footer-note">
+    Generated by GazeUX-Agent · Every recommendation above was independently re-verified against raw session
+    metrics by the Critic/Verifier agent before inclusion. Filtered items were rejected for lacking measurable support.
+  </div>
+
+</body>
+</html>

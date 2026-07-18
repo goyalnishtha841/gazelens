@@ -1,0 +1,24 @@
+# Datasets and model weights (kept in Drive, not git — same reasoning as before)
+dataset/
+LPW/
+runs/
+*.pt
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Report generation output (regenerated every run, don't commit)
+backend/reports/generated/
+
+# Environment
+.venv/
+venv/
+.env
+
+# OS/editor noise
+.DS_Store
+.vscode/
+.idea/
