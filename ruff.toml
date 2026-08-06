@@ -1,0 +1,22 @@
+# Ruff configuration.
+#
+# Run:  ruff check backend/ scripts/ --select F,E9,B,A
+line-length = 100
+
+[lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom REQUIRES these calls in argument
+# defaults -- `db: Session = Depends(get_db)` is how the framework works, and
+# B008 flags every route in the codebase for it. Rewriting them to satisfy the
+# rule would break dependency resolution outright, so the calls are declared
+# immutable instead. This is the documented remedy, not a suppression.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+    "fastapi.Cookie",
+    "fastapi.Form",
+    "fastapi.File",
+    "fastapi.Security",
+]

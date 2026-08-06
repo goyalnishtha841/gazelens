@@ -16,7 +16,8 @@ machine, no separate system binary to hunt down.
 import datetime
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
-from weasyprint import HTML
+
+from pdf_backends import PDFBackendUnavailable, html_to_pdf
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 
@@ -79,11 +80,17 @@ def _render_html(pipeline_result: dict, ui_page: str, heatmap_path: str | None) 
     )
 
 
-def _html_to_pdf(html_path: Path, pdf_path: Path) -> None:
-    # filename= (not string=) makes WeasyPrint use the HTML file's own
-    # directory as the base for relative paths, so <img src="foo_heatmap.png">
-    # resolves the same way it did under wkhtmltopdf's --enable-local-file-access.
-    HTML(filename=str(html_path)).write_pdf(str(pdf_path))
+def _html_to_pdf(html_path: Path, pdf_path: Path) -> str:
+    # Delegates to pdf_backends, which tries WeasyPrint first and falls back
+    # to headless Chromium. Both resolve the HTML file's own directory as the
+    # base for relative paths, so <img src="foo_heatmap.png"> works the same
+    # way it did under wkhtmltopdf's --enable-local-file-access.
+    #
+    # Backends are imported lazily in there: WeasyPrint binds to native GTK
+    # libraries pip cannot install on Windows, and importing it at module
+    # scope used to take this whole module down -- losing the HTML report too,
+    # which needs nothing native.
+    return html_to_pdf(html_path, pdf_path)
 
 
 def generate_report(pipeline_result: dict, ui_page: str, output_dir: str, heatmap_path: str | None = None) -> dict:
@@ -105,9 +112,26 @@ def generate_report(pipeline_result: dict, ui_page: str, output_dir: str, heatma
     html_content = _render_html(pipeline_result, ui_page, heatmap_path)
     html_path.write_text(html_content, encoding="utf-8")
 
-    _html_to_pdf(html_path, pdf_path)
+    # HTML is written first and unconditionally, so a machine that can't
+    # produce a PDF still gets a readable report rather than nothing.
+    #
+    # A PDF failure must NOT propagate: it would discard the html_path of a
+    # file that has already been written, which defeats the point of writing
+    # it first. The caller gets the HTML plus pdf_error explaining what to
+    # install, and can decide whether the PDF mattered.
+    backend = None
+    pdf_error = None
+    try:
+        backend = _html_to_pdf(html_path, pdf_path)
+    except PDFBackendUnavailable as exc:
+        pdf_error = str(exc)
 
-    return {"html_path": str(html_path), "pdf_path": str(pdf_path)}
+    return {
+        "html_path": str(html_path),
+        "pdf_path": str(pdf_path) if backend else None,
+        "pdf_backend": backend,
+        "pdf_error": pdf_error,
+    }
 
 
 if __name__ == "__main__":

@@ -5,6 +5,10 @@ runs/
 *.pt
 *.zip
 
+# MediaPipe face landmarker bundle (~3.7MB). Same reasoning as *.pt — model
+# assets stay out of git. Fetch with: python scripts/fetch_face_landmarker.py
+*.task
+
 # Python
 __pycache__/
 *.pyc
@@ -12,6 +16,15 @@ __pycache__/
 
 # Report generation output (regenerated every run, don't commit)
 backend/reports/generated/
+
+# Captured calibration sessions -- participant data. Never commit these:
+# they're recordings of real people's eye positions, and the pilot study's
+# consent doesn't cover publishing them to a git remote.
+backend/calibration/calibration_data/
+
+# Trained per-session gaze models. Regenerable from the calibration data by
+# retraining, and tied to one participant's sitting -- no reason to commit.
+backend/gaze_estimation/gaze_models/
 
 # Environment
 .venv/
@@ -22,3 +35,15 @@ venv/
 .DS_Store
 .vscode/
 .idea/
+# Session database and per-session bulk data (gaze streams, generated
+# reports). Participant data — same reasoning as calibration_data/.
+backend/api/gazelens.db
+backend/api/*.db
+backend/api/*.db-wal
+backend/api/*.db-shm
+backend/api/session_data/
+
+# Locally generated JWT signing key. Never commit a signing key — anyone with
+# it can mint a token for any participant. Set GAZELENS_SECRET_KEY in a real
+# deployment instead of relying on this file.
+backend/api/.secret_key

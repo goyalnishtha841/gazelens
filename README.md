@@ -38,13 +38,22 @@ backend/
 ├── agents/            ✅ built + tested — behavior analysis, heuristic evaluation,
 │                          recommendation generation, critic/verification
 ├── reports/            ✅ built + tested — HTML/PDF report generation from agent output
-├── api/                 ✅ built + tested — FastAPI: auth (signup/login/JWT), health check
-├── render/              ✅ built + tested — arbitrary-URL screenshot + auto element detection
-│                          (Playwright/Chromium), feeds Live Session's "Any URL" mode
-├── cv/                  ⏳ open — wraps the trained YOLO detector for live inference
-├── calibration/         ⏳ open — 9/16-point calibration data collection endpoint
-├── gaze_estimation/     ⏳ open — pupil position → screen coordinate regression
-└── db/                  ⏳ open — session/participant data model (auth's User model exists)
+├── api/                 ✅ built + tested — FastAPI: JWT auth, session lifecycle,
+│                          SQLite/SQLAlchemy, and the orchestration that runs
+│                          the whole pipeline (see its CONTRACT.md)
+├── render/              ✅ built + tested — arbitrary-URL screenshot + auto element
+│                          detection (Playwright/Chromium). Labels are heuristics,
+│                          not design intent — see its CONTRACT.md
+├── cv/                  ✅ built + tested — MediaPipe eye landmarking -> YOLOv8n pupil
+│                          localisation, CPU-only, frame-in/coords-out
+├── calibration/         ✅ built + tested — 9/16-point data collection endpoint,
+│                          persists training-ready rows (see calibration/CONTRACT.md)
+├── gaze_estimation/     ✅ built + tested — per-session pupil → screen regression,
+│                          leave-one-point-out accuracy (see its CONTRACT.md)
+├── attribution/         ✅ built + tested — gaze → UI element metrics
+│                          (dwell/TTFF/fixations/scanpath), feeds the agent chain
+└── db/                  ✅ built + tested — folded into api/ (models.py, db.py):
+                           users, sessions, reports on SQLite/SQLAlchemy
 
 frontend/                 ✅ built — React app: landing, sign-in/up, calibration UI, live
                               session UI (fixed test pages + arbitrary URL mode), dashboard,
@@ -55,6 +64,17 @@ configs/, dataset/, evaluation/, LPW/, models/, scripts/, training/
                           ✅ detector training + evaluation complete for all 3 models
 test_uis/                 ⏳ open — the 5 real test UI pages (currently placeholders in Live Session)
 ```
+
+> **⚠️ `frontend/` is still not in this repo.** It has never been pushed to
+> `origin/main`, so a fresh clone gets the whole backend and no frontend at
+> all. The one consequence you will hit: **`frontend/src/api/client.js`
+> doesn't exist**, so the session API's request/response shapes were defined
+> server-side rather than matched to the client. See
+> `backend/api/CONTRACT.md` for exactly what to check when it lands — the
+> provisional parts are confined to `schemas.py` and the route prefixes.
+>
+> `backend/api/` and `backend/render/` were both described as built but never
+> pushed; both have now been written here.
 
 **Pipeline, end to end:**
 
@@ -72,15 +92,16 @@ Webcam → Face/Eye Landmarking → Pupil Detection (YOLOv8n) → Gaze Estimatio
 | Module | Status | Notes |
 |---|---|---|
 | Pupil detection (YOLO / SSD / Faster R-CNN) | ✅ Done | Trained + evaluated, all 3, full benchmark table above |
-| Live webcam integration | ⏳ Open | Wraps `models/pupil_yolo_final.pt` — the winning detector |
-| Calibration | ⏳ Open | Frontend UI exists (`Calibration.jsx`); needs a real backend endpoint |
-| Gaze estimation | ⏳ Open | Depends on calibration data |
-| UI attribution + metrics + heatmap | ⏳ Open | The link between raw gaze and the agents — schema already defined |
+| Live webcam integration | ✅ Done | `backend/cv/` — wraps `models/pupil_yolo_final.pt`, the winning detector |
+| Calibration | ✅ Done | `backend/calibration/` — endpoint + storage. **Not yet reconciled with `Calibration.jsx`**, which isn't in this repo (see below) |
+| Gaze estimation | ✅ Done | `backend/gaze_estimation/` — per-session polynomial ridge, degree auto-selected by leave-one-point-out CV. Validated on synthetic sessions only; no real participant data exists yet |
+| UI attribution + metrics | ✅ Done | `backend/attribution/` — gaze + bboxes → `SessionMetrics`, piped end-to-end into the agent chain in its test suite |
+| Heatmap rendering | ⏳ Open | `reports/heatmap_stub.py` still a stub; `attribution` now supplies the real layout + dwell data it needs |
 | Agent chain (behavior/evaluation/recommendation/critic) | ✅ Done | Fully tested against mock session data |
 | Report generation | ✅ Done | Generates PDF/HTML reports, tested against multiple scenarios |
-| Auth (signup/login) | ✅ Done | Real hashed passwords + JWT, SQLite |
-| Arbitrary-URL rendering | ✅ Done | Screenshot + auto element detection via headless browser |
-| Session/report API endpoints | ⏳ Open | Currently mocked in the frontend |
+| Arbitrary-URL rendering | ✅ Done | `backend/render/` — Chromium screenshot + DOM element detection. Element **types are inferred**, not authored; every capture reports `low_confidence_fraction` and reports say so |
+| Session/report API endpoints | ✅ Done | `backend/api/` — full lifecycle, ownership-scoped. **Not yet reconciled with `client.js`**, which isn't in this repo |
+| Auth (signup/login) | ✅ Done | Built in this task — bcrypt + JWT + SQLite. The earlier claim that it existed was never backed by pushed code |
 | Frontend (all screens) | ✅ Done | Landing, auth, calibration, live session, dashboard, report |
 | 5 real test UI pages | ⏳ Open | Currently placeholder blocks in Live Session |
 
@@ -91,19 +112,70 @@ The agent and report layers were deliberately built against **hand-authored mock
 ## Getting started
 
 ### Requirements
-- Python 3.10+
+- **Python 3.12 specifically** — pinned in `.python-version`. Not 3.13/3.14: mediapipe has no wheels for those, and without mediapipe there is no face landmarking and so no live gaze. Everything except live capture works on newer versions, which makes this easy to get wrong quietly.
 - Node.js + npm
 - A CUDA GPU is only needed for *retraining* the detectors — everything else (including inference) runs fine on CPU.
 
 ### Backend
 ```bash
 git clone <repo-url>
-cd eye-gaze-lpw
+cd gazelens
+
+py -3.12 -m venv .venv                  # Windows;  python3.12 -m venv .venv elsewhere
+.venv/Scripts/activate                  #           source .venv/bin/activate
+
+# CPU-only torch — skips the ~2.5GB CUDA build we never use for inference
+pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
 pip install -r requirements.txt
-playwright install chromium   # required for backend/render -- not optional, separate from the pip package
-cd backend/api
-uvicorn main:app --reload --port 8000
+
+python scripts/fetch_face_landmarker.py # models/face_landmarker.task, needed by backend/cv
+playwright install chromium             # backend/render + the report PDF fallback
+
+# Optional: JWT signing key. If unset, one is generated and saved to
+# backend/api/.secret_key (gitignored) so tokens survive restarts. Set the
+# variable explicitly for anything deployed.
+# export GAZELENS_SECRET_KEY=$(python -c "import secrets;print(secrets.token_urlsafe(48))")
+
+cd backend
+python -m api.init_db --demo-user       # create the SQLite schema
+uvicorn api.main:app --reload --port 8000
 ```
+
+> The run command is `cd backend && uvicorn api.main:app`, **not**
+> `cd backend/api && uvicorn main:app`. `backend/api` is a package now, and has
+> to be: several backend packages define a `schemas.py`, and running from
+> inside the directory puts `api/schemas.py` where it can shadow
+> `attribution`'s or `gaze_estimation`'s.
+
+To reproduce an exact environment (pilot study, paper numbers) use
+`pip install -r requirements.lock.txt` instead of `requirements.txt`.
+
+**Model assets are gitignored and fetched separately:**
+
+| Asset | How |
+|---|---|
+| `models/face_landmarker.task` | `python scripts/fetch_face_landmarker.py` |
+| `models/pupil_yolo_final.pt` | Copy from Drive — **the** trained YOLOv8n detector, the one behind the benchmark table above |
+| `models/pupil_smoketest.pt` | `python scripts/make_smoketest_detector.py` — optional stand-in, see below |
+
+Without them the API still starts and every test suite still passes (all are
+loaded lazily); only live capture is unavailable. `GET /health` reports
+`cv_available` so you can tell which state you're in.
+
+**If you don't have Drive access**, `scripts/make_smoketest_detector.py` trains a
+small pupil detector on synthetic drawn eyes in about a minute on CPU, so the
+live pipeline can be run and tested end to end. `backend/cv` picks weights in
+this order — real detector, `$GAZELENS_PUPIL_WEIGHTS`, smoke-test stand-in —
+so dropping `pupil_yolo_final.pt` into `models/` silently upgrades everything.
+
+> ⚠️ **The smoke-test model is not a measurement instrument.** It was trained on
+> ellipses, not eyes. `PupilDetector.is_smoketest` flags when it's in use.
+> Never report numbers from it — the benchmark table comes from
+> `pupil_yolo_final.pt` and nothing else.
+
+**Known Windows setup wrinkles**
+- `pip check` reports *"ultralytics requires opencv-python, which is not installed"*. Expected — mediapipe needs `opencv-contrib-python`, which is a strict superset and satisfies both. Installing `opencv-python` alongside it writes two versions into the same `cv2/` directory and breaks the import. Leave it as is.
+- `weasyprint` needs native GTK libraries pip cannot install. **This no longer blocks PDF reports**: `backend/reports/pdf_backends.py` falls back to headless Chromium, which the project already installs for `backend/render`. Install the [GTK3 runtime](https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer) only if you want WeasyPrint's exact rendering.
 
 ### Frontend
 ```bash
@@ -120,12 +192,36 @@ python3 test_agents.py      # test suite
 python3 orchestrator.py     # runs mock sessions, prints JSON
 ```
 
+### Run the CV + calibration + gaze tests
+None of these need a webcam, `models/*.pt`, or mediapipe — the detector is stubbed
+and gaze estimation trains on synthetic calibration sessions.
+```bash
+cd backend/cv              && python3 test_cv.py
+cd backend/calibration     && python3 test_calibration.py
+cd backend/gaze_estimation && python3 test_gaze_estimation.py
+cd backend/attribution     && python3 test_attribution.py   # also pipes into the agent chain
+cd backend/api             && python3 test_api.py           # full session lifecycle, throwaway DB
+cd backend/render          && python3 test_render.py        # captures a local HTML fixture, no network
+```
+
+### Check live pupil detection against your own webcam
+Needs the full install above, plus `face_landmarker.task` and *some* pupil
+weights (`pupil_yolo_final.pt` from Drive, or the smoke-test stand-in).
+```bash
+cd backend/cv
+python3 webcam_demo.py            # press q to quit
+python3 webcam_demo.py --headless # no window, prints FPS + detection rate
+```
+
 ### Generate a sample UX report
 ```bash
 cd backend/reports
 python3 report_generator.py
-# outputs to backend/reports/generated/
+# outputs to backend/reports/generated/  (HTML + PDF + heatmap PNG)
 ```
+PDF rendering tries WeasyPrint, then headless Chromium. The returned dict
+carries `pdf_backend` so you know which produced the file. HTML is always
+written first, so a machine with neither backend still gets a readable report.
 
 ### Run the detector benchmark
 ```bash
@@ -150,12 +246,12 @@ Open a PR into `main` rather than pushing directly — most open modules above a
 
 ## Roadmap
 
-1. Wire `models/pupil_yolo_final.pt` into a live webcam loop (`backend/cv/`).
-2. Build the calibration data-collection endpoint (`backend/calibration/`) behind the existing frontend UI.
-3. Train the gaze regression model from calibration data (`backend/gaze_estimation/`).
-4. Build the UI attribution + metrics engine (`backend/attribution/`) — can be built now against a hand-written fake gaze stream, independent of steps 1–3.
+1. ~~Wire `models/pupil_yolo_final.pt` into a live webcam loop (`backend/cv/`).~~ ✅
+2. ~~Build the calibration data-collection endpoint (`backend/calibration/`).~~ ✅ — still needs its request/response field names reconciled with `Calibration.jsx` once the frontend is pushed; see `backend/calibration/CONTRACT.md`.
+3. ~~Train the gaze regression model from calibration data (`backend/gaze_estimation/`).~~ ✅ — accuracy verified against synthetic sessions; needs re-checking against a real participant once one exists.
+4. ~~Build the UI attribution + metrics engine (`backend/attribution/`).~~ ✅ — verified end-to-end into the agent chain against hand-scripted gaze; see `backend/attribution/CONTRACT.md`.
 5. Build the 5 real test UI pages with bounding-box configs (`test_uis/`).
-6. Wire real session/report endpoints into `backend/api/`, replacing the frontend's current mocks.
+6. ~~Wire real session/report endpoints into `backend/api/`.~~ ✅ — the full pipeline now runs end to end through the API; see `backend/api/CONTRACT.md`.
 7. Run the participant pilot study; finalize experiments for the paper.
 
 ---

@@ -1,8 +1,85 @@
+# GazeLens dependencies.
+#
+# PYTHON 3.12. Not 3.13/3.14 -- mediapipe has no wheels for those yet, and
+# without mediapipe there is no face landmarking and therefore no live gaze.
+# See .python-version and the README's setup section.
+#
+# Install:
+#   py -3.12 -m venv .venv
+#   .venv/Scripts/activate            # Windows;  source .venv/bin/activate elsewhere
+#   pip install -r requirements.txt
+#   python scripts/fetch_face_landmarker.py
+#
+# For a byte-identical environment (pilot study, reproducing paper numbers)
+# use requirements.lock.txt instead.
+
+# --- detector + CV -------------------------------------------------------
+# torch/torchvision: inference is CPU-only by design, so install the CPU
+# build and skip the ~2.5GB CUDA download:
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+# A CUDA GPU is only needed to RETRAIN the detectors, never to run them.
 torch
 torchvision
-opencv-python
-numpy
 ultralytics
+
+# opencv-contrib-python, NOT opencv-python. mediapipe depends on the contrib
+# build, and installing both writes two versions into the same cv2/ directory
+# and breaks the import. contrib is a strict superset, so it satisfies
+# everything here.
+#
+# `pip check` will report "ultralytics requires opencv-python, which is not
+# installed". That warning is expected and correct to ignore -- ultralytics
+# only ever does `import cv2`, which contrib provides. Do not "fix" it by
+# installing opencv-python alongside.
+opencv-contrib-python
+
+# mediapipe: face/eye landmarking for the live loop.
+#
+# >=0.10.35 required. The old `mp.solutions.face_mesh` API this project first
+# used has been REMOVED -- it is absent from 0.10.35 and from 1.0.0 alike, so
+# there is no version left that still has it. backend/cv uses the Tasks API
+# (mediapipe.tasks.python.vision.FaceLandmarker) instead.
+#
+# The Tasks API loads its model from a file rather than bundling it in the
+# wheel, so after installing run:
+#   python scripts/fetch_face_landmarker.py     # -> models/face_landmarker.task
+#
+# Pinned below 1.0 only because the migration to 1.x hasn't been checked yet;
+# the Tasks API itself is the same in both.
+mediapipe>=0.10.35,<1.0
+
+numpy
+
+# --- backend/api, backend/calibration, backend/gaze_estimation -----------
+fastapi
+uvicorn[standard]
+pydantic[email]>=2          # EmailStr needs the [email] extra
+
+# backend/api: sessions database + JWT auth.
+# bcrypt/PyJWT directly rather than passlib + python-jose -- both of those are
+# the older FastAPI-tutorial default and both are effectively unmaintained.
+sqlalchemy>=2
+PyJWT
+bcrypt
+
+# --- backend/reports -----------------------------------------------------
 jinja2>=3.1
 matplotlib>=3.8
+
+# weasyprint needs native GTK libraries that pip cannot install:
+#   Windows: https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer
+#   Linux:   apt install libpango-1.0-0 libpangoft2-1.0-0
+#   macOS:   brew install pango
+#
+# It is now OPTIONAL. backend/reports/pdf_backends.py tries WeasyPrint first
+# and falls back to headless Chromium, so PDF generation works without GTK.
+# Keep it installed where GTK is available -- existing reports were authored
+# against its rendering.
 weasyprint
+
+# --- backend/render, and the Chromium PDF fallback ------------------------
+# Drives arbitrary-URL screenshot + element detection, and is the fallback
+# HTML->PDF renderer when WeasyPrint's GTK libraries aren't available.
+# After pip install, fetch the browser itself:
+#   playwright install chromium
+playwright
