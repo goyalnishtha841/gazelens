@@ -15,25 +15,46 @@ session from a test-UI session.
 
 ---
 
-## 1. Coordinates
+## 1. Coordinates and scope
 
-Normalised to the **viewport**, top-left origin, y down — the same convention
-as gaze, which is also viewport-relative.
+Top-left origin, y down. Normalised against one of two reference frames,
+chosen by `scope`:
 
-Boxes are **clipped** to the viewport before normalising. A half-off-screen
-element would otherwise get a box extending past 1.0, and every gaze point in
-that phantom region would be attributed to it.
+| scope | Boxes are fractions of | Use when |
+|---|---|---|
+| `document` (**default**) | the whole scrollable page | any page that scrolls |
+| `viewport` | the visible window | pages that fit on one screen |
 
-Elements entirely outside the viewport are **dropped**, not stored with
-negative coordinates. Gaze can only land on what is on screen; a box at
-y=-300 would silently never be hit while still appearing in the report as an
-element that received no attention — which reads as a UX finding rather than
-a capture artefact.
+`attribution` is agnostic — it hit-tests two `[0,1]` rectangles and doesn't
+care which frame they describe, **as long as gaze and boxes describe the same
+one.** That is the whole trick, and it is why long-page support needed no
+changes to attribution at all.
 
-**This is a real limitation for long pages.** Only the first viewport is
-attributable. `below_fold_dropped` counts what was lost. Scroll-aware capture
-(stitching layouts across scroll positions, and tracking scroll offset in the
-gaze stream) is the fix, and it is not built.
+### Document scope requires scroll offsets in the gaze stream
+
+Gaze arrives viewport-relative — that is all an eye tracker can know. A
+document-scope layout is page-relative. `backend/api/pipeline.py`
+`to_document_space()` reconciles them:
+
+```
+doc_y_norm = (y_norm * viewport_h + scroll_y) / document_h
+```
+
+So the client **must send `scroll_y` with every gaze point** on a scrollable
+page. If it doesn't, every point is treated as `scroll_y = 0`, lands on the
+first screen, and everything below the fold reads as unlooked-at. The API
+detects that case — a document-scope layout where no point carried an offset —
+and attaches `scroll_warning` to the analysis rather than letting it pass
+silently.
+
+Boxes are **clipped** to the reference frame before normalising; a partially
+out-of-frame element would otherwise get a box extending past 1.0 and collect
+every gaze point in that phantom region.
+
+Viewport scope still drops anything off-screen (gaze can never land there) and
+**warns when the page is more than 1.2 viewports tall** — capturing the first
+screen of a five-screen page silently omits the rest, which reads as "nobody
+looked at them" rather than "we never measured them".
 
 ## 2. Filtering
 

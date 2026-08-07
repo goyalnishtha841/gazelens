@@ -182,6 +182,14 @@ class GazePointInput(BaseModel):
     valid: bool = True
     confidence: float = Field(1.0, ge=0.0, le=1.0)
 
+    # Page scroll position when this point was captured, in CSS pixels.
+    # REQUIRED for scrollable pages: gaze is viewport-relative, the layout of
+    # a long page is document-relative, and without this the two can't be
+    # reconciled -- every point lands on the first screen and the rest of the
+    # page reads as ignored. Omit (or 0) for pages that don't scroll.
+    scroll_x: float = Field(0.0, ge=0.0)
+    scroll_y: float = Field(0.0, ge=0.0)
+
 
 class GazeBatchRequest(BaseModel):
     gaze: List[GazePointInput] = Field(..., min_length=1, max_length=20_000)

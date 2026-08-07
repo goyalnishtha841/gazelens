@@ -1,0 +1,4082 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "GazeLens API",
+    "description": "Webcam gaze estimation and multi-agent UX evaluation.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/auth/signup": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Signup",
+        "operationId": "signup_api_auth_signup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Login",
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Me",
+        "operationId": "me_api_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/sessions/meta/test-uis": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "List Test Uis",
+        "description": "Which ui_page values a test_ui session can use.",
+        "operationId": "list_test_uis_api_sessions_meta_test_uis_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestUIsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/sessions": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Create Session",
+        "description": "Create a session and resolve the element layout it will be scored against.",
+        "operationId": "create_session_api_sessions_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "List Sessions",
+        "description": "This user's sessions, newest first. Never anyone else's.",
+        "operationId": "list_sessions_api_sessions_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{session_id}": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Get Session",
+        "operationId": "get_session_api_sessions__session_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Delete Session",
+        "operationId": "delete_session_api_sessions__session_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{session_id}/calibration": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Link Calibration",
+        "description": "Attach a completed calibration session and fit its gaze model.\n\nThe calibration itself is collected by backend/calibration's own\nendpoints; this only links the result to a session and triggers training,\nso the two modules stay independently usable.",
+        "operationId": "link_calibration_api_sessions__session_id__calibration_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalibrationLinkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationLinkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{session_id}/gaze": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Append Gaze",
+        "description": "Append a batch of estimated gaze points to the session's stream.\n\nBatched rather than one request per frame: at 30Hz that would be 1800\nrequests a minute per participant. Invalid points should be included --\nbackend/attribution needs the gaps.",
+        "operationId": "append_gaze_api_sessions__session_id__gaze_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GazeBatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GazeBatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{session_id}/finalize": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Finalize Session",
+        "description": "Run the analysis chain. Returns immediately; poll the session or report.",
+        "operationId": "finalize_session_api_sessions__session_id__finalize_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalizeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{session_id}/report": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Get Report",
+        "description": "The report, or 202 + status while the pipeline is still running.\n\n202 rather than 404 for a pending report: the resource will exist, and a\n404 would tell a polling dashboard to give up.",
+        "operationId": "get_report_api_sessions__session_id__report_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportPendingResponse"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calibration/patterns": {
+      "get": {
+        "tags": [
+          "calibration"
+        ],
+        "summary": "List Patterns",
+        "description": "The target grids, so the client renders exactly what the server scores.",
+        "operationId": "list_patterns_api_calibration_patterns_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatternsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calibration/sessions": {
+      "get": {
+        "tags": [
+          "calibration"
+        ],
+        "summary": "List Sessions",
+        "operationId": "list_sessions_api_calibration_sessions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionSummary"
+                  },
+                  "type": "array",
+                  "title": "Response List Sessions Api Calibration Sessions Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "summary": "Start Calibration",
+        "description": "Open a session and hand back the full target sequence.",
+        "operationId": "start_calibration_api_calibration_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartCalibrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartCalibrationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calibration/sessions/{session_id}/samples": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "summary": "Submit Samples",
+        "description": "Run a burst of frames through the pupil detector and store the hits.",
+        "operationId": "submit_samples_api_calibration_sessions__session_id__samples_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitSamplesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitSamplesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calibration/sessions/{session_id}/complete": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "summary": "Complete Calibration",
+        "description": "Close the session and write the training export.\n\nCompleting a poor calibration is allowed -- it is saved with\nready_for_regression=False rather than refused. Throwing away a\nparticipant's data because coverage came out at 70% would be worse than\nkeeping it clearly labelled.",
+        "operationId": "complete_calibration_api_calibration_sessions__session_id__complete_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompleteCalibrationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calibration/sessions/{session_id}": {
+      "get": {
+        "tags": [
+          "calibration"
+        ],
+        "summary": "Get Session",
+        "operationId": "get_session_api_calibration_sessions__session_id__get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "calibration"
+        ],
+        "summary": "Delete Session",
+        "operationId": "delete_session_api_calibration_sessions__session_id__delete",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gaze/models/{session_id}/train": {
+      "post": {
+        "tags": [
+          "gaze estimation"
+        ],
+        "summary": "Train",
+        "description": "Fit a per-session gaze model from that session's calibration data.\n\nPer session, per sitting: the pupil-to-screen mapping depends on head\nposition, seating distance, lighting and camera angle, none of which\nsurvive a change of participant or setup.\n\nThe body is optional -- training with no arguments is the common case.\nDefaulted here rather than in the signature: a `TrainRequest()` default\nwould build one instance at import time and share it across every request,\nwhich is a mutable process-wide object masquerading as a per-call default.",
+        "operationId": "train_api_gaze_models__session_id__train_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TrainRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gaze/models": {
+      "get": {
+        "tags": [
+          "gaze estimation"
+        ],
+        "summary": "List Trained Models",
+        "operationId": "list_trained_models_api_gaze_models_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModelSummary"
+                  },
+                  "type": "array",
+                  "title": "Response List Trained Models Api Gaze Models Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gaze/models/{session_id}": {
+      "get": {
+        "tags": [
+          "gaze estimation"
+        ],
+        "summary": "Get Model",
+        "description": "A trained model's stored accuracy, without retraining it.",
+        "operationId": "get_model_api_gaze_models__session_id__get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "gaze estimation"
+        ],
+        "summary": "Delete Trained Model",
+        "operationId": "delete_trained_model_api_gaze_models__session_id__delete",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gaze/models/{session_id}/estimate": {
+      "post": {
+        "tags": [
+          "gaze estimation"
+        ],
+        "summary": "Estimate",
+        "description": "One frame's pupil positions -> one screen coordinate.",
+        "operationId": "estimate_api_gaze_models__session_id__estimate_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gaze/models/{session_id}/estimate/batch": {
+      "post": {
+        "tags": [
+          "gaze estimation"
+        ],
+        "summary": "Estimate Batch",
+        "description": "A burst of frames -> a slice of the gaze stream.\n\nInvalid frames are returned in place rather than dropped, so the caller\ncan see where the gaps are -- a missing frame silently removed would read\ndownstream as continuous attention.",
+        "operationId": "estimate_batch_api_gaze_models__session_id__estimate_batch_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateBatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateBatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/attribution/defaults": {
+      "get": {
+        "tags": [
+          "attribution"
+        ],
+        "summary": "Defaults",
+        "description": "The thresholds a result was produced under.\n\nExposed because every number this module emits depends on them, and a\nmetric quoted without its threshold isn't reproducible.",
+        "operationId": "defaults_api_attribution_defaults_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/attribution/analyze": {
+      "post": {
+        "tags": [
+          "attribution"
+        ],
+        "summary": "Analyze",
+        "description": "Gaze stream + element bounding boxes -> the agents' SessionMetrics.",
+        "operationId": "analyze_api_attribution_analyze_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/render/capture": {
+      "post": {
+        "tags": [
+          "render"
+        ],
+        "summary": "Capture",
+        "description": "Screenshot a URL and detect its elements.",
+        "operationId": "capture_api_render_capture_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Health",
+        "description": "Liveness, plus whether live capture can actually run on this machine.\n\ncv_available is False on a clean clone (models/*.pt is gitignored).\nSurfacing it here beats finding out from a 500 on the first frame.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AnalyzeRequest": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Session Id"
+          },
+          "ui_page": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Ui Page"
+          },
+          "elements": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ElementInput"
+            },
+            "type": "object",
+            "minProperties": 1,
+            "title": "Elements"
+          },
+          "gaze": {
+            "items": {
+              "$ref": "#/components/schemas/attribution__schemas__GazePointInput"
+            },
+            "type": "array",
+            "maxItems": 500000,
+            "minItems": 0,
+            "title": "Gaze"
+          },
+          "viewport": {
+            "anyOf": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewport"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "min_fixation_duration": {
+            "type": "number",
+            "maximum": 2.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Min Fixation Duration",
+            "default": 0.1
+          },
+          "dispersion_threshold": {
+            "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Dispersion Threshold",
+            "default": 0.06
+          },
+          "max_gap": {
+            "type": "number",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Max Gap",
+            "default": 0.15
+          },
+          "smoothing_window": {
+            "type": "integer",
+            "maximum": 51.0,
+            "minimum": 1.0,
+            "title": "Smoothing Window",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "ui_page",
+          "elements",
+          "gaze"
+        ],
+        "title": "AnalyzeRequest"
+      },
+      "AnalyzeResponse": {
+        "properties": {
+          "metrics": {
+            "$ref": "#/components/schemas/SessionMetricsModel"
+          },
+          "diagnostics": {
+            "$ref": "#/components/schemas/DiagnosticsModel"
+          },
+          "heatmap_layout": {
+            "additionalProperties": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 4,
+              "minItems": 4
+            },
+            "type": "object",
+            "title": "Heatmap Layout"
+          }
+        },
+        "type": "object",
+        "required": [
+          "metrics",
+          "diagnostics",
+          "heatmap_layout"
+        ],
+        "title": "AnalyzeResponse"
+      },
+      "CalibrationLinkRequest": {
+        "properties": {
+          "calibration_session_id": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Calibration Session Id"
+          },
+          "train_model": {
+            "type": "boolean",
+            "title": "Train Model",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "calibration_session_id"
+        ],
+        "title": "CalibrationLinkRequest",
+        "description": "Attach a completed calibration session and train its gaze model."
+      },
+      "CalibrationLinkResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "calibration_session_id": {
+            "type": "string",
+            "title": "Calibration Session Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "gaze_model_trained": {
+            "type": "boolean",
+            "title": "Gaze Model Trained"
+          },
+          "calibration": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration"
+          },
+          "gaze_model_metrics": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gaze Model Metrics"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "calibration_session_id",
+          "status",
+          "gaze_model_trained",
+          "message"
+        ],
+        "title": "CalibrationLinkResponse"
+      },
+      "CalibrationPointModel": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "x": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Y"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "x",
+          "y"
+        ],
+        "title": "CalibrationPointModel",
+        "description": "One on-screen target, normalised to [0, 1] of the viewport."
+      },
+      "CaptureRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "title": "Url"
+          },
+          "viewport_width": {
+            "type": "integer",
+            "maximum": 3840.0,
+            "minimum": 320.0,
+            "title": "Viewport Width",
+            "default": 1280
+          },
+          "viewport_height": {
+            "type": "integer",
+            "maximum": 2160.0,
+            "minimum": 240.0,
+            "title": "Viewport Height",
+            "default": 720
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "maximum": 120000.0,
+            "minimum": 1000.0,
+            "title": "Timeout Ms",
+            "default": 30000
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "CaptureRequest"
+      },
+      "CaptureResponse": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "final_url": {
+            "type": "string",
+            "title": "Final Url"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "viewport": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Viewport"
+          },
+          "layout": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Layout"
+          },
+          "detected": {
+            "type": "integer",
+            "title": "Detected"
+          },
+          "kept": {
+            "type": "integer",
+            "title": "Kept"
+          },
+          "below_fold_dropped": {
+            "type": "integer",
+            "title": "Below Fold Dropped"
+          },
+          "too_small_dropped": {
+            "type": "integer",
+            "title": "Too Small Dropped"
+          },
+          "too_large_dropped": {
+            "type": "integer",
+            "title": "Too Large Dropped"
+          },
+          "low_confidence_fraction": {
+            "type": "number",
+            "title": "Low Confidence Fraction"
+          },
+          "classification": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Classification"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "final_url",
+          "title",
+          "viewport",
+          "layout",
+          "detected",
+          "kept",
+          "below_fold_dropped",
+          "too_small_dropped",
+          "too_large_dropped",
+          "low_confidence_fraction",
+          "classification",
+          "warnings"
+        ],
+        "title": "CaptureResponse"
+      },
+      "ChosenModel": {
+        "properties": {
+          "feature_set": {
+            "type": "string",
+            "title": "Feature Set"
+          },
+          "degree": {
+            "type": "integer",
+            "title": "Degree"
+          },
+          "ridge": {
+            "type": "number",
+            "title": "Ridge"
+          }
+        },
+        "type": "object",
+        "required": [
+          "feature_set",
+          "degree",
+          "ridge"
+        ],
+        "title": "ChosenModel"
+      },
+      "CompleteCalibrationResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "total_samples": {
+            "type": "integer",
+            "title": "Total Samples"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/QualityModel"
+          },
+          "session_file": {
+            "type": "string",
+            "title": "Session File"
+          },
+          "training_csv": {
+            "type": "string",
+            "title": "Training Csv"
+          },
+          "training_row_count": {
+            "type": "integer",
+            "title": "Training Row Count"
+          },
+          "ready_for_regression": {
+            "type": "boolean",
+            "title": "Ready For Regression"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "status",
+          "total_samples",
+          "quality",
+          "session_file",
+          "training_csv",
+          "training_row_count",
+          "ready_for_regression"
+        ],
+        "title": "CompleteCalibrationResponse"
+      },
+      "CreateSessionRequest": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "title": "Mode",
+            "description": "one of ['test_ui', 'url']",
+            "default": "test_ui"
+          },
+          "ui_page": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ui Page",
+            "description": "required for mode='test_ui'; one of ['ecommerce_product_page', 'form_page', 'dashboard_page']"
+          },
+          "target_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Url",
+            "description": "required for mode='url'"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label",
+            "description": "free-text name for the dashboard"
+          },
+          "calibration_session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Session Id"
+          }
+        },
+        "type": "object",
+        "title": "CreateSessionRequest",
+        "description": "Start a session.\n\nmode=\"test_ui\" needs ui_page; mode=\"url\" needs target_url. Enforced here\nrather than in the route so an invalid combination is a 422 with a field\npath, not a 500 three modules deep."
+      },
+      "DefaultsResponse": {
+        "properties": {
+          "min_fixation_duration": {
+            "type": "number",
+            "title": "Min Fixation Duration"
+          },
+          "dispersion_threshold": {
+            "type": "number",
+            "title": "Dispersion Threshold"
+          },
+          "max_gap": {
+            "type": "number",
+            "title": "Max Gap"
+          },
+          "smoothing_window": {
+            "type": "integer",
+            "title": "Smoothing Window"
+          },
+          "importance_values": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Importance Values"
+          },
+          "element_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Element Types"
+          },
+          "notes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "min_fixation_duration",
+          "dispersion_threshold",
+          "max_gap",
+          "smoothing_window",
+          "importance_values",
+          "element_types",
+          "notes"
+        ],
+        "title": "DefaultsResponse",
+        "description": "The thresholds in force, so a client isn't guessing what produced a number."
+      },
+      "DiagnosticsModel": {
+        "properties": {
+          "background_time": {
+            "type": "number",
+            "title": "Background Time"
+          },
+          "background_pct": {
+            "type": "number",
+            "title": "Background Pct"
+          },
+          "tracked_pct": {
+            "type": "number",
+            "title": "Tracked Pct"
+          },
+          "dropped_invalid": {
+            "type": "integer",
+            "title": "Dropped Invalid"
+          },
+          "bridged_samples": {
+            "type": "integer",
+            "title": "Bridged Samples"
+          },
+          "total_fixations": {
+            "type": "integer",
+            "title": "Total Fixations"
+          },
+          "background_fixations": {
+            "type": "integer",
+            "title": "Background Fixations"
+          },
+          "unfixated_elements": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unfixated Elements"
+          },
+          "overlapping_elements": {
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Overlapping Elements"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "background_time",
+          "background_pct",
+          "tracked_pct",
+          "dropped_invalid",
+          "bridged_samples",
+          "total_fixations",
+          "background_fixations",
+          "unfixated_elements",
+          "overlapping_elements",
+          "warnings"
+        ],
+        "title": "DiagnosticsModel",
+        "description": "Things worth knowing that SessionMetrics has no field for.\n\nSessionMetrics is a fixed contract owned by backend/agents; it must not\ngrow, so these live alongside it rather than inside it."
+      },
+      "ElementInput": {
+        "properties": {
+          "bbox": {
+            "anyOf": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bbox"
+          },
+          "x": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X"
+          },
+          "y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "importance": {
+            "type": "string",
+            "title": "Importance",
+            "default": "medium"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "non-interactive"
+          }
+        },
+        "type": "object",
+        "title": "ElementInput",
+        "description": "One UI element: where it is, and what it means.\n\nAccepts either a normalised (x, y, w, h) tuple -- the form\nbackend/reports/heatmap_stub.py already uses -- or explicit x/y/width/\nheight, which is what Playwright's boundingBox() returns and therefore\nwhat backend/render most likely produces. Pixel values need `viewport`\non the request to normalise against."
+      },
+      "ErrorMetrics": {
+        "properties": {
+          "n": {
+            "type": "integer",
+            "title": "N"
+          },
+          "validation": {
+            "type": "string",
+            "title": "Validation",
+            "default": ""
+          },
+          "folds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folds"
+          },
+          "median_error_px": {
+            "type": "number",
+            "title": "Median Error Px"
+          },
+          "mean_error_px": {
+            "type": "number",
+            "title": "Mean Error Px"
+          },
+          "p95_error_px": {
+            "type": "number",
+            "title": "P95 Error Px"
+          },
+          "max_error_px": {
+            "type": "number",
+            "title": "Max Error Px"
+          },
+          "mean_abs_x_px": {
+            "type": "number",
+            "title": "Mean Abs X Px"
+          },
+          "mean_abs_y_px": {
+            "type": "number",
+            "title": "Mean Abs Y Px"
+          },
+          "median_error_pct_diagonal": {
+            "type": "number",
+            "title": "Median Error Pct Diagonal"
+          },
+          "per_frame_median_error_px": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Frame Median Error Px"
+          },
+          "per_frame_p95_error_px": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Frame P95 Error Px"
+          },
+          "screen_width": {
+            "type": "integer",
+            "title": "Screen Width"
+          },
+          "screen_height": {
+            "type": "integer",
+            "title": "Screen Height"
+          },
+          "median_error_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Error Deg"
+          },
+          "mean_error_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Error Deg"
+          },
+          "p95_error_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Error Deg"
+          },
+          "viewing_distance_cm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewing Distance Cm"
+          },
+          "screen_diagonal_in": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Screen Diagonal In"
+          },
+          "degrees_unavailable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degrees Unavailable"
+          },
+          "per_point_error_px": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Per Point Error Px"
+          },
+          "worst_point": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Point"
+          }
+        },
+        "type": "object",
+        "required": [
+          "n",
+          "median_error_px",
+          "mean_error_px",
+          "p95_error_px",
+          "max_error_px",
+          "mean_abs_x_px",
+          "mean_abs_y_px",
+          "median_error_pct_diagonal",
+          "screen_width",
+          "screen_height"
+        ],
+        "title": "ErrorMetrics",
+        "description": "Held-out accuracy. `validation` states how it was measured.\n\nDegrees fields are absent unless viewing distance + screen size were\nsupplied on the request; `degrees_unavailable` explains why when so."
+      },
+      "EstimateBatchRequest": {
+        "properties": {
+          "frames": {
+            "items": {
+              "$ref": "#/components/schemas/FrameInput"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Frames"
+          },
+          "smoothing": {
+            "type": "number",
+            "exclusiveMaximum": 1.0,
+            "minimum": 0.0,
+            "title": "Smoothing",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "frames"
+        ],
+        "title": "EstimateBatchRequest",
+        "description": "A burst of frames. Frames with no pupil are allowed here -- they come\nback as invalid GazePoints, preserving the gap in the stream."
+      },
+      "EstimateBatchResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "gaze": {
+            "items": {
+              "$ref": "#/components/schemas/GazePointModel"
+            },
+            "type": "array",
+            "title": "Gaze"
+          },
+          "valid_count": {
+            "type": "integer",
+            "title": "Valid Count"
+          },
+          "invalid_count": {
+            "type": "integer",
+            "title": "Invalid Count"
+          },
+          "model_median_error_px": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Median Error Px"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "gaze",
+          "valid_count",
+          "invalid_count"
+        ],
+        "title": "EstimateBatchResponse"
+      },
+      "EstimateRequest": {
+        "properties": {
+          "left": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PupilInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "right": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PupilInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "default": 1.0
+          },
+          "smoothing": {
+            "type": "number",
+            "exclusiveMaximum": 1.0,
+            "minimum": 0.0,
+            "title": "Smoothing",
+            "description": "EMA factor for a live cursor. Leave at 0 for the raw stream attribution consumes.",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "title": "EstimateRequest"
+      },
+      "EstimateResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "gaze": {
+            "$ref": "#/components/schemas/GazePointModel"
+          },
+          "model_median_error_px": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Median Error Px"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "gaze"
+        ],
+        "title": "EstimateResponse"
+      },
+      "FinalizeResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "status",
+          "message"
+        ],
+        "title": "FinalizeResponse"
+      },
+      "FrameInput": {
+        "properties": {
+          "left": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PupilInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "right": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PupilInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "default": 1.0
+          }
+        },
+        "type": "object",
+        "title": "FrameInput"
+      },
+      "GazeBatchRequest": {
+        "properties": {
+          "gaze": {
+            "items": {
+              "$ref": "#/components/schemas/api__schemas__GazePointInput"
+            },
+            "type": "array",
+            "maxItems": 20000,
+            "minItems": 1,
+            "title": "Gaze"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gaze"
+        ],
+        "title": "GazeBatchRequest"
+      },
+      "GazeBatchResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "accepted": {
+            "type": "integer",
+            "title": "Accepted"
+          },
+          "total_points": {
+            "type": "integer",
+            "title": "Total Points"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "accepted",
+          "total_points",
+          "status"
+        ],
+        "title": "GazeBatchResponse"
+      },
+      "GazePointModel": {
+        "properties": {
+          "timestamp": {
+            "type": "number",
+            "title": "Timestamp"
+          },
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "title": "Y"
+          },
+          "x_px": {
+            "type": "number",
+            "title": "X Px"
+          },
+          "y_px": {
+            "type": "number",
+            "title": "Y Px"
+          },
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          },
+          "in_bounds": {
+            "type": "boolean",
+            "title": "In Bounds"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "x",
+          "y",
+          "x_px",
+          "y_px",
+          "valid",
+          "in_bounds",
+          "confidence"
+        ],
+        "title": "GazePointModel"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "LeaderboardEntry": {
+        "properties": {
+          "feature_set": {
+            "type": "string",
+            "title": "Feature Set"
+          },
+          "degree": {
+            "type": "integer",
+            "title": "Degree"
+          },
+          "ridge": {
+            "type": "number",
+            "title": "Ridge"
+          },
+          "n_parameters": {
+            "type": "integer",
+            "title": "N Parameters"
+          },
+          "median_error_px": {
+            "type": "number",
+            "title": "Median Error Px"
+          }
+        },
+        "type": "object",
+        "required": [
+          "feature_set",
+          "degree",
+          "ridge",
+          "n_parameters",
+          "median_error_px"
+        ],
+        "title": "LeaderboardEntry"
+      },
+      "LoginRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginRequest"
+      },
+      "ModelSummary": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "participant_id": {
+            "type": "string",
+            "title": "Participant Id"
+          },
+          "feature_set": {
+            "type": "string",
+            "title": "Feature Set"
+          },
+          "degree": {
+            "type": "integer",
+            "title": "Degree"
+          },
+          "n_points": {
+            "type": "integer",
+            "title": "N Points"
+          },
+          "median_error_px": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Error Px"
+          },
+          "trained_at": {
+            "type": "number",
+            "title": "Trained At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "participant_id",
+          "feature_set",
+          "degree",
+          "n_points",
+          "trained_at"
+        ],
+        "title": "ModelSummary"
+      },
+      "PatternsResponse": {
+        "properties": {
+          "patterns": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/CalibrationPointModel"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Patterns"
+          },
+          "default_pattern": {
+            "type": "integer",
+            "title": "Default Pattern"
+          }
+        },
+        "type": "object",
+        "required": [
+          "patterns",
+          "default_pattern"
+        ],
+        "title": "PatternsResponse",
+        "description": "GET /api/calibration/patterns -- lets the client render the same grid\nthe server will score against, instead of hardcoding it twice."
+      },
+      "PupilInput": {
+        "properties": {
+          "x": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Y"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "PupilInput",
+        "description": "One eye's pupil centre, normalised WITHIN its eye box ([0,1]).\n\nThese are `x_eye`/`y_eye` from a cv.PupilDetection -- not frame\ncoordinates. Sending frame coordinates would be silently wrong rather\nthan an error, so it's worth being explicit: the model was trained on\neye-box coordinates and will produce nonsense from anything else."
+      },
+      "PupilReading": {
+        "properties": {
+          "x_eye": {
+            "type": "number",
+            "title": "X Eye"
+          },
+          "y_eye": {
+            "type": "number",
+            "title": "Y Eye"
+          },
+          "x_frame": {
+            "type": "number",
+            "title": "X Frame"
+          },
+          "y_frame": {
+            "type": "number",
+            "title": "Y Frame"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x_eye",
+          "y_eye",
+          "x_frame",
+          "y_frame",
+          "confidence"
+        ],
+        "title": "PupilReading",
+        "description": "Echoed back per eye so the client can draw a live preview dot."
+      },
+      "QualityModel": {
+        "properties": {
+          "usable": {
+            "type": "boolean",
+            "title": "Usable"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "point_coverage": {
+            "type": "number",
+            "title": "Point Coverage"
+          },
+          "points_covered": {
+            "type": "integer",
+            "title": "Points Covered"
+          },
+          "points_total": {
+            "type": "integer",
+            "title": "Points Total"
+          },
+          "total_samples": {
+            "type": "integer",
+            "title": "Total Samples"
+          },
+          "rejected_frames": {
+            "type": "integer",
+            "title": "Rejected Frames"
+          },
+          "detection_rate": {
+            "type": "number",
+            "title": "Detection Rate"
+          },
+          "both_eyes_rate": {
+            "type": "number",
+            "title": "Both Eyes Rate"
+          },
+          "mean_confidence": {
+            "type": "number",
+            "title": "Mean Confidence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "usable",
+          "reasons",
+          "point_coverage",
+          "points_covered",
+          "points_total",
+          "total_samples",
+          "rejected_frames",
+          "detection_rate",
+          "both_eyes_rate",
+          "mean_confidence"
+        ],
+        "title": "QualityModel"
+      },
+      "ReportPendingResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready",
+            "default": false
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "next_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Action"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "status",
+          "message"
+        ],
+        "title": "ReportPendingResponse",
+        "description": "Returned with 202 while the pipeline hasn't produced a report yet."
+      },
+      "ReportResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "report_id": {
+            "type": "string",
+            "title": "Report Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "ui_page": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ui Page"
+          },
+          "pipeline_result": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Pipeline Result"
+          },
+          "metrics": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metrics"
+          },
+          "html_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Html Path"
+          },
+          "pdf_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdf Path"
+          },
+          "heatmap_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heatmap Path"
+          },
+          "pdf_backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdf Backend"
+          },
+          "layout_is_placeholder": {
+            "type": "boolean",
+            "title": "Layout Is Placeholder",
+            "default": false
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "report_id",
+          "status",
+          "pipeline_result",
+          "metrics",
+          "created_at"
+        ],
+        "title": "ReportResponse",
+        "description": "The agent chain's output, unreshaped.\n\n`pipeline_result` is exactly what agents/orchestrator.run_pipeline()\nreturned -- behavior_summary, issues, recommendations_kept,\nrecommendations_rejected. Not flattened or renamed: backend/reports\nalready consumes that shape, and a second shape here would be one more\nthing to keep in sync for no gain."
+      },
+      "SelectionReport": {
+        "properties": {
+          "chosen": {
+            "$ref": "#/components/schemas/ChosenModel"
+          },
+          "selection_criterion": {
+            "type": "string",
+            "title": "Selection Criterion"
+          },
+          "n_parameters": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Parameters"
+          },
+          "n_candidates": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Candidates"
+          },
+          "leaderboard": {
+            "items": {
+              "$ref": "#/components/schemas/LeaderboardEntry"
+            },
+            "type": "array",
+            "title": "Leaderboard"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chosen",
+          "selection_criterion"
+        ],
+        "title": "SelectionReport"
+      },
+      "SessionDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "ui_page": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ui Page"
+          },
+          "target_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Url"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "calibration_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Session Id"
+          },
+          "gaze_model_trained": {
+            "type": "boolean",
+            "title": "Gaze Model Trained",
+            "default": false
+          },
+          "gaze_point_count": {
+            "type": "integer",
+            "title": "Gaze Point Count",
+            "default": 0
+          },
+          "layout_is_placeholder": {
+            "type": "boolean",
+            "title": "Layout Is Placeholder",
+            "default": false
+          },
+          "has_report": {
+            "type": "boolean",
+            "title": "Has Report",
+            "default": false
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "calibration": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration"
+          },
+          "element_layout": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Element Layout"
+          },
+          "capture_meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capture Meta"
+          },
+          "next_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Action"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "mode",
+          "status",
+          "created_at"
+        ],
+        "title": "SessionDetailResponse",
+        "description": "One session, plus the state of the modules it depends on."
+      },
+      "SessionListResponse": {
+        "properties": {
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SessionResponse"
+            },
+            "type": "array",
+            "title": "Sessions"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sessions",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "SessionListResponse",
+        "description": "Paginated, because the dashboard lists every session a user ever ran."
+      },
+      "SessionMetricsModel": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "ui_page": {
+            "type": "string",
+            "title": "Ui Page"
+          },
+          "dwell_time": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Dwell Time"
+          },
+          "ttff": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Ttff"
+          },
+          "fixation_count": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Fixation Count"
+          },
+          "revisit_count": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Revisit Count"
+          },
+          "total_gaze_time": {
+            "type": "number",
+            "title": "Total Gaze Time"
+          },
+          "scanpath": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scanpath"
+          },
+          "element_importance": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Element Importance"
+          },
+          "element_type": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Element Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "ui_page",
+          "dwell_time",
+          "ttff",
+          "fixation_count",
+          "revisit_count",
+          "total_gaze_time",
+          "scanpath",
+          "element_importance",
+          "element_type"
+        ],
+        "title": "SessionMetricsModel",
+        "description": "Mirrors backend/agents/schemas.py SessionMetrics exactly.\n\n`ttff` deliberately omits elements that were never fixated -- see\nmetrics.py. It is not a bug that its key set can be smaller than\ndwell_time's."
+      },
+      "SessionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "ui_page": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ui Page"
+          },
+          "target_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Url"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "calibration_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Session Id"
+          },
+          "gaze_model_trained": {
+            "type": "boolean",
+            "title": "Gaze Model Trained",
+            "default": false
+          },
+          "gaze_point_count": {
+            "type": "integer",
+            "title": "Gaze Point Count",
+            "default": 0
+          },
+          "layout_is_placeholder": {
+            "type": "boolean",
+            "title": "Layout Is Placeholder",
+            "default": false
+          },
+          "has_report": {
+            "type": "boolean",
+            "title": "Has Report",
+            "default": false
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "mode",
+          "status",
+          "created_at"
+        ],
+        "title": "SessionResponse"
+      },
+      "SessionStatusResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "participant_id": {
+            "type": "string",
+            "title": "Participant Id"
+          },
+          "pattern": {
+            "type": "integer",
+            "title": "Pattern"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "screen_width": {
+            "type": "integer",
+            "title": "Screen Width"
+          },
+          "screen_height": {
+            "type": "integer",
+            "title": "Screen Height"
+          },
+          "samples_per_point": {
+            "type": "integer",
+            "title": "Samples Per Point"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/CalibrationPointModel"
+            },
+            "type": "array",
+            "title": "Points"
+          },
+          "sample_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Sample Counts"
+          },
+          "points_remaining": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Points Remaining"
+          },
+          "is_complete": {
+            "type": "boolean",
+            "title": "Is Complete"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/QualityModel"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "number",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "participant_id",
+          "pattern",
+          "status",
+          "screen_width",
+          "screen_height",
+          "samples_per_point",
+          "points",
+          "sample_counts",
+          "points_remaining",
+          "is_complete",
+          "quality",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SessionStatusResponse"
+      },
+      "SessionSummary": {
+        "properties": {
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "participant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Participant Id"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pattern"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "total_samples": {
+            "type": "integer",
+            "title": "Total Samples",
+            "default": 0
+          },
+          "usable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usable"
+          }
+        },
+        "type": "object",
+        "title": "SessionSummary"
+      },
+      "SignupRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 8,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "SignupRequest"
+      },
+      "StartCalibrationRequest": {
+        "properties": {
+          "participant_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Participant Id"
+          },
+          "pattern": {
+            "type": "integer",
+            "title": "Pattern",
+            "description": "9 or 16 targets",
+            "default": 16
+          },
+          "screen_width": {
+            "type": "integer",
+            "maximum": 16384.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Screen Width",
+            "description": "viewport px"
+          },
+          "screen_height": {
+            "type": "integer",
+            "maximum": 16384.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Screen Height",
+            "description": "viewport px"
+          },
+          "samples_per_point": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Samples Per Point",
+            "default": 15
+          }
+        },
+        "type": "object",
+        "required": [
+          "participant_id",
+          "screen_width",
+          "screen_height"
+        ],
+        "title": "StartCalibrationRequest"
+      },
+      "StartCalibrationResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "participant_id": {
+            "type": "string",
+            "title": "Participant Id"
+          },
+          "pattern": {
+            "type": "integer",
+            "title": "Pattern"
+          },
+          "samples_per_point": {
+            "type": "integer",
+            "title": "Samples Per Point"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/CalibrationPointModel"
+            },
+            "type": "array",
+            "title": "Points"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "participant_id",
+          "pattern",
+          "samples_per_point",
+          "points",
+          "status"
+        ],
+        "title": "StartCalibrationResponse"
+      },
+      "SubmitSamplesRequest": {
+        "properties": {
+          "point_index": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Point Index"
+          },
+          "frames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 120,
+            "minItems": 1,
+            "title": "Frames"
+          },
+          "target_x": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target X"
+          },
+          "target_y": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Y"
+          },
+          "client_timestamp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "point_index",
+          "frames"
+        ],
+        "title": "SubmitSamplesRequest",
+        "description": "A burst of frames captured while one target was on screen.\n\nFrames are base64 (a raw string or a full `data:image/jpeg;base64,...`\ndata URL -- canvas.toDataURL() output can be posted as-is).\n\nA burst rather than one frame per request: the client holds each target\nfor roughly a second, and batching that fixation into a single POST\nkeeps the round-trip count down and guarantees every frame in the batch\nreally did belong to the same target."
+      },
+      "SubmitSamplesResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "point_index": {
+            "type": "integer",
+            "title": "Point Index"
+          },
+          "target_x": {
+            "type": "number",
+            "title": "Target X"
+          },
+          "target_y": {
+            "type": "number",
+            "title": "Target Y"
+          },
+          "target_source": {
+            "type": "string",
+            "title": "Target Source"
+          },
+          "accepted": {
+            "type": "integer",
+            "title": "Accepted"
+          },
+          "rejected": {
+            "type": "integer",
+            "title": "Rejected"
+          },
+          "samples_for_point": {
+            "type": "integer",
+            "title": "Samples For Point"
+          },
+          "samples_required": {
+            "type": "integer",
+            "title": "Samples Required"
+          },
+          "point_complete": {
+            "type": "boolean",
+            "title": "Point Complete"
+          },
+          "points_remaining": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Points Remaining"
+          },
+          "session_complete": {
+            "type": "boolean",
+            "title": "Session Complete"
+          },
+          "last_reading": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/PupilReading"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Reading"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "point_index",
+          "target_x",
+          "target_y",
+          "target_source",
+          "accepted",
+          "rejected",
+          "samples_for_point",
+          "samples_required",
+          "point_complete",
+          "points_remaining",
+          "session_complete"
+        ],
+        "title": "SubmitSamplesResponse"
+      },
+      "TestUIsResponse": {
+        "properties": {
+          "ui_pages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ui Pages"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ui_pages",
+          "note"
+        ],
+        "title": "TestUIsResponse"
+      },
+      "TokenResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "user"
+        ],
+        "title": "TokenResponse"
+      },
+      "TrainRequest": {
+        "properties": {
+          "min_confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Min Confidence",
+            "description": "Drop calibration rows whose detector confidence is below this.",
+            "default": 0.0
+          },
+          "viewing_distance_cm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 300.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewing Distance Cm",
+            "description": "Eye-to-screen distance. Supply with screen_diagonal_in to get degrees."
+          },
+          "screen_diagonal_in": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 120.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Screen Diagonal In",
+            "description": "Physical screen diagonal in inches."
+          },
+          "feature_set": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feature Set",
+            "description": "one of ['both_eyes', 'mean_eye']"
+          },
+          "degree": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degree"
+          }
+        },
+        "type": "object",
+        "title": "TrainRequest",
+        "description": "Train a gaze model from a stored calibration session.\n\nAll fields optional: the default path is \"train session X with whatever\nbackend/calibration stored for it, and pick the model yourself\"."
+      },
+      "TrainResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "participant_id": {
+            "type": "string",
+            "title": "Participant Id"
+          },
+          "n_points": {
+            "type": "integer",
+            "title": "N Points"
+          },
+          "n_samples": {
+            "type": "integer",
+            "title": "N Samples"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/SelectionReport"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/ErrorMetrics"
+          },
+          "training_metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Path"
+          },
+          "trained_in_ms": {
+            "type": "number",
+            "title": "Trained In Ms"
+          },
+          "usable_for_attribution": {
+            "type": "boolean",
+            "title": "Usable For Attribution"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "participant_id",
+          "n_points",
+          "n_samples",
+          "selection",
+          "metrics",
+          "trained_in_ms",
+          "usable_for_attribution"
+        ],
+        "title": "TrainResponse"
+      },
+      "UserResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "created_at"
+        ],
+        "title": "UserResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "api__schemas__GazePointInput": {
+        "properties": {
+          "timestamp": {
+            "type": "number",
+            "title": "Timestamp"
+          },
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "title": "Y"
+          },
+          "valid": {
+            "type": "boolean",
+            "title": "Valid",
+            "default": true
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "default": 1.0
+          },
+          "scroll_x": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Scroll X",
+            "default": 0.0
+          },
+          "scroll_y": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Scroll Y",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "x",
+          "y"
+        ],
+        "title": "GazePointInput",
+        "description": "One estimated gaze point, normalised [0,1] screen coordinates.\n\nMatches the GazePoint that backend/gaze_estimation emits. Invalid points\n(blinks) should be SENT, not filtered -- backend/attribution needs the gap\nto distinguish a blink from a glance away."
+      },
+      "attribution__schemas__GazePointInput": {
+        "properties": {
+          "timestamp": {
+            "type": "number",
+            "title": "Timestamp"
+          },
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "title": "Y"
+          },
+          "valid": {
+            "type": "boolean",
+            "title": "Valid",
+            "default": true
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "default": 1.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "x",
+          "y"
+        ],
+        "title": "GazePointInput",
+        "description": "One raw gaze point.\n\nMatches the GazePoint shape backend/gaze_estimation emits, but is declared\nindependently -- attribution must not depend on that module."
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "/api/auth/login"
+          }
+        }
+      }
+    }
+  }
+}

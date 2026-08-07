@@ -137,7 +137,10 @@ async def create_session(
                 k: capture.get(k) for k in
                 ("final_url", "title", "detected", "kept",
                  "low_confidence_fraction", "classification", "warnings",
-                 "screenshot_path")
+                 "screenshot_path",
+                 # These three drive pipeline.to_document_space -- gaze can't
+                 # be reconciled with the layout without them.
+                 "scope", "viewport", "document_size", "page_screens")
             }
         else:
             # Falling back rather than failing: a page behind a consent wall
@@ -331,6 +334,7 @@ def _run_analysis(session_id: str) -> None:
                 layout=session.element_layout or {},
                 ui_page=session.ui_page or "unknown_page",
                 output_dir=Path(DATA_DIR) / session.id,
+                capture_meta=session.capture_meta,
             )
 
             db.add(Report(

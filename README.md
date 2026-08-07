@@ -27,7 +27,11 @@ All three trained and evaluated on the same dataset (130,856 images). Full table
 
 **Chosen for the live pipeline: YOLOv8n.** SSD edges it slightly on precision/mAP, but has meaningfully lower recall — for a continuous webcam gaze stream, a missed detection creates a gap in the data, which matters more than an occasional imprecise box. YOLO matches SSD's accuracy almost exactly while catching more real detections and running ~5–27x faster, which is decisive for a real-time constraint.
 
-**Known limitation:** `configs/lpw.yaml` currently points `train` and `val` at the same folder — these numbers are measured on data the models already trained on, not a genuine held-out test set. Treat them as optimistic until a proper split exists.
+**⚠️ Known limitation — these numbers are measured on training data.** `configs/lpw.yaml` points `train` and `val` at the same folder, so the table above reports memorisation, not generalisation.
+
+A subject-wise split now exists (`scripts/make_lpw_split.py` → `configs/lpw_subject_split.yaml`): 16 train / 3 val / 3 test subjects, sharing no frames. Splitting by *subject* rather than by frame matters — LPW is 22 subjects × 3 videos, so a random frame split puts near-duplicate consecutive frames on both sides.
+
+`scripts/evaluate_split_gap.py` evaluates one model both ways and reports the difference. **Re-run it against `pupil_yolo_final.pt` and replace the table before publication** — and note that model saw all 22 subjects, so an honest held-out number needs a retrain on the split config. See [OPEN_ITEMS.md](OPEN_ITEMS.md) §4.
 
 ---
 
@@ -65,6 +69,10 @@ configs/, dataset/, evaluation/, LPW/, models/, scripts/, training/
 test_uis/                 ⏳ open — the 5 real test UI pages (currently placeholders in Live Session)
 ```
 
+> **📋 Open items with concrete next steps: [OPEN_ITEMS.md](OPEN_ITEMS.md)** —
+> the real detector weights, first-participant validation, the frontend
+> contract, and the train==val benchmark split.
+>
 > **⚠️ `frontend/` is still not in this repo.** It has never been pushed to
 > `origin/main`, so a fresh clone gets the whole backend and no frontend at
 > all. The one consequence you will hit: **`frontend/src/api/client.js`
@@ -74,7 +82,9 @@ test_uis/                 ⏳ open — the 5 real test UI pages (currently place
 > provisional parts are confined to `schemas.py` and the route prefixes.
 >
 > `backend/api/` and `backend/render/` were both described as built but never
-> pushed; both have now been written here.
+> pushed; both have now been written here. `scripts/generate_api_client.py`
+> emits a reference client + OpenAPI spec to diff the real `client.js`
+> against.
 
 **Pipeline, end to end:**
 

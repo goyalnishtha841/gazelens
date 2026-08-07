@@ -83,7 +83,11 @@ def generate_attention_figure(session, layout: dict, output_path: str, dwell_thr
     colors = [
         ACCENT_HIGH if (session.element_importance.get(k) == "high" and p < dwell_threshold_pct) else
         GOOD if session.element_importance.get(k) == "high" else "#9aa39d"
-        for k, p in zip(labels, pcts)
+        # strict: labels and pcts are built from the same sorted list, so a
+        # length mismatch is impossible today -- but a silent zip truncation
+        # here would drop bars off the chart rather than raise, and a heatmap
+        # missing an element reads as "that element got no attention".
+        for k, p in zip(labels, pcts, strict=True)
     ]
 
     y_pos = range(len(labels))

@@ -155,7 +155,7 @@ else:
     page.write_text(FIXTURE, encoding="utf-8")
     shot = tmp / "shot.png"
 
-    result = capture_page(page.as_uri(), viewport=(1280, 720),
+    result = capture_page(page.as_uri(), viewport=(1280, 720), scope="viewport",
                           screenshot_path=shot)
 
     check("page title read", result.title == "Checkout Demo")
@@ -222,6 +222,42 @@ else:
           set(ui_config.element_ids) == set(layout))
     check("and can render it for the heatmap",
           len(ui_config.layout_for_heatmap()) == len(layout))
+
+    print("\ncapture -- document scope covers a page taller than one screen")
+    # The failure this scope exists to prevent: capture the first screen of a
+    # long page and every element below it is simply absent from the report,
+    # indistinguishable from "nobody looked at them".
+    tall = tmp / "tall.html"
+    tall.write_text("""<!doctype html><html><head><title>Tall</title></head>
+      <body style="margin:0;width:1280px;height:2880px">
+        <button id="top_cta" style="position:absolute;left:40px;top:100px;width:240px;height:60px">Top</button>
+        <img id="mid_image" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="
+             style="position:absolute;left:40px;top:1200px;width:400px;height:300px">
+        <button id="bottom_cta" style="position:absolute;left:40px;top:2600px;width:240px;height:60px">Bottom</button>
+      </body></html>""", encoding="utf-8")
+
+    vp = capture_page(tall.as_uri(), viewport=(1280, 720), scope="viewport")
+    doc = capture_page(tall.as_uri(), viewport=(1280, 720), scope="document")
+
+    check("viewport scope sees only the first screen", "top_cta" in vp.layout
+          and "bottom_cta" not in vp.layout)
+    check("...and warns that the page is taller than it captured",
+          any("viewports tall" in w for w in vp.warnings))
+    check("document scope reports the real page height", doc.page_screens >= 3.9)
+    check("document scope keeps elements below the fold",
+          {"top_cta", "mid_image", "bottom_cta"} <= set(doc.layout))
+    print(f"        viewport scope kept {vp.kept}; document scope kept "
+          f"{doc.kept} across {doc.page_screens} screens")
+
+    top_y = doc.layout["top_cta"]["bbox"][1]
+    bottom_y = doc.layout["bottom_cta"]["bbox"][1]
+    check("document-space y is a fraction of the whole page, not the screen",
+          abs(top_y - 100 / 2880) < 0.01 and abs(bottom_y - 2600 / 2880) < 0.01)
+    check("the bottom element sits near the end of the document",
+          bottom_y > 0.85)
+    check("every document-space bbox is still within [0,1]",
+          all(0 <= b["bbox"][1] <= 1 and b["bbox"][1] + b["bbox"][3] <= 1.0001
+              for b in doc.layout.values()))
 
     print("\ncapture -- refuses what it can't handle")
     try:

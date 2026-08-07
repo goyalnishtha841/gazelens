@@ -174,6 +174,54 @@ def train_gaze_model(calibration_session_id: str) -> Tuple[bool, Optional[dict],
 # the analysis chain
 
 
+def to_document_space(
+    gaze_points: List[dict],
+    capture_meta: Optional[dict],
+) -> Tuple[List[dict], int]:
+    """Translate viewport-relative gaze into document space.
+
+    Gaze arrives normalised to the VIEWPORT -- that is what the eye tracker can
+    know. A document-scope layout (backend/render, long scrollable pages) is
+    normalised to the WHOLE page. Both have to describe the same coordinate
+    system or nothing lines up, so:
+
+        doc_y_norm = (y_norm * viewport_h + scroll_y) / document_h
+
+    Returns (points, translated_count). Points with no scroll offset are
+    treated as scroll_y=0, which is correct for a participant who never
+    scrolled and is the only assumption available for a client that doesn't
+    report it -- the count lets the caller warn when that assumption was
+    load-bearing.
+
+    A no-op unless the layout is document-scope, so test-UI sessions and
+    single-screen pages are untouched.
+    """
+    meta = capture_meta or {}
+    if meta.get("scope") != "document":
+        return list(gaze_points), 0
+
+    viewport = meta.get("viewport") or []
+    document = meta.get("document_size") or []
+    if len(viewport) != 2 or len(document) != 2 or not all(document):
+        return list(gaze_points), 0
+
+    vw, vh = float(viewport[0]), float(viewport[1])
+    dw, dh = float(document[0]), float(document[1])
+
+    translated: List[dict] = []
+    scrolled = 0
+    for p in gaze_points:
+        sx = float(p.get("scroll_x") or 0.0)
+        sy = float(p.get("scroll_y") or 0.0)
+        if sy or sx:
+            scrolled += 1
+        q = dict(p)
+        q["x"] = min(max((float(p["x"]) * vw + sx) / dw, 0.0), 1.0)
+        q["y"] = min(max((float(p["y"]) * vh + sy) / dh, 0.0), 1.0)
+        translated.append(q)
+    return translated, scrolled
+
+
 def build_metrics(gaze_points: List[dict], layout: dict, ui_page: str, session_id: str):
     """Gaze stream + element layout -> SessionMetrics (+ diagnostics)."""
     from attribution import analyze_session, build_ui_config, gaze_samples_from_dicts
@@ -298,6 +346,12 @@ def capture_page(
         "low_confidence_fraction": result.low_confidence_fraction,
         "classification": result.classification,
         "warnings": result.warnings,
+        # Load-bearing for to_document_space: without all three, gaze cannot
+        # be translated into the layout's coordinate system.
+        "scope": result.scope,
+        "viewport": list(result.viewport),
+        "document_size": list(result.document_size),
+        "page_screens": result.page_screens,
     }
 
 
@@ -310,6 +364,7 @@ def analyse_session(
     layout: dict,
     ui_page: str,
     output_dir: Path,
+    capture_meta: Optional[dict] = None,
 ) -> dict:
     """The whole chain in one call. Returns everything the caller stores.
 
@@ -317,6 +372,9 @@ def analyse_session(
     failures come back in the result dict, because losing the PDF is not
     losing the session.
     """
+    # Put gaze and boxes in the same coordinate system before anything else.
+    gaze_points, scrolled = to_document_space(gaze_points, capture_meta)
+
     report, ui_config = build_metrics(gaze_points, layout, ui_page, session_id)
     pipeline_result = run_agents(report.metrics)
     rendered = render_report(
@@ -325,13 +383,28 @@ def analyse_session(
 
     from dataclasses import asdict
 
-    return {
+    result = {
         "metrics": asdict(report.metrics),
         "pipeline_result": pipeline_result,
         "diagnostics": report.to_dict()["diagnostics"],
         "analysed_at": datetime.now(timezone.utc).isoformat(),
         **rendered,
     }
+    if (capture_meta or {}).get("scope") == "document":
+        result["scroll_translated_points"] = scrolled
+        if scrolled == 0 and gaze_points:
+            # The layout spans a scrollable page but every gaze point claimed
+            # scroll_y=0. Either the participant genuinely never scrolled, or
+            # the client isn't reporting the offset -- in which case every
+            # point was attributed to the first screen and anything below it
+            # looks ignored.
+            result["scroll_warning"] = (
+                "layout covers the full scrollable page, but no gaze point "
+                "carried a scroll offset. If the participant did scroll, the "
+                "client is not sending scroll_y and everything below the fold "
+                "will read as unlooked-at."
+            )
+    return result
 
 
 __all__ = [

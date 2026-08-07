@@ -1,3 +1,18 @@
+# =============================================================================
+# WARNING: train and val point at the SAME folder. Every metric produced with
+# this config is measured on data the model was trained on, and is inflated.
+#
+# It is kept only to reproduce the original benchmark table. DO NOT quote
+# numbers from it.
+#
+# Use instead:
+#   python scripts/make_lpw_split.py          # subject-wise split
+#   yolo val model=<weights> data=configs/lpw_subject_split.yaml
+#
+# A random FRAME split is not a fix either -- LPW is 22 subjects x 3 videos,
+# so consecutive frames are near-duplicates and a random split puts frame 500
+# in train and 501 in val. Split by SUBJECT. See scripts/make_lpw_split.py.
+# =============================================================================
 path: dataset
 train: images
 val: images

@@ -1,0 +1,21 @@
+# Subject-wise LPW split -- train/val/test share NO subject.
+#
+# This is the config to quote numbers from. configs/lpw.yaml points
+# train and val at the same folder and measures memorisation.
+#
+# SUBJECTS  train (16): 1, 2, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 17, 19, 20, 22
+#           val   (3): 11, 13, 15
+#           test  (3): 3, 18, 21
+# FRAMES    train=4000 val=750 test=750 (sampled 250/subject)
+#
+# `path` below is absolute and machine-specific -- the path lists live
+# under runs/, which is gitignored. Regenerate on any machine with:
+#   python scripts/make_lpw_split.py --seed 17 --limit-per-subject 250
+# Same seed + same dataset reproduces this exact split.
+path: C:/Users/asus/Desktop/Eye_Gaze/Prototype/gazelens/runs/splits
+train: train.txt
+val: val.txt
+test: test.txt
+
+nc: 1
+names: ["pupil"]

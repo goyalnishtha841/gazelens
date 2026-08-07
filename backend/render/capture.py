@@ -13,14 +13,14 @@ fixed test-UI session are indistinguishable downstream.
 
 COORDINATES
 -----------
-Boxes are normalised to the VIEWPORT, top-left origin, y down -- the same
-convention as gaze, which is also viewport-relative. Elements scrolled out of
-view are dropped rather than given negative coordinates: gaze can only land on
-what is on screen, and a box at y=-300 would silently never be hit while still
-appearing in the report as an element that got no attention.
+Top-left origin, y down, normalised against either the viewport or the whole
+scrollable document -- see `scope` on CaptureResult and CONTRACT.md.
 
-That is a real limitation for long pages, and it is recorded on the result
-rather than hidden -- see `below_fold_dropped`.
+Document scope is the default because most real pages scroll, and a
+viewport-only layout silently omits everything below the fold, which reads
+downstream as "nobody looked at it" rather than "it was never measured".
+Document scope requires the gaze stream to carry a scroll offset per point;
+backend/api/pipeline.to_document_space does that translation.
 
 THREADING
 ---------
@@ -59,6 +59,10 @@ class RenderUnavailable(RuntimeError):
     """Playwright or its Chromium build isn't installed."""
 
 
+SCOPE_VIEWPORT = "viewport"
+SCOPE_DOCUMENT = "document"
+
+
 @dataclass
 class CaptureResult:
     url: str
@@ -67,6 +71,19 @@ class CaptureResult:
     viewport: Tuple[int, int]
     layout: Dict[str, dict] = field(default_factory=dict)
     screenshot_path: Optional[str] = None
+
+    # Which coordinate system `layout` is normalised against.
+    #
+    #   viewport -- boxes are fractions of the visible window. Correct only if
+    #               the participant never scrolls.
+    #   document -- boxes are fractions of the WHOLE scrollable page. Gaze must
+    #               then be translated into the same space using the scroll
+    #               offset recorded with each point (see api/pipeline.py).
+    #
+    # attribution is agnostic: it hit-tests two [0,1] rectangles and does not
+    # care which system they describe -- as long as BOTH describe the same one.
+    scope: str = SCOPE_VIEWPORT
+    document_size: Tuple[int, int] = (0, 0)
 
     detected: int = 0
     kept: int = 0
@@ -91,12 +108,21 @@ class CaptureResult:
         weak = sum(1 for c in self.classification.values() if c["confidence"] < 0.6)
         return round(weak / len(self.classification), 3)
 
+    @property
+    def page_screens(self) -> float:
+        """How many viewports tall the page is. 1.0 = fits without scrolling."""
+        _, vh = self.viewport
+        return round(self.document_size[1] / vh, 2) if vh else 1.0
+
     def to_dict(self) -> dict:
         return {
             "url": self.url,
             "final_url": self.final_url,
             "title": self.title,
             "viewport": list(self.viewport),
+            "scope": self.scope,
+            "document_size": list(self.document_size),
+            "page_screens": self.page_screens,
             "layout": self.layout,
             "screenshot_path": self.screenshot_path,
             "detected": self.detected,
@@ -123,6 +149,12 @@ _COLLECT_JS = """
     '[role]', '[onclick]'
   ].join(',');
 
+  // Both coordinate systems are returned so Python can choose without a
+  // second round trip: `box` is viewport-relative (what getBoundingClientRect
+  // gives), `doc_box` adds the scroll offset to put it in document space.
+  const sx = window.scrollX || 0;
+  const sy = window.scrollY || 0;
+
   const out = [];
   for (const node of document.querySelectorAll(SELECTOR)) {
     const style = window.getComputedStyle(node);
@@ -143,10 +175,19 @@ _COLLECT_JS = """
       text: (node.innerText || node.textContent || '').trim().slice(0, 80),
       has_click_handler: !!node.onclick || node.hasAttribute('onclick'),
       in_nav: !!node.closest('nav,[role="navigation"]'),
-      box: { x: r.x, y: r.y, width: r.width, height: r.height }
+      box: { x: r.x, y: r.y, width: r.width, height: r.height },
+      doc_box: { x: r.x + sx, y: r.y + sy, width: r.width, height: r.height }
     });
   }
-  return out;
+  return {
+    elements: out,
+    document_size: {
+      width: Math.max(document.documentElement.scrollWidth,
+                      document.body ? document.body.scrollWidth : 0),
+      height: Math.max(document.documentElement.scrollHeight,
+                       document.body ? document.body.scrollHeight : 0)
+    }
+  };
 }
 """
 
@@ -157,6 +198,7 @@ def _capture_sync(
     screenshot_path: Optional[Path],
     timeout_ms: int,
     full_page_screenshot: bool,
+    scope: str,
 ) -> CaptureResult:
     try:
         from playwright.sync_api import sync_playwright
@@ -193,17 +235,25 @@ def _capture_sync(
 
             title = page.title()
             final_url = page.url
-            raw = page.evaluate(_COLLECT_JS)
+            collected = page.evaluate(_COLLECT_JS)
+            raw = collected["elements"]
+            doc = collected["document_size"]
+            document_size = (int(doc["width"]), int(doc["height"]))
 
             if screenshot_path is not None:
                 screenshot_path.parent.mkdir(parents=True, exist_ok=True)
-                page.screenshot(path=str(screenshot_path),
-                                full_page=full_page_screenshot)
+                # A document-scope capture wants the whole page, so the
+                # screenshot and the layout describe the same thing.
+                page.screenshot(
+                    path=str(screenshot_path),
+                    full_page=full_page_screenshot or scope == SCOPE_DOCUMENT,
+                )
         finally:
             browser.close()
 
     return _build_layout(url, final_url, title, viewport, raw,
-                         screenshot_path, warnings)
+                         screenshot_path, warnings,
+                         scope=scope, document_size=document_size)
 
 
 def _build_layout(
@@ -214,25 +264,49 @@ def _build_layout(
     raw: List[dict],
     screenshot_path: Optional[Path],
     warnings: List[str],
+    scope: str = SCOPE_VIEWPORT,
+    document_size: Tuple[int, int] = (0, 0),
 ) -> CaptureResult:
     vw, vh = viewport
+    doc_w, doc_h = document_size or (vw, vh)
+
+    # The reference frame everything is normalised against.
+    document = scope == SCOPE_DOCUMENT
+    ref_w, ref_h = (doc_w, doc_h) if document else (vw, vh)
+
     result = CaptureResult(
         url=url, final_url=final_url, title=title, viewport=viewport,
+        scope=scope, document_size=(doc_w, doc_h),
         screenshot_path=str(screenshot_path) if screenshot_path else None,
         detected=len(raw), warnings=list(warnings),
     )
 
     candidates = []
     for el in raw:
-        box = el["box"]
+        box = el["doc_box"] if document else el["box"]
+        el["_box"] = box
+
+        # Area is judged against the VIEWPORT in both scopes. A banner that
+        # fills the screen is equally hard to attribute whether or not the
+        # page happens to scroll for another ten screens beneath it -- scaling
+        # the thresholds by document height would let a huge hero image slip
+        # under MAX_AREA_FRACTION on a long page and not on a short one.
         area_fraction = (box["width"] * box["height"]) / float(vw * vh)
         el["area_fraction"] = area_fraction
 
-        # Off-screen: gaze is viewport-relative and can never land here.
-        if box["y"] + box["height"] <= 0 or box["y"] >= vh \
+        if document:
+            # Nothing is "off-screen" in document scope -- the participant can
+            # scroll to any of it. Only genuinely out-of-document boxes go.
+            if box["y"] >= doc_h or box["x"] >= doc_w \
+                    or box["y"] + box["height"] <= 0 or box["x"] + box["width"] <= 0:
+                result.below_fold_dropped += 1
+                continue
+        elif box["y"] + box["height"] <= 0 or box["y"] >= vh \
                 or box["x"] + box["width"] <= 0 or box["x"] >= vw:
+            # Viewport scope: gaze can never land outside the visible window.
             result.below_fold_dropped += 1
             continue
+
         if area_fraction < MIN_AREA_FRACTION:
             result.too_small_dropped += 1
             continue
@@ -256,18 +330,18 @@ def _build_layout(
         info = classify(el, viewport, taken)
         taken.add(info["element_id"])
 
-        box = el["box"]
-        # Clip to the viewport before normalising: a half-off-screen element
-        # would otherwise get a box extending past 1.0, and every gaze point
-        # in that phantom region would be attributed to it.
+        box = el["_box"]
+        # Clip to the reference frame before normalising: a partially
+        # out-of-frame element would otherwise get a box extending past 1.0,
+        # and every gaze point in that phantom region would be attributed to it.
         x1 = max(0.0, box["x"])
         y1 = max(0.0, box["y"])
-        x2 = min(float(vw), box["x"] + box["width"])
-        y2 = min(float(vh), box["y"] + box["height"])
+        x2 = min(float(ref_w), box["x"] + box["width"])
+        y2 = min(float(ref_h), box["y"] + box["height"])
 
         result.layout[info["element_id"]] = {
-            "bbox": (round(x1 / vw, 5), round(y1 / vh, 5),
-                     round((x2 - x1) / vw, 5), round((y2 - y1) / vh, 5)),
+            "bbox": (round(x1 / ref_w, 5), round(y1 / ref_h, 5),
+                     round((x2 - x1) / ref_w, 5), round((y2 - y1) / ref_h, 5)),
             "importance": info["importance"],
             "type": info["type"],
         }
@@ -286,6 +360,17 @@ def _build_layout(
             "no attributable elements found -- the page may be canvas-based, "
             "behind a consent wall, or rendered entirely below the fold"
         )
+    elif not document and result.page_screens > 1.2:
+        # The trap this scope exists to avoid: capture the first screen of a
+        # five-screen page, and every element further down is simply absent
+        # from the report. Nobody reading it can tell that from "nobody looked
+        # at them".
+        warnings.append(
+            f"page is {result.page_screens:.1f} viewports tall but was captured "
+            f"in viewport scope, so {result.below_fold_dropped} element(s) below "
+            f"the fold are not in this layout at all. Use scope='document' and "
+            f"send scroll offsets with the gaze stream to cover the whole page."
+        )
     elif result.low_confidence_fraction > 0.4:
         warnings.append(
             f"{result.low_confidence_fraction:.0%} of element types were "
@@ -302,14 +387,26 @@ def capture_page(
     screenshot_path: Optional[Path] = None,
     timeout_ms: int = DEFAULT_TIMEOUT_MS,
     full_page_screenshot: bool = False,
+    scope: str = SCOPE_DOCUMENT,
 ) -> CaptureResult:
-    """Screenshot + element detection for a URL. Safe to call from async code."""
+    """Screenshot + element detection for a URL. Safe to call from async code.
+
+    scope="document" (the default) normalises boxes against the whole
+    scrollable page, so elements below the fold are included. The gaze stream
+    must then carry a scroll offset per point -- backend/api does that
+    translation; see its pipeline.to_document_space.
+
+    scope="viewport" restricts the layout to the first screen. Correct only
+    when the page doesn't scroll, and it warns when the page clearly does.
+    """
     if not url.startswith(("http://", "https://", "file://")):
         raise ValueError(f"unsupported URL scheme: {url!r}")
+    if scope not in (SCOPE_VIEWPORT, SCOPE_DOCUMENT):
+        raise ValueError(f"scope must be 'viewport' or 'document', got {scope!r}")
 
     args = (url, viewport,
             Path(screenshot_path) if screenshot_path else None,
-            timeout_ms, full_page_screenshot)
+            timeout_ms, full_page_screenshot, scope)
 
     try:
         asyncio.get_running_loop()
@@ -332,6 +429,8 @@ def render_available() -> bool:
 
 __all__ = [
     "capture_page",
+    "SCOPE_VIEWPORT",
+    "SCOPE_DOCUMENT",
     "CaptureResult",
     "RenderUnavailable",
     "render_available",

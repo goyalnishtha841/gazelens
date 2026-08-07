@@ -296,6 +296,35 @@ try:
     pipeline.capture_page = _fake_capture_ok
 
     # ------------------------------------------------------------------
+    print("\npipeline -- gaze is translated into the layout's coordinate system")
+    # A document-scope layout describes the whole scrollable page; gaze arrives
+    # relative to the viewport. Without this translation every point lands on
+    # the first screen and everything below the fold reads as ignored.
+    doc_meta = {"scope": "document", "viewport": [1280, 720],
+                "document_size": [1280, 2880]}
+    pts = [
+        {"timestamp": 1.0, "x": 0.5, "y": 0.5, "scroll_y": 0},      # first screen
+        {"timestamp": 2.0, "x": 0.5, "y": 0.5, "scroll_y": 2160},   # last screen
+    ]
+    moved, n_scrolled = pipeline.to_document_space(pts, doc_meta)
+    check("one point carried a scroll offset", n_scrolled == 1)
+    check("unscrolled gaze maps into the first quarter of the page",
+          abs(moved[0]["y"] - (0.5 * 720) / 2880) < 1e-6)
+    check("scrolled gaze maps far down the page",
+          abs(moved[1]["y"] - (0.5 * 720 + 2160) / 2880) < 1e-6)
+    check("the two land on different parts of the document",
+          moved[1]["y"] > moved[0]["y"] + 0.7)
+    check("translated coords stay in [0,1]",
+          all(0.0 <= p["y"] <= 1.0 for p in moved))
+
+    same, n2 = pipeline.to_document_space(pts, {"scope": "viewport"})
+    check("viewport-scope layouts are left untouched",
+          same[1]["y"] == 0.5 and n2 == 0)
+    check("a test_ui session (no capture_meta) is untouched",
+          pipeline.to_document_space(pts, None)[0][1]["y"] == 0.5)
+    check("incomplete capture metadata is a no-op, not a crash",
+          pipeline.to_document_space(pts, {"scope": "document"})[0][1]["y"] == 0.5)
+
     print("\nsessions -- ownership boundary")
     bob_session = run(session_routes.create_session(
         CreateSessionRequest(mode="test_ui", ui_page="form_page"), bob_user, db))

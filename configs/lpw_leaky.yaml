@@ -1,0 +1,10 @@
+# DELIBERATELY LEAKY: val == train. Reproduces the original
+# configs/lpw.yaml so the inflation from evaluating on training data
+# can be MEASURED against lpw_subject_split.yaml rather than asserted.
+# Never quote numbers from this file.
+path: C:/Users/asus/Desktop/Eye_Gaze/Prototype/gazelens/runs/splits
+train: train.txt
+val: train.txt
+
+nc: 1
+names: ["pupil"]
