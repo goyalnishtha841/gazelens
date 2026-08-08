@@ -127,6 +127,13 @@ class SessionResponse(BaseModel):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
 
+    # Pulled from the report's own pipeline_result when has_report is True,
+    # so a dashboard can show issue counts without a second fetch per
+    # session. None (not 0) when there's no report yet -- 0 would claim a
+    # clean bill of health that hasn't actually been earned.
+    issue_count: Optional[int] = None
+    high_issue_count: Optional[int] = None
+
     model_config = {"from_attributes": True}
 
 

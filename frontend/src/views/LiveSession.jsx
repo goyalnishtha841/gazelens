@@ -3,7 +3,17 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { startSession, linkCalibration, estimateGazeFrame, finalizeSession, listTestUis } from "../api/client.js";
 import { renderUrl } from "../api/render.js";
 
-const GAZE_CAPTURE_INTERVAL_MS = 300; // ~3 fps -- conservative for a CPU-only mediapipe+YOLO pipeline
+// MUST stay under backend/attribution/fixations.py's MAX_GAP (150ms), not just
+// "fast enough to look smooth": that constant is the cutoff fixation detection
+// uses to decide two consecutive gaze samples belong to the same fixation.
+// At 300ms (this file's original value) every gap between samples exceeds it,
+// so NO fixation ever forms -- fixation_count, ttff, and scanpath all come
+// back empty/zero regardless of how steadily someone looked at something,
+// which silently breaks 5 of Agent 1's 7 rules (only the dwell-time-based
+// ones still work) and makes the accessibility rule false-positive on every
+// high-importance element every time. 100ms leaves real margin under 150ms
+// for setInterval jitter and per-frame inference latency.
+const GAZE_CAPTURE_INTERVAL_MS = 100; // ~10 fps -- see MAX_GAP note above; do not raise near/above 150ms
 const FRAME_QUALITY = 0.7;
 
 const TYPE_COLORS = {
@@ -34,6 +44,8 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
   const [session, setSession] = useState(null);
   const [cameraError, setCameraError] = useState(null);
   const [startError, setStartError] = useState(null);
+  const [startErrorDetail, setStartErrorDetail] = useState(null);
+  const [needsRecalibration, setNeedsRecalibration] = useState(false);
   const [starting, setStarting] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [tab, setTab] = useState("insights");
@@ -139,6 +151,8 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
 
     setStarting(true);
     setStartError(null);
+    setStartErrorDetail(null);
+    setNeedsRecalibration(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       streamRef.current = stream;
@@ -163,9 +177,12 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
       const link = await linkCalibration(token, created.id, calibrationSessionId, true);
       if (!link.gaze_model_trained) {
         setStartError(
-          `Calibration wasn't usable enough to train a gaze model (${link.message}). ` +
-            "Recalibrate before starting a session."
+          "Calibration wasn't accurate enough to train a gaze model. This usually means the pupil " +
+            "detector couldn't find your eyes in enough frames -- try even lighting on your face, sit " +
+            "square to the camera at arm's length, and remove glasses glare if you can."
         );
+        setStartErrorDetail(link.message);
+        setNeedsRecalibration(true);
         streamRef.current?.getTracks().forEach((t) => t.stop());
         setStarting(false);
         return;
@@ -212,6 +229,47 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
     mode === "url"
       ? (renderedPage?.url || urlInput).replace(/^https?:\/\//, "")
       : (selectedPage || "").replace(/_/g, " ");
+
+  // A live session needs a calibration_session_id to link and train a gaze
+  // model against (see backend/api/CONTRACT.md's session lifecycle) -- this
+  // app only tracks the most recently completed one, in memory, per sitting.
+  // Landing here without one used to fail deep inside handleStart, after
+  // picking a page; gating it here instead makes "you need to calibrate
+  // first" the first thing shown, not a surprise three steps in.
+  if (!calibrationSessionId) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-4 relative py-12">
+        {onNavigate && (
+          <button
+            onClick={() => onNavigate("dashboard")}
+            className="absolute top-6 left-6 text-[11px] font-label-caps text-secondary hover:text-on-surface transition-colors flex items-center gap-1"
+          >
+            <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+            Dashboard
+          </button>
+        )}
+        <div className="w-full max-w-md bg-white border border-outline p-8 text-center entrance-animation">
+          <span className="font-label-caps text-label-caps text-primary-container tracking-widest block mb-4">
+            LIVE SESSION
+          </span>
+          <div className="w-14 h-14 mx-auto mb-5 rounded-full bg-surface-container-low border border-outline-variant flex items-center justify-center">
+            <span className="material-symbols-outlined text-[26px] text-secondary">track_changes</span>
+          </div>
+          <h1 className="font-headline-md text-headline-md mb-3">Calibrate first</h1>
+          <p className="text-secondary text-body-md mb-8">
+            A live session needs a gaze model trained from your calibration. Run the 9-point calibration once, and
+            you'll come straight back here to start recording.
+          </p>
+          <button
+            onClick={() => onNavigate?.("calibration")}
+            className="w-full bg-primary-container text-white px-6 py-3 font-label-caps text-label-caps tracking-widest hover:opacity-90 transition-opacity"
+          >
+            Go to calibration
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!session) {
     return (
@@ -362,8 +420,25 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
             </div>
           )}
           {startError && (
-            <div className="text-sm text-[#B23A2E] bg-[#F6E6E4] border border-[#B23A2E] px-3 py-2 mb-4">
-              {startError}
+            <div className="text-sm text-[#B23A2E] bg-[#F6E6E4] border border-[#B23A2E] px-3 py-3 mb-4">
+              <p>{startError}</p>
+              {startErrorDetail && (
+                <details className="mt-2">
+                  <summary className="text-[11px] font-label-caps tracking-widest cursor-pointer opacity-70 hover:opacity-100">
+                    TECHNICAL DETAIL
+                  </summary>
+                  <p className="mt-1 text-[11px] font-data-mono opacity-80 break-words">{startErrorDetail}</p>
+                </details>
+              )}
+              {needsRecalibration && onNavigate && (
+                <button
+                  onClick={() => onNavigate("calibration")}
+                  className="mt-3 flex items-center gap-1.5 text-[11px] font-label-caps tracking-widest underline underline-offset-2 hover:opacity-80"
+                >
+                  <span className="material-symbols-outlined text-[14px]">track_changes</span>
+                  Recalibrate now
+                </button>
+              )}
             </div>
           )}
 
@@ -382,7 +457,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
   }
 
   return (
-    <div className="font-body-md text-on-surface h-screen flex flex-col overflow-hidden -mx-6 -my-8">
+    <div className="font-body-md text-on-surface h-screen flex flex-col overflow-hidden">
       {/* TopNavBar */}
       <header className="bg-surface border-b border-outline-variant flex justify-between items-center w-full px-margin-desktop py-4 z-50">
         <div className="flex items-center gap-8">

@@ -124,6 +124,27 @@ export async function getSessionReport(token, sessionId) {
 }
 
 /**
+ * Fetches the report's heatmap or scanpath PNG as an authenticated request
+ * and returns an object URL for it. An <img src> can't carry a bearer
+ * token, and these images are ownership-scoped like everything else in the
+ * session API (see session_routes.py's _report_image) -- so this exists to
+ * bridge that gap, not because a plain <img src="/api/..."> would work.
+ *
+ * Caller owns the returned URL and should URL.revokeObjectURL() it when the
+ * <img> unmounts, the same way you'd clean up any other object URL.
+ */
+export async function getSessionImage(token, sessionId, kind) {
+  const res = await fetch(`${BASE}/${sessionId}/${kind}`, { headers: authHeaders(token) });
+  if (!res.ok) {
+    const err = new Error(`No ${kind} image for this session`);
+    err.status = res.status;
+    throw err;
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
+/**
  * One webcam frame -> one on-screen gaze point, appended server-side to the
  * session's gaze stream and returned so the UI can draw the live cursor.
  * Requires the session's calibration to be linked and its gaze model
@@ -138,7 +159,40 @@ export async function estimateGazeFrame(token, sessionId, frameB64, timestamp) {
   return handleResponse(res);
 }
 
+/**
+ * Fetches the report's rendered PDF as an authenticated blob and triggers a
+ * browser download for it. Same auth-blob reasoning as getSessionImage: a
+ * plain <a href> can't carry a bearer token, and this file is
+ * ownership-scoped like everything else in the session API.
+ */
+export async function downloadSessionPdf(token, sessionId) {
+  const res = await fetch(`${BASE}/${sessionId}/pdf`, { headers: authHeaders(token) });
+  if (!res.ok) {
+    const err = new Error("No PDF available for this session");
+    err.status = res.status;
+    throw err;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `gazelens-report-${sessionId}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export async function deleteSession(token, sessionId) {
   const res = await fetch(`${BASE}/${sessionId}`, { method: "DELETE", headers: authHeaders(token) });
+  return handleResponse(res);
+}
+
+/**
+ * GET /health -- liveness plus whether live capture can actually run
+ * (backend/api/main.py). Unauthenticated, like the route itself.
+ */
+export async function getHealth() {
+  const res = await fetch("/health");
   return handleResponse(res);
 }
