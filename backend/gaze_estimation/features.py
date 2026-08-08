@@ -39,6 +39,14 @@ COL_POINT_INDEX = "point_index"
 COL_CONFIDENCE = "confidence"
 COL_SCREEN = ("screen_width", "screen_height")
 
+# backend/cv.FrameResult.head_proxy's keys (see cv/landmarks.py's
+# EyeLandmarker._head_proxy) -- captured on every calibration row already
+# (CalibrationSession.TRAINING_ROW_COLUMNS), but never read as a feature
+# until _both_eyes_head below. Not a real 6-DoF pose, just cheap landmark
+# ratios: interocular_norm tracks distance-from-camera, eye_mid_x/y tracks
+# where the head is pointed, roll_norm tracks head tilt.
+COL_HEAD = ("interocular_norm", "eye_mid_x", "eye_mid_y", "roll_norm")
+
 
 def _num(row: Dict, key: str) -> Optional[float]:
     """Read one cell as a float, tolerating the CSV's empty-string Nones.
@@ -102,12 +110,40 @@ def _both_eyes(row: Dict) -> Optional[List[float]]:
     return out
 
 
+def _both_eyes_head(row: Dict) -> Optional[List[float]]:
+    """Both eyes (4) + head proxy (4) = 8 features.
+
+    Pure pupil position (both_eyes/mean_eye) assumes the head never moves
+    between calibration and use -- exactly the failure mode _head_proxy's
+    docstring in cv/landmarks.py names as "the failure that ruins a
+    calibration". Adding it as a feature rather than a filter lets the
+    regression learn how much a given head-position shift actually moves
+    the true gaze point, instead of us hand-picking a drift threshold to
+    reject samples by.
+
+    Requires both eyes AND a head reading -- same reasoning as _both_eyes
+    for why a partial row is dropped rather than guessed: model selection
+    compares feature sets on held-out points, so losing rows to a stricter
+    requirement only costs this candidate, not the session.
+    """
+    out = _both_eyes(row)
+    if out is None:
+        return None
+    for col in COL_HEAD:
+        v = _num(row, col)
+        if v is None:
+            return None
+        out.append(v)
+    return out
+
+
 FEATURE_SETS = {
     "mean_eye": _mean_eye,
     "both_eyes": _both_eyes,
+    "both_eyes_head": _both_eyes_head,
 }
 
-FEATURE_DIMS = {"mean_eye": 2, "both_eyes": 4}
+FEATURE_DIMS = {"mean_eye": 2, "both_eyes": 4, "both_eyes_head": 8}
 
 DEFAULT_FEATURE_SET = "mean_eye"
 
@@ -156,6 +192,19 @@ class InsufficientCalibrationData(ValueError):
 # fit is unconstrained in at least one direction. calibration's own floor is
 # 9 points; 4 is the absolute refusal line, not a recommendation.
 MIN_POINTS_TO_FIT = 4
+
+# A head_proxy column with almost no spread across the session is not a
+# usable predictor -- it's a near-constant that z-score standardisation
+# divides by its own tiny std, turning ordinary per-frame detector jitter
+# into a huge standardised value the ridge fit can latch onto. A degree-1
+# fit stays numerically well-posed on 16 points (max_degree_for allows it),
+# but "well-posed" isn't "well-conditioned": a coefficient fit to explain
+# noise in a near-constant column generalises to any input away from that
+# exact narrow range as badly as fitting noise ever does. Requiring real
+# spread here means both_eyes_head only gets offered as a candidate when
+# the participant's head actually moved enough during calibration for the
+# signal to mean something -- which is also exactly when it's worth having.
+MIN_HEAD_FEATURE_STD = 0.01
 
 
 def build_dataset(
@@ -233,6 +282,26 @@ def build_dataset(
             f"(need at least {MIN_POINTS_TO_FIT}). This session cannot be "
             f"trained on -- recalibrate."
         )
+
+    if feature_set == "both_eyes_head":
+        # Checked against eye_mid_x/eye_mid_y only (columns 5, 6 of the 8) --
+        # the direct "the head slid sideways/up-down" signal, and the one
+        # _head_proxy's own docstring names as the point of this feature.
+        # interocular_norm (col 4) is excluded: cv/landmarks.py derives it
+        # from the SAME two landmarks as eye_mid but only from their
+        # separation, which normal seated translation barely changes (real
+        # depth change -- leaning toward/away from the camera -- is what
+        # moves it, a rarer motion than sliding). roll_norm (col 7) is
+        # excluded because a session can translate without tilting. Neither
+        # absence should refuse a session where the head demonstrably moved.
+        eye_mid_std = dataset.X[:, 5:7].std(axis=0)
+        if np.any(eye_mid_std < MIN_HEAD_FEATURE_STD):
+            raise InsufficientCalibrationData(
+                f"head pose barely moved during calibration "
+                f"(eye_mid std={eye_mid_std.round(4).tolist()}, "
+                f"need >= {MIN_HEAD_FEATURE_STD} on every axis) -- both_eyes_head would be "
+                f"fitting detector noise on a near-constant column, not a real signal"
+            )
     return dataset
 
 
@@ -240,6 +309,7 @@ def features_from_pupils(
     left: Optional[Tuple[float, float]],
     right: Optional[Tuple[float, float]],
     feature_set: str,
+    head_proxy: Optional[Dict[str, float]] = None,
 ) -> Optional[List[float]]:
     """Live-inference counterpart of the training extractors.
 
@@ -248,12 +318,20 @@ def features_from_pupils(
     feature construction used at training time. Deliberately routed through
     the same functions rather than reimplemented -- a train/serve feature
     mismatch is silent and would show up only as mysteriously bad gaze.
+
+    head_proxy: the FrameResult's own head_proxy dict (same keys as
+    COL_HEAD), passed straight through -- only "both_eyes_head" reads it,
+    everything else ignores the extra row keys.
     """
     row: Dict[str, float] = {}
     if left is not None:
         row[COL_LEFT_EYE[0]], row[COL_LEFT_EYE[1]] = float(left[0]), float(left[1])
     if right is not None:
         row[COL_RIGHT_EYE[0]], row[COL_RIGHT_EYE[1]] = float(right[0]), float(right[1])
+    if head_proxy:
+        for col in COL_HEAD:
+            if col in head_proxy:
+                row[col] = float(head_proxy[col])
     return FEATURE_SETS[feature_set](row)
 
 

@@ -191,6 +191,7 @@ class GazeModel:
         left: Optional[Tuple[float, float]],
         right: Optional[Tuple[float, float]],
         clip: bool = True,
+        head_proxy: Optional[Dict[str, float]] = None,
     ) -> Optional[Tuple[float, float, bool]]:
         """One frame's pupils -> (x_norm, y_norm, in_bounds), or None.
 
@@ -207,7 +208,7 @@ class GazeModel:
         clamping it to the border would disguise that as a genuine fixation
         on whatever UI element happens to live at the screen edge.
         """
-        feats = features_from_pupils(left, right, self.feature_set)
+        feats = features_from_pupils(left, right, self.feature_set, head_proxy=head_proxy)
         if feats is None:
             return None
 

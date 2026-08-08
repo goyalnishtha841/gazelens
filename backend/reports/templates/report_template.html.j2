@@ -175,6 +175,28 @@
   .rec-text { font-size: 9pt; margin-bottom: 5px; }
   .rec-evidence-list { margin: 0; padding-left: 15px; font-size: 7.5pt; color: var(--ink-soft); font-family: "Courier New", monospace; }
 
+  /* ---------- Before / After ---------- */
+  table.before-after { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-bottom: 6px; }
+  table.before-after thead { display: table-header-group; }
+  table.before-after tr { page-break-inside: avoid; }
+  table.before-after th {
+    text-align: left;
+    font-size: 7pt;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink-soft);
+    border-bottom: 1px solid var(--ink);
+    padding: 5px 7px;
+  }
+  table.before-after td { padding: 7px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  .ba-element { font-family: "Courier New", monospace; font-size: 7.8pt; width: 18%; }
+  .ba-support { display: block; margin-top: 4px; font-size: 7pt; font-family: inherit; }
+  .ba-support.support-Strong { color: var(--low); }
+  .ba-support.support-Weak { color: var(--medium); }
+  .ba-before { font-family: "Courier New", monospace; font-size: 7.5pt; color: var(--ink-soft); width: 38%; }
+  .ba-after { font-size: 8.5pt; width: 44%; }
+  .before-after-note { font-size: 7.3pt; color: var(--ink-soft); margin-bottom: 10px; font-style: italic; }
+
   .rejected-block {
     margin-top: 10px;
     padding: 8px 11px;
@@ -245,6 +267,13 @@
   </div>
   {% endif %}
 
+  {% if scanpath_path %}
+  <div class="heatmap-block">
+    <img src="{{ scanpath_path }}" alt="Gaze path in visit order">
+    <div class="heatmap-caption">Fixation sequence, in order -- green is first, red is last. The heatmap above shows how much attention each element got; this shows the order attention moved between them, which is what the layout-confusion and repeated-revisit findings below are based on.</div>
+  </div>
+  {% endif %}
+
   <h2 class="section-title">Usability Issues</h2>
   {% if issues %}
   <table class="issues">
@@ -295,6 +324,35 @@
     {% for rec in recommendations_rejected %}
     <div style="margin-bottom:5px;"><em>{{ rec.recommendation }}</em> — {{ rec.evidence|join("; ") }}</div>
     {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if before_after %}
+  <h2 class="section-title">Before / After</h2>
+  <table class="before-after">
+    <thead>
+      <tr>
+        <th>Element</th>
+        <th>Before — measured</th>
+        <th>After — recommended change</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in before_after %}
+      <tr>
+        <td class="ba-element">{{ row.element_id }}<br>
+          <span class="ba-support support-{{ row.support }}">{{ row.support }} · {{ "%.2f"|format(row.confidence) }}</span>
+        </td>
+        <td class="ba-before">{{ row.before }}</td>
+        <td class="ba-after">{{ row.after }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="before-after-note">
+    "Before" is the critic's own re-verified evidence, not a re-lookup -- the same number the recommendation above
+    is grounded in. "After" is the instruction, not a rendered mockup: nothing in this pipeline has measured what a
+    redesigned page would actually produce, so no image is shown claiming to be one.
   </div>
   {% endif %}
 

@@ -37,12 +37,15 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 # backend/ on the path so the sibling packages (calibration, gaze_estimation,
 # attribution) import by their own names regardless of where uvicorn started.
 _BACKEND = str(Path(__file__).resolve().parent.parent)
 if _BACKEND not in sys.path:
     sys.path.insert(0, _BACKEND)
+
+_TEST_UIS_DIR = Path(_BACKEND).parent / "test_uis"
 
 from attribution import router as attribution_router          # noqa: E402
 from calibration import router as calibration_router          # noqa: E402
@@ -87,6 +90,13 @@ app.include_router(calibration_router)
 app.include_router(gaze_router)
 app.include_router(attribution_router)
 app.include_router(render_router)
+
+# The real test_ui pages (test_uis/<page>/index.html), served so the live
+# session UI can iframe the actual page instead of a generic skeleton. Static
+# only -- no auth, same as any other asset -- and mounted last so it can
+# never shadow an /api/* route above it.
+if _TEST_UIS_DIR.is_dir():
+    app.mount("/test-uis", StaticFiles(directory=str(_TEST_UIS_DIR)), name="test-uis")
 
 
 @app.get("/health", tags=["health"])

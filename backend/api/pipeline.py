@@ -151,6 +151,35 @@ def calibration_summary(calibration_session_id: Optional[str]) -> Optional[dict]
         return None
 
 
+def estimate_gaze_frame(calibration_session_id: str, frame_b64: str,
+                         timestamp: Optional[float] = None) -> dict:
+    """One webcam frame -> one on-screen GazePoint, for the live session loop.
+
+    ADDED DURING FRONTEND INTEGRATION -- this composition didn't exist as a
+    callable unit before. backend/calibration/routes.py already goes
+    frame -> cv.get_pipeline().process_encoded() -> pupil positions, and
+    backend/gaze_estimation/routes.py's /estimate endpoints take pupil
+    coordinates, not frames, "because for a real live session the two are
+    better composed in-process" (see that module's routes.py docstring and
+    estimator.LiveGazeEstimator.estimate_frame_result, which this calls).
+    Nothing previously exposed that in-process composition over HTTP, which a
+    browser-based live session needs -- browser JS cannot run the mediapipe +
+    YOLO pupil detector itself. This is that composition, kept in pipeline.py
+    because pipeline.py is where cross-module calls already live.
+
+    Returns a GazePoint dict (timestamp, x, y, x_px, y_px, valid, in_bounds,
+    confidence, note). Raises FileNotFoundError if calibration_session_id has
+    no trained gaze model -- the caller (session_routes) turns that into 404.
+    """
+    import cv
+    from gaze_estimation.estimator import get_estimator
+
+    frame_result = cv.get_pipeline().process_encoded(frame_b64, timestamp=timestamp)
+    estimator = get_estimator(calibration_session_id)
+    point = estimator.estimate_frame_result(frame_result)
+    return point.to_dict()
+
+
 def train_gaze_model(calibration_session_id: str) -> Tuple[bool, Optional[dict], str]:
     """Fit this session's gaze model. Returns (ok, metrics, message)."""
     try:
@@ -252,7 +281,7 @@ def render_report(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     out: Dict[str, Optional[str]] = {
-        "heatmap_path": None, "html_path": None,
+        "heatmap_path": None, "scanpath_path": None, "html_path": None,
         "pdf_path": None, "pdf_backend": None, "render_error": None,
     }
 
@@ -266,11 +295,23 @@ def render_report(
         out["render_error"] = f"heatmap: {type(exc).__name__}: {exc}"
 
     try:
+        scanpath_path = output_dir / f"{session_id}_scanpath.png"
+        _heatmap().generate_scanpath_figure(
+            metrics, ui_config.layout_for_heatmap(), str(scanpath_path)
+        )
+        out["scanpath_path"] = str(scanpath_path)
+    except Exception as exc:        # noqa: BLE001
+        prev = out["render_error"]
+        msg = f"scanpath: {type(exc).__name__}: {exc}"
+        out["render_error"] = f"{prev}; {msg}" if prev else msg
+
+    try:
         result = _report_generator().generate_report(
             pipeline_result,
             ui_page=metrics.ui_page,
             output_dir=str(output_dir),
             heatmap_path=out["heatmap_path"],
+            scanpath_path=out["scanpath_path"],
         )
         out["html_path"] = result.get("html_path")
         out["pdf_path"] = result.get("pdf_path")
@@ -412,6 +453,7 @@ __all__ = [
     "append_gaze",
     "read_gaze",
     "calibration_summary",
+    "estimate_gaze_frame",
     "train_gaze_model",
     "build_metrics",
     "run_agents",

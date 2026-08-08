@@ -1,0 +1,10 @@
+{
+  "nav_bar": {"bbox": [0.05, 0.03, 0.90, 0.06], "importance": "low", "type": "nav", "label": "Site navigation"},
+  "headline": {"bbox": [0.10, 0.12, 0.80, 0.10], "importance": "high", "type": "text", "label": "Headline"},
+  "byline": {"bbox": [0.10, 0.23, 0.50, 0.03], "importance": "low", "type": "text", "label": "Byline"},
+  "hero_image": {"bbox": [0.10, 0.28, 0.80, 0.30], "importance": "medium", "type": "image", "label": "Hero image"},
+  "article_body": {"bbox": [0.10, 0.60, 0.55, 0.30], "importance": "medium", "type": "text", "label": "Article body"},
+  "related_articles": {"bbox": [0.68, 0.60, 0.22, 0.30], "importance": "low", "type": "non-interactive", "label": "Related articles"},
+  "share_button": {"bbox": [0.10, 0.92, 0.15, 0.05], "importance": "medium", "type": "CTA", "label": "Share"},
+  "subscribe_cta": {"bbox": [0.30, 0.92, 0.35, 0.05], "importance": "high", "type": "CTA", "label": "Subscribe"}
+}

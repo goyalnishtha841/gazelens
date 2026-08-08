@@ -149,10 +149,20 @@ try:
     print("\nfeatures -- eye-normalised coords, missing eyes handled")
     ds_mean = build_dataset(rows, feature_set="mean_eye")
     ds_both = build_dataset(rows, feature_set="both_eyes")
+    datasets_by_feature_set = {"mean_eye": ds_mean, "both_eyes": ds_both}
     check("mean_eye is 2 features", ds_mean.X.shape[1] == 2)
     check("both_eyes is 4 features", ds_both.X.shape[1] == 4)
     check("mean_eye keeps one-eyed rows, both_eyes drops them",
           ds_mean.n_samples > ds_both.n_samples)
+
+    # GOOD_SESSION barely moves the head (head_drift=0.010, spread over the
+    # whole sitting) -- both_eyes_head should refuse it rather than fit
+    # noise on a near-constant column. See MIN_HEAD_FEATURE_STD.
+    try:
+        build_dataset(rows, feature_set="both_eyes_head")
+        check("both_eyes_head refuses a session with barely any head movement", False)
+    except InsufficientCalibrationData:
+        check("both_eyes_head refuses a session with barely any head movement", True)
     check("effective sample size is points, not rows", ds_mean.n_points == 16)
     check("rows far outnumber points (why point-wise CV matters)",
           ds_mean.n_samples > 10 * ds_mean.n_points)
@@ -306,13 +316,9 @@ try:
           np.allclose(reloaded.coef, result.model.coef))
     check("held-out metrics travel with the model",
           reloaded.metrics["median_error_px"] == m["median_error_px"])
+    reload_X = datasets_by_feature_set[reloaded.feature_set].X[:5]
     check("predictions are identical after reload",
-          np.allclose(reloaded.predict(ds_both.X[:5]
-                                       if reloaded.feature_set == "both_eyes"
-                                       else ds_mean.X[:5]),
-                      result.model.predict(ds_both.X[:5]
-                                           if reloaded.feature_set == "both_eyes"
-                                           else ds_mean.X[:5])))
+          np.allclose(reloaded.predict(reload_X), result.model.predict(reload_X)))
 
     print("\npersistence -- a stale model format is refused, not misread")
     stale = result.model.to_dict()
@@ -327,11 +333,15 @@ try:
     print("\nlive inference -- accuracy on a fresh gaze stream")
     estimator = get_estimator(session.session_id)
     stream = synthetic_gaze_stream(geometry=GazeGeometry(), samples_per_stop=10)
+    # Whatever feature_set model selection picked for `session` above --
+    # possibly both_eyes_head, which needs this and ignores it otherwise.
+    HEAD_PROXY = stream[0]["head_proxy"]
 
     errors = []
     for frame in stream:
         point = estimator.estimate(left=frame["left"], right=frame["right"],
-                                   timestamp=frame["timestamp"])
+                                   timestamp=frame["timestamp"],
+                                   head_proxy=frame["head_proxy"])
         check_ok = point.valid
         if not check_ok:
             continue
@@ -350,7 +360,8 @@ try:
     sample = stream[0]
     t0 = time.perf_counter()
     for _ in range(2000):
-        estimator.estimate(left=sample["left"], right=sample["right"], timestamp=0.0)
+        estimator.estimate(left=sample["left"], right=sample["right"], timestamp=0.0,
+                           head_proxy=sample["head_proxy"])
     per_call_us = (time.perf_counter() - t0) / 2000 * 1e6
     print(f"        {per_call_us:.0f}us per estimate")
     check("per-frame inference is well under a 30fps budget (33ms)",
@@ -363,14 +374,16 @@ try:
     check("invalid point still carries its timestamp", blank.timestamp == 1.0)
 
     print("\nlive inference -- off-screen predictions are flagged, not disguised")
-    far = estimator.estimate(left=(0.0, 0.0), right=(0.0, 0.0), timestamp=2.0)
+    far = estimator.estimate(left=(0.0, 0.0), right=(0.0, 0.0), timestamp=2.0,
+                             head_proxy=HEAD_PROXY)
     check("extreme pupil position still returns a point", far.valid is True)
     check("coordinates are clamped to the screen", 0.0 <= far.x <= 1.0)
     check("but out-of-bounds is reported",
           far.in_bounds is False and far.note == "off_screen")
 
     print("\nlive inference -- pixel coords, cv duck typing, streaming")
-    p = estimator.estimate(left=(0.52, 0.49), right=(0.50, 0.50), timestamp=3.0)
+    p = estimator.estimate(left=(0.52, 0.49), right=(0.50, 0.50), timestamp=3.0,
+                           head_proxy=HEAD_PROXY)
     check("pixel coords match normalised x screen size",
           abs(p.x_px - p.x * SCREEN_W) < 1e-6)
     check("estimator states its own error bar", estimator.median_error_px == m["median_error_px"])
@@ -385,13 +398,14 @@ try:
         right = _P(0.50, 0.50)
         timestamp = 4.0
         mean_confidence = 0.9
+        head_proxy = HEAD_PROXY
 
     duck = estimator.estimate_frame_result(FakeFrameResult())
     check("cv.FrameResult shape works by duck typing", duck.valid is True)
     check("confidence carried through from the detector", duck.confidence == 0.9)
 
     streamed = list(gaze_stream(estimator, [
-        {"left": (0.5, 0.5), "right": (0.5, 0.5), "timestamp": 5.0},
+        {"left": (0.5, 0.5), "right": (0.5, 0.5), "timestamp": 5.0, "head_proxy": HEAD_PROXY},
         {"left": None, "right": None, "timestamp": 5.03},
     ]))
     check("gaze_stream yields a point per frame, gaps included", len(streamed) == 2)
@@ -401,11 +415,80 @@ try:
     raw_est = LiveGazeEstimator(reloaded, smoothing=0.0)
     smooth_est = LiveGazeEstimator(reloaded, smoothing=0.8)
     for e in (raw_est, smooth_est):
-        e.estimate(left=(0.3, 0.3), right=(0.3, 0.3), timestamp=0.0)
-    raw_jump = raw_est.estimate(left=(0.7, 0.7), right=(0.7, 0.7), timestamp=0.1)
-    smooth_jump = smooth_est.estimate(left=(0.7, 0.7), right=(0.7, 0.7), timestamp=0.1)
+        e.estimate(left=(0.3, 0.3), right=(0.3, 0.3), timestamp=0.0, head_proxy=HEAD_PROXY)
+    raw_jump = raw_est.estimate(left=(0.7, 0.7), right=(0.7, 0.7), timestamp=0.1, head_proxy=HEAD_PROXY)
+    smooth_jump = smooth_est.estimate(left=(0.7, 0.7), right=(0.7, 0.7), timestamp=0.1, head_proxy=HEAD_PROXY)
     check("smoothing lags a saccade (which is why it defaults off)",
           smooth_jump.x < raw_jump.x)
+
+    # ------------------------------------------------------------------
+    print("\nboth_eyes_head -- selected and accurate when the head actually moves")
+    # A session with real head movement (unlike GOOD_SESSION above, which
+    # both_eyes_head correctly refuses) -- otherwise identical profile, so
+    # this isolates head_drift as the one thing that changes.
+    from gaze_estimation.synthetic import SessionProfile
+    HEAD_MOVING_SESSION = SessionProfile(head_drift=0.08)
+    head_session = generate_calibration_session(
+        pattern=16, samples_per_point=15, profile=HEAD_MOVING_SESSION, seed=1
+    )
+    head_rows = head_session.training_rows()
+    head_ds = build_dataset(head_rows, feature_set="both_eyes_head")
+    # Same two columns build_dataset's own guard checks (see features.py) --
+    # interocular_norm and roll_norm aren't held to this bar; see that
+    # function's comment for why.
+    check("head movement clears the minimum-spread bar",
+          bool((head_ds.X[:, 5:7].std(axis=0) >= 0.01).all()))
+
+    head_result = train_from_rows(head_rows, session_id=head_session.session_id,
+                                  participant_id=head_session.participant_id,
+                                  model_dir=model_dir, feature_set="both_eyes_head")
+    check("trains without error on a head-moving session",
+          head_result.model.feature_set == "both_eyes_head")
+    check("held-out error is still sane (not the earlier low-variance blowup)",
+          head_result.metrics["median_error_px"] < 0.05 * DIAGONAL)
+
+    head_estimator = LiveGazeEstimator(head_result.model)
+    # head_drift=0.08 matched between calibration and this stream -- same
+    # relationship generate_calibration_session used, at the session's
+    # midpoint (progress~=0.5) rather than either endpoint.
+    head_stream = synthetic_gaze_stream(geometry=GazeGeometry(), samples_per_stop=10,
+                                        head_drift=0.04)
+    head_errors = []
+    for frame in head_stream:
+        point = head_estimator.estimate(left=frame["left"], right=frame["right"],
+                                        timestamp=frame["timestamp"],
+                                        head_proxy=frame["head_proxy"])
+        if point.valid:
+            dx = (point.x - frame["true_x"]) * SCREEN_W
+            dy = (point.y - frame["true_y"]) * SCREEN_H
+            head_errors.append((dx ** 2 + dy ** 2) ** 0.5)
+    head_live_median = float(np.median(head_errors)) if head_errors else float("nan")
+    print(f"        both_eyes_head live median error: {head_live_median:.1f}px "
+          f"over {len(head_errors)}/{len(head_stream)} frames")
+    # Looser bound than the pupil-only live-accuracy check above (5% of
+    # diagonal) on purpose: at 16 points, 8 features is 9 fit parameters
+    # against a budget of 14 (max_degree_for's n_points-2), close enough to
+    # the limit that this feature set is measurably less data-efficient
+    # than both_eyes/mean_eye, even with the low-variance guard satisfied.
+    # That's a real, worth-reporting property of the feature, not a bug in
+    # it -- and it's exactly why train_session leaves selection to LOPO
+    # cross-validation rather than always preferring the richer feature
+    # set: a session where both_eyes_head doesn't actually generalise
+    # better simply won't have it chosen. This test forces the override to
+    # exercise the code path at all.
+    check("both_eyes_head live accuracy is sane for a 9-parameter/16-point fit",
+          head_live_median < 0.20 * DIAGONAL)
+
+    # Confirms head_proxy is load-bearing, not decorative: a both_eyes_head
+    # model has no fallback for a missing head reading -- features.py's
+    # _both_eyes_head returns None without it, same as a missing pupil.
+    no_proxy_point = head_estimator.estimate(
+        left=head_stream[0]["left"], right=head_stream[0]["right"],
+        timestamp=head_stream[0]["timestamp"],
+    )
+    check("a both_eyes_head model without head_proxy is invalid, not silently wrong",
+          no_proxy_point.valid is False
+          and no_proxy_point.note == "insufficient_pupils_for_feature_set")
 
     # ------------------------------------------------------------------
     print("\nAPI -- train from a stored calibration session")

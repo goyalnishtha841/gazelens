@@ -1,0 +1,9 @@
+{
+  "nav_bar": {"bbox": [0.05, 0.03, 0.90, 0.08], "importance": "low", "type": "nav", "label": "Site navigation"},
+  "logo": {"bbox": [0.40, 0.16, 0.20, 0.08], "importance": "medium", "type": "image", "label": "Logo"},
+  "email_field": {"bbox": [0.30, 0.28, 0.40, 0.08], "importance": "medium", "type": "text", "label": "Email field"},
+  "password_field": {"bbox": [0.30, 0.40, 0.40, 0.08], "importance": "medium", "type": "text", "label": "Password field"},
+  "forgot_password_link": {"bbox": [0.30, 0.50, 0.40, 0.04], "importance": "low", "type": "text", "label": "Forgot password link"},
+  "login_button": {"bbox": [0.30, 0.58, 0.40, 0.10], "importance": "high", "type": "CTA", "label": "Log in"},
+  "signup_link": {"bbox": [0.30, 0.72, 0.40, 0.05], "importance": "medium", "type": "text", "label": "Create account link"}
+}

@@ -221,6 +221,7 @@ def synthetic_gaze_stream(
     samples_per_stop: int = 10,
     noise_std: float = 0.012,
     seed: int = 7,
+    head_drift: float = 0.0,
 ) -> List[Dict]:
     """A fake LIVE stream: where the eye was, and where it was really looking.
 
@@ -232,6 +233,18 @@ def synthetic_gaze_stream(
 
     Also the shape backend/attribution will eventually consume, one step
     further along -- see CONTRACT.md.
+
+    head_drift: applied to pupil position AND reported in head_proxy,
+    using the exact same relationship generate_calibration_session uses
+    (px/py shift by drift_x/drift_y; head_proxy's interocular_norm/eye_mid
+    move the same amount). Default 0.0 is a head that never moved, matching
+    plain pupil_for() -- pass a nonzero value to test a both_eyes_head model
+    against a head position genuinely offset from calibration. Passing a
+    head_proxy that DISAGREES with the pupil shift (e.g. reporting drift here
+    without actually shifting px/py) is not a realistic frame: on a real
+    camera the two always move together, and a model trained on that
+    correlation will read a decoupled pair as out-of-distribution, not as
+    "no drift happened."
     """
     geometry = geometry or GazeGeometry()
     rng = random.Random(seed)
@@ -241,12 +254,15 @@ def synthetic_gaze_stream(
 
     stream: List[Dict] = []
     t = 1_700_001_000.0
+    drift_x, drift_y = head_drift, head_drift * 0.6
     for tx, ty in path:
         for _ in range(samples_per_stop):
             t += 0.033
             eyes = {}
             for side in ("left", "right"):
                 px, py = geometry.pupil_for(tx, ty, side)
+                px += drift_x
+                py += drift_y
                 eyes[side] = (
                     min(max(px + rng.gauss(0, noise_std), 0.0), 1.0),
                     min(max(py + rng.gauss(0, noise_std), 0.0), 1.0),
@@ -257,6 +273,15 @@ def synthetic_gaze_stream(
                 "right": eyes["right"],
                 "true_x": tx,
                 "true_y": ty,
+                # Same formula as generate_calibration_session's head_proxy,
+                # so a both_eyes_head model sees the same (pupil, head_proxy)
+                # relationship it was trained on.
+                "head_proxy": {
+                    "interocular_norm": 0.30 - drift_x * 0.1,
+                    "eye_mid_x": 0.5 + drift_x,
+                    "eye_mid_y": 0.45 + drift_y,
+                    "roll_norm": 0.0,
+                },
             })
     return stream
 

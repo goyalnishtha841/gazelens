@@ -161,6 +161,7 @@ class Report(Base):
     html_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     pdf_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     heatmap_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    scanpath_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     pdf_backend: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),

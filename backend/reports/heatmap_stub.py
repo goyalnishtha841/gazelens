@@ -20,6 +20,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from pathlib import Path
 
@@ -30,6 +31,10 @@ FRAME = "#d8d5ce"
 GOOD = "#3e8c63"
 
 HEAT_CMAP = LinearSegmentedColormap.from_list("heat", ["#f4f6f4", "#f0d6cd", "#dd8064", ACCENT_HIGH])
+
+# Start (GOOD, green) -> end (ACCENT_HIGH, red) -- so a point's colour alone
+# says roughly when in the session it happened, without reading the number.
+PATH_CMAP = LinearSegmentedColormap.from_list("path", [GOOD, "#c99a3e", ACCENT_HIGH])
 
 
 def generate_attention_figure(session, layout: dict, output_path: str, dwell_threshold_pct: float = 5.0) -> str:
@@ -107,6 +112,123 @@ def generate_attention_figure(session, layout: dict, output_path: str, dwell_thr
     ax_bar.tick_params(length=0)
 
     fig.tight_layout(pad=1.4)
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=160, facecolor="white")
+    plt.close(fig)
+    return output_path
+
+
+def generate_scanpath_figure(session, layout: dict, output_path: str) -> str:
+    """The sequence heatmap can't show: WHERE attention went, in ORDER.
+
+    A dwell-time heatmap answers "how much did each element get" but
+    collapses time -- two sessions with identical dwell totals can have
+    completely different paths (one steady progression vs. one that
+    ping-pongs back and forth), and only the second is what Agent 1's
+    layout_confusion rule is actually flagging. This draws that path:
+    numbered points at each element's centre, connected in visit order,
+    start and end marked distinctly.
+
+    Consecutive repeats in session.scanpath (the same element gazed at
+    for several samples in a row) are collapsed into one point -- they're
+    one fixation, not several. A NON-consecutive repeat (the element shows
+    up again later) gets its own point and its own arrow back, which is
+    the revisit signal layout_confusion and repeated_revisits are built on;
+    collapsing those too would erase the exact thing this figure exists
+    to show.
+
+    layout: same element_id -> (x, y, w, h) normalised boxes the heatmap
+    uses, so the two figures are directly comparable side by side.
+    """
+    fig, ax = plt.subplots(figsize=(5.5, 3.6))
+    fig.patch.set_facecolor("white")
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.invert_yaxis()
+    ax.axis("off")
+    ax.add_patch(mpatches.FancyBboxPatch(
+        (0.0, 0.0), 1.0, 1.0, boxstyle="round,pad=0,rounding_size=0.01",
+        linewidth=1, edgecolor=FRAME, facecolor="#fbfbfa",
+    ))
+
+    for element_id, (x, y, w, h) in layout.items():
+        ax.add_patch(mpatches.FancyBboxPatch(
+            (x, y), w, h, boxstyle="round,pad=0,rounding_size=0.012",
+            linewidth=1.0, edgecolor=FRAME, facecolor="#f4f5f3",
+        ))
+        ax.text(x + w / 2, y + h + 0.025, element_id, ha="center", va="top",
+                fontsize=6.3, color=INK_SOFT)
+
+    # Collapse consecutive duplicates -- see docstring.
+    steps = []
+    for element_id in session.scanpath:
+        if not steps or steps[-1] != element_id:
+            steps.append(element_id)
+
+    def centre(element_id):
+        box = layout.get(element_id)
+        if box is None:
+            return None
+        x, y, w, h = box
+        return x + w / 2, y + h / 2
+
+    points = [(eid, centre(eid)) for eid in steps]
+    points = [(eid, c) for eid, c in points if c is not None]  # off-layout ids skipped, not guessed at
+
+    # A revisited element's centre gets plotted more than once -- without an
+    # offset those circles land exactly on top of each other and only the
+    # last one drawn stays visible, which HIDES the revisit instead of
+    # showing it. Fanning each repeat out around the true centre keeps every
+    # visit visible and keeps the revisit count itself readable at a glance,
+    # which matters here specifically: repeated_revisits and layout_confusion
+    # are both defined by revisits, so a figure that visually erases them
+    # would misrepresent the exact thing it's illustrating.
+    visit_counts = {}
+    OFFSET_RADIUS = 0.02
+
+    n = len(points)
+    plotted = []
+    for i, (element_id, (cx, cy)) in enumerate(points):
+        visit = visit_counts.get(element_id, 0)
+        visit_counts[element_id] = visit + 1
+        if visit == 0:
+            px, py = cx, cy
+        else:
+            angle = visit * 2.399963  # golden angle -- successive offsets don't stack in a line
+            px = cx + OFFSET_RADIUS * visit ** 0.5 * np.cos(angle)
+            py = cy + OFFSET_RADIUS * visit ** 0.5 * np.sin(angle)
+        plotted.append((px, py))
+
+        frac = i / max(n - 1, 1)
+        color = PATH_CMAP(frac)
+        if i > 0:
+            qx, qy = plotted[i - 1]
+            ax.annotate(
+                "", xy=(px, py), xytext=(qx, qy),
+                arrowprops=dict(arrowstyle="->", color=color, lw=1.3, alpha=0.85,
+                                shrinkA=8, shrinkB=8),
+            )
+        is_start, is_end = i == 0, i == n - 1
+        radius = 0.028 if (is_start or is_end) else 0.018
+        ax.add_patch(mpatches.Circle(
+            (px, py), radius,
+            facecolor=GOOD if is_start else (ACCENT_HIGH if is_end else color),
+            edgecolor="white", linewidth=1.1, zorder=5,
+        ))
+        if is_start or is_end or n <= 12:
+            ax.text(px, py, str(i + 1), ha="center", va="center",
+                    fontsize=6.0, color="white", fontweight="bold", zorder=6)
+
+    ax.set_title("Gaze path, in order", fontsize=10, color=INK, loc="left", pad=10, fontweight="bold")
+    legend_handles = [
+        mpatches.Patch(facecolor=GOOD, edgecolor="none", label="First fixation"),
+        mpatches.Patch(facecolor=ACCENT_HIGH, edgecolor="none", label="Last fixation"),
+    ]
+    ax.legend(handles=legend_handles, loc="lower center", bbox_to_anchor=(0.5, -0.08),
+              ncol=2, fontsize=7, frameon=False, labelcolor=INK_SOFT)
+
+    fig.tight_layout(pad=1.2)
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=160, facecolor="white")
     plt.close(fig)
