@@ -54,6 +54,8 @@ from .schemas import (
     FinalizeResponse,
     GazeBatchRequest,
     GazeBatchResponse,
+    GazeFrameRequest,
+    GazeFrameResponse,
     ReportPendingResponse,
     ReportResponse,
     SessionDetailResponse,
@@ -101,8 +103,8 @@ async def list_test_uis(_: User = Depends(get_current_user)) -> TestUIsResponse:
     """Which ui_page values a test_ui session can use."""
     return TestUIsResponse(
         ui_pages=list(AVAILABLE_TEST_UIS),
-        note="Interim layouts in backend/api/layouts.py. The real element "
-             "configs belong with the pages in test_uis/ (separate task).",
+        note="Served from test_uis/<ui_page>/index.html, elements from the "
+             "matching elements.json next to it.",
     )
 
 
@@ -315,6 +317,62 @@ async def append_gaze(
     )
 
 
+@router.post("/{session_id}/gaze/frame", response_model=GazeFrameResponse)
+async def estimate_gaze_frame(
+    session_id: str,
+    payload: GazeFrameRequest,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+) -> GazeFrameResponse:
+    """One webcam frame -> one on-screen gaze point, appended to the stream.
+
+    Added for the live-session UI: browser JS can't run the pupil detector
+    itself, so a frame has to be sent to the server and turned into a screen
+    coordinate there. See pipeline.estimate_gaze_frame for why this
+    composition (cv -> gaze_estimation) didn't already exist as one call.
+
+    The point is appended to this session's gaze stream immediately -- same
+    file /gaze writes to -- so the client doesn't also need to call /gaze
+    itself; this endpoint IS the live gaze stream for a browser-driven
+    session. Returned too, so the client can draw the cursor without a
+    second round trip.
+    """
+    session = owned_session(session_id, user, db)
+    if session.status in (STATUS_PROCESSING, STATUS_COMPLETE):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"session is already {session.status}; gaze can no longer be added",
+        )
+    if not session.calibration_session_id or not session.gaze_model_trained:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="session has no trained gaze model -- "
+                   "POST /api/sessions/{id}/calibration first",
+        )
+
+    try:
+        point = pipeline.estimate_gaze_frame(
+            session.calibration_session_id, payload.frame, timestamp=payload.timestamp
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no trained gaze model for this session's calibration: {exc}",
+        ) from exc
+
+    path = pipeline.gaze_path_for(DATA_DIR, session.id)
+    pipeline.append_gaze(path, [point])
+
+    session.gaze_path = str(path)
+    session.gaze_point_count += 1
+    session.status = STATUS_RECORDING
+    if session.started_at is None:
+        session.started_at = datetime.now(timezone.utc)
+    db.commit()
+
+    return GazeFrameResponse(session_id=session.id, gaze=point, status=session.status)
+
+
 def _run_analysis(session_id: str) -> None:
     """Background worker: analyse the session and store its report.
 
@@ -344,6 +402,7 @@ def _run_analysis(session_id: str) -> None:
                 html_path=result["html_path"],
                 pdf_path=result["pdf_path"],
                 heatmap_path=result["heatmap_path"],
+                scanpath_path=result["scanpath_path"],
                 pdf_backend=result["pdf_backend"],
             ))
             session.status = STATUS_COMPLETE
@@ -464,6 +523,7 @@ async def get_report(
         html_path=report.html_path,
         pdf_path=report.pdf_path,
         heatmap_path=report.heatmap_path,
+        scanpath_path=report.scanpath_path,
         pdf_backend=report.pdf_backend,
         layout_is_placeholder=session.layout_is_placeholder,
         warnings=warnings,

@@ -111,14 +111,21 @@ class LiveGazeEstimator:
         right: Pupil = None,
         timestamp: Optional[float] = None,
         confidence: float = 1.0,
+        head_proxy: Optional[Dict[str, float]] = None,
     ) -> GazePoint:
-        """Pupil positions (eye-normalised) -> a GazePoint."""
+        """Pupil positions (eye-normalised) -> a GazePoint.
+
+        head_proxy: only read if this session's model was trained on
+        "both_eyes_head" (see gaze_estimation/features.py) -- every other
+        feature_set ignores it, so passing it here is always safe, never
+        required.
+        """
         timestamp = time.time() if timestamp is None else timestamp
 
         if left is None and right is None:
             return invalid_point(timestamp, "no_pupil", confidence)
 
-        predicted = self.model.predict_one(left, right, clip=True)
+        predicted = self.model.predict_one(left, right, clip=True, head_proxy=head_proxy)
         if predicted is None:
             # The model's feature set needed both eyes and only one arrived.
             return invalid_point(timestamp, "insufficient_pupils_for_feature_set",
@@ -147,7 +154,8 @@ class LiveGazeEstimator:
         """Convenience for the live loop: a cv.FrameResult -> a GazePoint.
 
         Duck-typed on purpose (see module docstring) -- reads `.left`,
-        `.right`, `.timestamp`, `.mean_confidence` without importing cv.
+        `.right`, `.timestamp`, `.mean_confidence`, `.head_proxy` without
+        importing cv.
         """
         left = getattr(result, "left", None)
         right = getattr(result, "right", None)
@@ -156,13 +164,14 @@ class LiveGazeEstimator:
             right=(right.x_eye, right.y_eye) if right else None,
             timestamp=getattr(result, "timestamp", None),
             confidence=getattr(result, "mean_confidence", 0.0),
+            head_proxy=getattr(result, "head_proxy", None),
         )
 
     def estimate_batch(self, frames: Sequence[Dict]) -> List[GazePoint]:
         """A burst of frames -> a gaze stream slice.
 
         Each frame is {"left": (x,y)|None, "right": (x,y)|None,
-        "timestamp": float, "confidence": float}.
+        "timestamp": float, "confidence": float, "head_proxy": dict|None}.
         """
         return [
             self.estimate(
@@ -170,6 +179,7 @@ class LiveGazeEstimator:
                 right=f.get("right"),
                 timestamp=f.get("timestamp"),
                 confidence=f.get("confidence", 1.0),
+                head_proxy=f.get("head_proxy"),
             )
             for f in frames
         ]
@@ -237,6 +247,7 @@ def gaze_stream(
             right=frame.get("right"),
             timestamp=frame.get("timestamp"),
             confidence=frame.get("confidence", 1.0),
+            head_proxy=frame.get("head_proxy"),
         )
 
 

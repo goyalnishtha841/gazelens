@@ -1,0 +1,7 @@
+{
+  "promo_banner": {"bbox": [0.10, 0.04, 0.80, 0.09], "importance": "low", "type": "non-interactive", "label": "Promo banner"},
+  "name_field": {"bbox": [0.20, 0.20, 0.60, 0.09], "importance": "medium", "type": "text", "label": "Name field"},
+  "email_field": {"bbox": [0.20, 0.34, 0.60, 0.09], "importance": "medium", "type": "text", "label": "Email field"},
+  "helper_text": {"bbox": [0.20, 0.46, 0.60, 0.05], "importance": "low", "type": "text", "label": "Helper text"},
+  "submit_button": {"bbox": [0.35, 0.60, 0.30, 0.10], "importance": "high", "type": "CTA", "label": "Submit"}
+}

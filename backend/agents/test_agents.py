@@ -13,7 +13,7 @@ import agent1_behavior
 import agent2_evaluation
 import agent3_recommendation
 import agent4_critic
-from mock_sessions import clean_session, ignored_cta_session, scattered_session
+from mock_sessions import clean_session, cluttered_search_session, ignored_cta_session, scattered_session
 
 passed = 0
 failed = 0
@@ -46,6 +46,24 @@ behavior3 = agent1_behavior.analyze(scattered_session)
 check("layout_confusion found", any(f.finding_type == "layout_confusion" for f in behavior3.findings))
 check("misleading_affordance found (promo_banner)",
       any(f.finding_type == "misleading_affordance" and f.element_id == "promo_banner" for f in behavior3.findings))
+
+print("\nAgent 1 -- cluttered_search_session should flag the three added heuristic categories")
+behavior4 = agent1_behavior.analyze(cluttered_search_session)
+check("repeated_revisits found (apply_filters)",
+      any(f.finding_type == "repeated_revisits" and f.element_id == "apply_filters" for f in behavior4.findings))
+check("high_cognitive_load found", any(f.finding_type == "high_cognitive_load" for f in behavior4.findings))
+check("element_never_discovered found (submit_button)",
+      any(f.finding_type == "element_never_discovered" and f.element_id == "submit_button"
+          for f in behavior4.findings))
+
+print("\nAgent 2 -- the three added finding types map to their own heuristics, not silently dropped")
+issues4 = agent2_evaluation.evaluate(behavior4, cluttered_search_session)
+heuristics_seen = {i.heuristic for i in issues4}
+check("Error prevention present", "Error prevention" in heuristics_seen)
+check("Cognitive load present", any("Cognitive load" in h for h in heuristics_seen))
+check("Accessibility present", "Accessibility" in heuristics_seen)
+check("issue count matches finding count (nothing silently unmapped)",
+      len(issues4) == len(behavior4.findings))
 
 print("\nAgent 2 -- every issue must map to a known heuristic")
 issues2 = agent2_evaluation.evaluate(behavior2, ignored_cta_session)

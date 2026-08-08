@@ -28,6 +28,18 @@ HEURISTIC_MAP = {
         "Consistency and standards",
         "Layout structure likely causing disorientation",
     ),
+    "repeated_revisits": (
+        "Error prevention",
+        "Interactive element revisited repeatedly",
+    ),
+    "high_cognitive_load": (
+        "Cognitive load / minimalist design",
+        "Attention scattered across the page without settling",
+    ),
+    "element_never_discovered": (
+        "Accessibility",
+        "High-importance element received no attention at all",
+    ),
 }
 
 

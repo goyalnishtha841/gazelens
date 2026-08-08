@@ -11,6 +11,15 @@ Implements the four rules from the project brief:
   - CTA dwell time < 5% of total     -> poor visibility
   - non-clickable, high fixation     -> misleading visual affordance
   - scanpath jumps repeatedly        -> possible layout confusion
+
+Plus three more, covering the rest of the brief's seven-category Nielsen
+list (the brief names all seven but only worked examples for four -- Agent
+2 only ever maps a finding_type it already has an entry for, so without
+these three, "Error prevention", "Cognitive load", and "Accessibility"
+could never actually appear in a report):
+  - interactive element revisited often  -> error prevention
+  - broad scanning, no clear focus       -> cognitive load
+  - high-importance element, 0 fixations -> accessibility
 """
 
 from collections import Counter
@@ -101,6 +110,56 @@ def analyze(session: SessionMetrics) -> BehaviorSummary:
             evidence=f"Scanpath repeatedly jumped back to the same elements (threshold: {rules.SCANPATH_REPEAT_JUMP_THRESHOLD} repeat jumps)",
             metric_value=float(rules.SCANPATH_REPEAT_JUMP_THRESHOLD),
         ))
+
+    # Error prevention: an interactive element the participant kept coming
+    # back to, rather than committing to once.
+    for element_id, revisits in session.revisit_count.items():
+        if session.element_type.get(element_id) not in ("CTA", "form_field"):
+            continue
+        if revisits >= rules.REVISIT_ERROR_PREVENTION_COUNT:
+            findings.append(BehaviorFinding(
+                finding_type="repeated_revisits",
+                element_id=element_id,
+                evidence=f"Revisited {revisits} times (threshold: {rules.REVISIT_ERROR_PREVENTION_COUNT}) "
+                         f"-- repeated returns to an interactive element suggest uncertainty or difficulty completing it",
+                metric_value=float(revisits),
+            ))
+
+    # Cognitive load: attention spread across many elements with no clear
+    # focus anywhere -- both conditions together, not either alone.
+    distinct_elements = len(set(session.scanpath))
+    top_dwell_pct = max((session.dwell_pct(e) for e in session.dwell_time), default=0.0)
+    if (distinct_elements >= rules.COGNITIVE_LOAD_MIN_DISTINCT_ELEMENTS
+            and top_dwell_pct < rules.COGNITIVE_LOAD_MAX_TOP_ELEMENT_DWELL_PCT):
+        findings.append(BehaviorFinding(
+            finding_type="high_cognitive_load",
+            element_id="__session__",
+            evidence=f"Attention spread across {distinct_elements} elements "
+                     f"(threshold: {rules.COGNITIVE_LOAD_MIN_DISTINCT_ELEMENTS}) with no single element "
+                     f"exceeding {top_dwell_pct:.1f}% of gaze time "
+                     f"(threshold: {rules.COGNITIVE_LOAD_MAX_TOP_ELEMENT_DWELL_PCT}%) "
+                     f"-- broad, unsettled scanning rather than focused attention",
+            metric_value=float(distinct_elements),
+        ))
+
+    # Accessibility: a high-importance element with ZERO fixations for the
+    # whole session -- distinct from delayed_discovery (found late), this
+    # is "never found at all". Only meaningful once the session covered
+    # enough ground to make "never" a real claim, not just a short session.
+    if session.total_gaze_time >= rules.ACCESSIBILITY_MIN_SESSION_GAZE_TIME_SECONDS:
+        for element_id, importance in session.element_importance.items():
+            if importance != "high":
+                continue
+            if session.fixation_count.get(element_id, 0) > 0:
+                continue
+            findings.append(BehaviorFinding(
+                finding_type="element_never_discovered",
+                element_id=element_id,
+                evidence=f"Zero fixations across a {session.total_gaze_time:.1f}s session "
+                         f"-- a high-importance element received no attention at all, "
+                         f"not just late attention",
+                metric_value=0.0,
+            ))
 
     return BehaviorSummary(
         session_id=session.session_id,

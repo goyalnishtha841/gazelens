@@ -6,10 +6,16 @@ Use these to build and test the entire agent chain WITHOUT waiting on
 the CV/gaze pipeline. When the real metrics module is ready, swap these
 for real SessionMetrics objects -- the agents don't know the difference.
 
-Three scenarios on purpose:
-  1. clean_session      -- CTA works fine, nothing to flag
-  2. ignored_cta_session -- the checkout button is basically invisible
-  3. scattered_session   -- attention bounces around, layout confusion
+Scenarios:
+  1. clean_session          -- CTA works fine, nothing to flag
+  2. ignored_cta_session     -- the checkout button is basically invisible
+  3. scattered_session       -- attention bounces around, layout confusion
+  4. busy_dashboard_session  -- a lot going on, mostly fine
+  5. cluttered_search_session -- exercises the three heuristic categories
+     added after the original four: error prevention (a filter control
+     revisited repeatedly), cognitive load (attention spread across 7
+     elements with no clear focus), accessibility (a high-importance
+     button that received zero fixations, not just late ones)
 """
 
 from schemas import SessionMetrics
@@ -144,4 +150,58 @@ busy_dashboard_session = SessionMetrics(
 )
 
 
-ALL_MOCK_SESSIONS = [clean_session, ignored_cta_session, scattered_session, busy_dashboard_session]
+cluttered_search_session = SessionMetrics(
+    session_id="mock_cluttered_search_05",
+    ui_page="dashboard_page",
+    dwell_time={
+        "nav_menu": 2.0,
+        "search_bar": 2.0,
+        "filter_panel": 2.0,
+        "results_grid": 2.0,
+        "promo_banner": 2.0,
+        "help_icon": 2.0,
+        "apply_filters": 3.0,      # revisited a lot below -- error prevention
+        # submit_button: no entry at all -- zero fixations, not just low dwell
+    },
+    ttff={
+        "nav_menu": 0.3,
+        "search_bar": 0.5,
+        "filter_panel": 1.0,
+        "results_grid": 1.5,
+        "promo_banner": 2.0,
+        "help_icon": 2.5,
+        "apply_filters": 0.8,
+    },
+    fixation_count={
+        "nav_menu": 3, "search_bar": 3, "filter_panel": 3, "results_grid": 3,
+        "promo_banner": 3, "help_icon": 2, "apply_filters": 6,
+    },
+    revisit_count={
+        "nav_menu": 1, "search_bar": 1, "filter_panel": 1, "results_grid": 1,
+        "promo_banner": 0, "help_icon": 0, "apply_filters": 5,
+    },
+    # Higher than the dwell_time sum (17.0s) -- the remainder is time spent
+    # on page background, not attributed to any tracked element.
+    total_gaze_time=25.0,
+    scanpath=[
+        "nav_menu", "search_bar", "filter_panel", "apply_filters",
+        "results_grid", "apply_filters", "promo_banner", "apply_filters",
+        "help_icon", "apply_filters", "filter_panel", "apply_filters",
+    ],
+    element_importance={
+        "nav_menu": "low", "search_bar": "medium", "filter_panel": "medium",
+        "results_grid": "medium", "promo_banner": "low", "help_icon": "low",
+        "apply_filters": "medium", "submit_button": "high",
+    },
+    element_type={
+        "nav_menu": "nav", "search_bar": "form_field", "filter_panel": "non-interactive",
+        "results_grid": "image", "promo_banner": "non-interactive", "help_icon": "non-interactive",
+        "apply_filters": "form_field", "submit_button": "CTA",
+    },
+)
+
+
+ALL_MOCK_SESSIONS = [
+    clean_session, ignored_cta_session, scattered_session,
+    busy_dashboard_session, cluttered_search_session,
+]

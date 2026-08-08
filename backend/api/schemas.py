@@ -202,6 +202,19 @@ class GazeBatchResponse(BaseModel):
     status: str
 
 
+class GazeFrameRequest(BaseModel):
+    """One webcam frame for the live session loop -- see pipeline.estimate_gaze_frame."""
+
+    frame: str = Field(..., description="base64 JPEG, raw or a data: URL")
+    timestamp: Optional[float] = None
+
+
+class GazeFrameResponse(BaseModel):
+    session_id: str
+    gaze: Dict[str, Any]   # the GazePoint dict, stored verbatim in the stream
+    status: str
+
+
 class FinalizeResponse(BaseModel):
     session_id: str
     status: str
@@ -229,6 +242,7 @@ class ReportResponse(BaseModel):
     html_path: Optional[str] = None
     pdf_path: Optional[str] = None
     heatmap_path: Optional[str] = None
+    scanpath_path: Optional[str] = None
     pdf_backend: Optional[str] = None
 
     layout_is_placeholder: bool = False
@@ -267,6 +281,8 @@ __all__ = [
     "GazePointInput",
     "GazeBatchRequest",
     "GazeBatchResponse",
+    "GazeFrameRequest",
+    "GazeFrameResponse",
     "FinalizeResponse",
     "ReportResponse",
     "ReportPendingResponse",

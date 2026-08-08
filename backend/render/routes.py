@@ -15,9 +15,12 @@ guardrail, not a security boundary -- DNS can still resolve a public name to a
 private address. Keep this endpoint behind auth and off the public internet.
 """
 
+import base64
 import ipaddress
 import socket
-from typing import Dict, List
+import tempfile
+from pathlib import Path
+from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, status
@@ -49,6 +52,12 @@ class CaptureResponse(BaseModel):
     low_confidence_fraction: float
     classification: Dict[str, dict]
     warnings: List[str]
+    # base64 PNG, so a preview (e.g. the live-session "any URL" flow) can show
+    # the participant what was actually rendered without a second endpoint
+    # for static file access. None only if the screenshot itself failed to
+    # write -- capture succeeding but the image failing is a real, rare case
+    # worth distinguishing from "no screenshot was ever requested".
+    screenshot_base64: Optional[str] = None
 
 
 def _reject_private(url: str) -> None:
@@ -86,26 +95,39 @@ async def capture(payload: CaptureRequest) -> CaptureResponse:
         )
     _reject_private(payload.url)
 
-    try:
-        result = capture_page(
-            payload.url,
-            viewport=(payload.viewport_width, payload.viewport_height),
-            timeout_ms=payload.timeout_ms,
-        )
-    except RenderUnavailable as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-        ) from exc
-    except Exception as exc:            # noqa: BLE001
-        # A page that won't load is the caller's problem, not a server fault.
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"could not capture {payload.url}: {type(exc).__name__}: {exc}",
-        ) from exc
+    with tempfile.TemporaryDirectory(prefix="gazelens_render_") as tmp_dir:
+        screenshot_path = Path(tmp_dir) / "capture.png"
+        try:
+            result = capture_page(
+                payload.url,
+                viewport=(payload.viewport_width, payload.viewport_height),
+                screenshot_path=screenshot_path,
+                timeout_ms=payload.timeout_ms,
+            )
+        except RenderUnavailable as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+            ) from exc
+        except Exception as exc:            # noqa: BLE001
+            # A page that won't load is the caller's problem, not a server fault.
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"could not capture {payload.url}: {type(exc).__name__}: {exc}",
+            ) from exc
+
+        # Encoded and returned inline rather than left on disk behind a
+        # second "fetch this screenshot" endpoint -- that would mean serving
+        # arbitrary paths off this machine, which is exactly the kind of
+        # surface CONTRACT.md's SSRF note says to keep this API away from.
+        # The temp dir (and the file in it) is removed as soon as this block
+        # exits either way.
+        screenshot_b64 = None
+        if screenshot_path.exists():
+            screenshot_b64 = base64.b64encode(screenshot_path.read_bytes()).decode("ascii")
 
     data = result.to_dict()
     data.pop("screenshot_path", None)
-    return CaptureResponse(**data)
+    return CaptureResponse(**data, screenshot_base64=screenshot_b64)
 
 
 __all__ = ["router"]

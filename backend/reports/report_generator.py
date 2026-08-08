@@ -62,7 +62,37 @@ def _build_narrative(pipeline_result: dict, ui_page: str) -> dict:
     }
 
 
-def _render_html(pipeline_result: dict, ui_page: str, heatmap_path: str | None) -> str:
+def _build_before_after(pipeline_result: dict) -> list[dict]:
+    """One before/after row per kept recommendation.
+
+    "Before" is the critic's own re-derived evidence (VerifiedRecommendation.
+    evidence), not a fresh lookup against the issue -- that's the evidence
+    that was actually independently re-verified against raw session metrics,
+    so before/after uses exactly the number the report already stands behind
+    rather than a second copy of it from a different stage of the pipeline.
+
+    "After" is the recommendation text as written, deliberately NOT a
+    generated mockup or a synthesised new layout: nothing in this pipeline
+    has verified what a redesigned page would actually measure, so drawing
+    one would present a guess with the same visual authority as the
+    measured heatmap next to it. The instruction the recommendation gives
+    is the honest "after" -- what to change, not a fabricated result of
+    having changed it.
+    """
+    rows = []
+    for rec in pipeline_result.get("recommendations_kept", []):
+        rows.append({
+            "element_id": rec["element_id"],
+            "before": "; ".join(rec.get("evidence", [])) or "No evidence recorded.",
+            "after": rec["recommendation"],
+            "support": rec.get("support"),
+            "confidence": rec.get("confidence"),
+        })
+    return rows
+
+
+def _render_html(pipeline_result: dict, ui_page: str, heatmap_path: str | None,
+                 scanpath_path: str | None = None) -> str:
     env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)))
     template = env.get_template("report_template.html.j2")
     narrative = _build_narrative(pipeline_result, ui_page)
@@ -75,7 +105,9 @@ def _render_html(pipeline_result: dict, ui_page: str, heatmap_path: str | None) 
         issues=pipeline_result["issues"],
         recommendations_kept=pipeline_result["recommendations_kept"],
         recommendations_rejected=pipeline_result["recommendations_rejected"],
+        before_after=_build_before_after(pipeline_result),
         heatmap_path=heatmap_path,
+        scanpath_path=scanpath_path,
         **narrative,
     )
 
@@ -93,12 +125,14 @@ def _html_to_pdf(html_path: Path, pdf_path: Path) -> str:
     return html_to_pdf(html_path, pdf_path)
 
 
-def generate_report(pipeline_result: dict, ui_page: str, output_dir: str, heatmap_path: str | None = None) -> dict:
+def generate_report(pipeline_result: dict, ui_page: str, output_dir: str, heatmap_path: str | None = None,
+                    scanpath_path: str | None = None) -> dict:
     """
     pipeline_result: output of orchestrator.run_pipeline(session)
     ui_page:          which test UI this session was run against
     output_dir:       where to write session_<id>.html / .pdf
     heatmap_path:      path to a heatmap image (absolute, or relative to output_dir)
+    scanpath_path:     path to a gaze-path image (absolute, or relative to output_dir)
 
     Returns {"html_path": ..., "pdf_path": ...}
     """
@@ -109,7 +143,7 @@ def generate_report(pipeline_result: dict, ui_page: str, output_dir: str, heatma
     html_path = output_dir / f"{session_id}.html"
     pdf_path = output_dir / f"{session_id}.pdf"
 
-    html_content = _render_html(pipeline_result, ui_page, heatmap_path)
+    html_content = _render_html(pipeline_result, ui_page, heatmap_path, scanpath_path)
     html_path.write_text(html_content, encoding="utf-8")
 
     # HTML is written first and unconditionally, so a machine that can't
@@ -140,21 +174,24 @@ if __name__ == "__main__":
 
     from orchestrator import run_pipeline
     from mock_sessions import ALL_MOCK_SESSIONS
-    from heatmap_stub import generate_attention_figure, DEMO_LAYOUTS
+    from heatmap_stub import generate_attention_figure, generate_scanpath_figure, DEMO_LAYOUTS
 
     OUTPUT_DIR = Path(__file__).parent / "generated"
 
     for session in ALL_MOCK_SESSIONS:
         result = run_pipeline(session)
 
-        heatmap_file = OUTPUT_DIR / f"{session.session_id}_heatmap.png"
         layout = DEMO_LAYOUTS.get(session.ui_page, {})
+        heatmap_file = OUTPUT_DIR / f"{session.session_id}_heatmap.png"
         generate_attention_figure(session, layout, str(heatmap_file))
+        scanpath_file = OUTPUT_DIR / f"{session.session_id}_scanpath.png"
+        generate_scanpath_figure(session, layout, str(scanpath_file))
 
         paths = generate_report(
             result,
             ui_page=session.ui_page,
             output_dir=str(OUTPUT_DIR),
-            heatmap_path=heatmap_file.name,  # relative to the html file's own directory
+            heatmap_path=heatmap_file.name,   # relative to the html file's own directory
+            scanpath_path=scanpath_file.name,
         )
         print(f"{session.session_id}: {paths['pdf_path']}")

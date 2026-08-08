@@ -1,0 +1,10 @@
+{
+  "nav_menu": {"bbox": [0.05, 0.03, 0.90, 0.06], "importance": "low", "type": "nav", "label": "Navigation menu"},
+  "chart_widget": {"bbox": [0.05, 0.13, 0.55, 0.48], "importance": "medium", "type": "image", "label": "Analytics chart"},
+  "sidebar_ad": {"bbox": [0.65, 0.13, 0.30, 0.14], "importance": "low", "type": "non-interactive", "label": "Sidebar ad"},
+  "promo_widget": {"bbox": [0.65, 0.31, 0.30, 0.14], "importance": "medium", "type": "non-interactive", "label": "Promo widget"},
+  "help_icon": {"bbox": [0.87, 0.03, 0.08, 0.05], "importance": "low", "type": "non-interactive", "label": "Help icon"},
+  "cta_primary": {"bbox": [0.05, 0.66, 0.25, 0.09], "importance": "high", "type": "CTA", "label": "Primary action"},
+  "cta_secondary": {"bbox": [0.33, 0.66, 0.25, 0.09], "importance": "high", "type": "CTA", "label": "Secondary action"},
+  "footer_link": {"bbox": [0.05, 0.90, 0.20, 0.04], "importance": "low", "type": "text", "label": "Footer link"}
+}
