@@ -6,6 +6,7 @@ import SignUp from "./views/SignUp.jsx";
 import Calibration from "./views/Calibration.jsx";
 import LiveSession from "./views/LiveSession.jsx";
 import Dashboard from "./views/Dashboard.jsx";
+import SystemStatus from "./views/SystemStatus.jsx";
 
 function PublicArea() {
   const [view, setView] = useState("landing"); // "landing" | "signin" | "signup"
@@ -43,7 +44,16 @@ function AuthenticatedApp() {
       />
     );
   }
-  return <Dashboard initialSessionId={lastSessionId} onNavigate={setActiveView} />;
+  if (activeView === "status") {
+    return <SystemStatus onNavigate={setActiveView} hasCalibration={!!calibrationSessionId} />;
+  }
+  return (
+    <Dashboard
+      initialSessionId={lastSessionId}
+      onNavigate={setActiveView}
+      hasCalibration={!!calibrationSessionId}
+    />
+  );
 }
 
 function AppShell() {

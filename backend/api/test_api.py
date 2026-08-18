@@ -495,6 +495,28 @@ try:
         check("PDF absent but the analysis survived", report.metrics is not None)
         print("        (no PDF backend on this machine -- analysis unaffected)")
 
+    print("\nsessions list -- issue counts surface without a second fetch")
+    relisted = run(session_routes.list_sessions(20, 0, None, alice_user, db))
+    relisted_session = next(s for s in relisted.sessions if s.id == session_id)
+    check("issue_count matches the report's issues",
+          relisted_session.issue_count == len(pr["issues"]))
+    check("high_issue_count matches the high-severity subset",
+          relisted_session.high_issue_count == sum(1 for i in pr["issues"] if i["severity"] == "High"))
+    no_report_session = next(s for s in relisted.sessions if not s.has_report)
+    check("issue_count is None (not 0) when there's no report yet",
+          no_report_session.issue_count is None)
+
+    print("\nreport -- pdf download endpoint")
+    if report.pdf_path and Path(report.pdf_path).exists():
+        pdf_file = run(session_routes.get_report_pdf(session_id, alice_user, db))
+        check("pdf endpoint serves the rendered file", pdf_file.path == report.pdf_path)
+        check("pdf endpoint sets the right media type", pdf_file.media_type == "application/pdf")
+    else:
+        expect_http("pdf endpoint 404s when no pdf backend rendered one",
+                    session_routes.get_report_pdf(session_id, alice_user, db), 404)
+    expect_http("pdf endpoint is ownership-scoped like everything else",
+                session_routes.get_report_pdf(session_id, bob_user, db), 404)
+
     print("\nsessions -- finalize is not repeatable")
     expect_http("finalizing a session that already has a report",
                 session_routes.finalize_session(session_id, _Background(),

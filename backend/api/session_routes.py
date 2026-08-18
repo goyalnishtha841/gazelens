@@ -10,6 +10,9 @@ The session lifecycle, and the only place the whole pipeline is driven.
     POST   /api/sessions/{id}/gaze          append a batch of gaze points
     POST   /api/sessions/{id}/finalize      run attribution -> agents -> report
     GET    /api/sessions/{id}/report        the report, or 202 while pending
+    GET    /api/sessions/{id}/heatmap       the report's heatmap image
+    GET    /api/sessions/{id}/scanpath      the report's gaze-path image
+    GET    /api/sessions/{id}/pdf           the report's rendered PDF
     DELETE /api/sessions/{id}               discard
     GET    /api/sessions/meta/test-uis      available test pages
 
@@ -28,6 +31,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
+from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
@@ -91,7 +95,12 @@ def _next_action(session: SessionModel) -> str:
 
 def _to_response(session: SessionModel) -> SessionResponse:
     data = SessionResponse.model_validate(session)
-    data.has_report = session.report is not None
+    report = session.report
+    data.has_report = report is not None
+    if report is not None:
+        issues = (report.pipeline_result or {}).get("issues", [])
+        data.issue_count = len(issues)
+        data.high_issue_count = sum(1 for i in issues if i.get("severity") == "High")
     return data
 
 
@@ -528,6 +537,67 @@ async def get_report(
         layout_is_placeholder=session.layout_is_placeholder,
         warnings=warnings,
         created_at=report.created_at,
+    )
+
+
+def _report_file(
+    session_id: str, user: User, db: DBSession, attr: str, media_type: str, filename: Optional[str] = None
+) -> FileResponse:
+    """Shared body for /heatmap, /scanpath and /pdf -- same file, different column.
+
+    Not a static mount: session_data/ holds every user's session files in
+    one directory, and StaticFiles has no concept of ownership. Every other
+    piece of a session's data goes through owned_session (404, not 403, for
+    someone else's session -- see deps.py); an unauthenticated file mount
+    would quietly carve an exception into that for exactly the artifacts a
+    usability report is most likely to be screenshotted and shared. Routing
+    through here keeps the same rule for these files.
+
+    An <img src>/download link can't carry an Authorization header, so the
+    frontend fetches this with a bearer token and turns the response into an
+    object URL -- see client.js's getSessionImage / downloadSessionPdf.
+    """
+    session = owned_session(session_id, user, db)
+    report = session.report
+    path = getattr(report, attr, None) if report else None
+    if not path or not Path(path).exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no {attr.replace('_path', '')} for this session",
+        )
+    return FileResponse(path, media_type=media_type, filename=filename)
+
+
+@router.get("/{session_id}/heatmap")
+async def get_heatmap_image(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+) -> FileResponse:
+    return _report_file(session_id, user, db, "heatmap_path", "image/png")
+
+
+@router.get("/{session_id}/scanpath")
+async def get_scanpath_image(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+) -> FileResponse:
+    return _report_file(session_id, user, db, "scanpath_path", "image/png")
+
+
+@router.get("/{session_id}/pdf")
+async def get_report_pdf(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+) -> FileResponse:
+    """The rendered PDF report. 404 if WeasyPrint wasn't available at render
+    time (report.pdf_path is None then) -- html_path/pdf_backend on the
+    report response tells the caller the HTML version still exists.
+    """
+    return _report_file(
+        session_id, user, db, "pdf_path", "application/pdf", filename=f"gazelens-report-{session_id}.pdf"
     )
 
 

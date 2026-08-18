@@ -12,6 +12,12 @@ export default defineConfig({
         target: "http://localhost:8000",
         changeOrigin: true,
       },
+      // /health lives outside /api/* (see backend/api/main.py) -- SystemStatus
+      // fetches it directly, so it needs the same proxy treatment.
+      "/health": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
     },
   },
 });
