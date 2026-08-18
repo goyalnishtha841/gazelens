@@ -167,6 +167,15 @@ class CalibrationSession:
     # the count is what tells you a calibration was poor, the frames aren't
     # worth the disk.
     rejected_frames: int = 0
+    # Same count, broken down by cv.pupil_detector's rejection note
+    # ("no_face_detected", "no_pupil_detected", "decode_error: ...", ...).
+    # Detection is two stages -- MediaPipe finds the face and crops the eye
+    # before YOLO ever runs -- and those two failure modes call for opposite
+    # advice: no_face means reposition/relight, no_pupil (with a face found)
+    # means the detector itself struggled, which the benchmark shows is
+    # heavily glasses- and outdoor-light-dependent. A single rejected_frames
+    # total collapses that distinction; this dict keeps it.
+    rejection_reasons: Dict[str, int] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
 
@@ -203,8 +212,14 @@ class CalibrationSession:
         self.samples.append(sample)
         self.updated_at = time.time()
 
-    def record_rejection(self) -> None:
+    def record_rejection(self, reason: Optional[str] = None) -> None:
         self.rejected_frames += 1
+        if reason:
+            # decode_error's message carries the exception text, which
+            # varies per frame -- group by the stable prefix so one flaky
+            # batch doesn't fragment into a dozen one-off dict keys.
+            key = "decode_error" if reason.startswith("decode_error") else reason
+            self.rejection_reasons[key] = self.rejection_reasons.get(key, 0) + 1
         self.updated_at = time.time()
 
     def samples_for_point(self, point_index: int) -> List[CalibrationSample]:
@@ -260,6 +275,7 @@ class CalibrationSession:
         if detection_rate < 0.5 and total_frames:
             reasons.append(
                 f"pupils found in only {detection_rate:.0%} of submitted frames"
+                f"{self._dominant_rejection_hint()}"
             )
 
         return {
@@ -270,6 +286,7 @@ class CalibrationSession:
             "points_total": total_points,
             "total_samples": len(self.samples),
             "rejected_frames": self.rejected_frames,
+            "rejection_reasons": dict(self.rejection_reasons),
             "detection_rate": round(detection_rate, 3),
             "both_eyes_rate": round(both_eyes / len(self.samples), 3) if self.samples else 0.0,
             "mean_confidence": (
@@ -277,6 +294,28 @@ class CalibrationSession:
                 if self.samples else 0.0
             ),
         }
+
+    def _dominant_rejection_hint(self) -> str:
+        """Turns the rejection breakdown into one actionable clause.
+
+        no_face_detected and no_pupil_detected call for different fixes --
+        see the field comment on rejection_reasons -- and the glasses/light
+        numbers below are the measured YOLOv8n benchmark (yolo_conditions.csv),
+        not a guess.
+        """
+        if not self.rejection_reasons:
+            return ""
+        dominant = max(self.rejection_reasons, key=self.rejection_reasons.get)
+        if dominant == "no_face_detected":
+            return " -- mostly no face found; center your face in frame and check lighting"
+        if dominant == "no_pupil_detected":
+            return (
+                " -- mostly face found but no pupil; the detector's measured recall drops "
+                "from 78% to 28% with glasses, and from 81% to 43% outdoors/near a window"
+            )
+        if dominant == "decode_error":
+            return " -- mostly frames that failed to decode; likely a client/network issue, not lighting"
+        return f" -- mostly {dominant!r}"
 
     def is_complete(self) -> bool:
         """Every point has its full sample quota."""
@@ -300,6 +339,7 @@ class CalibrationSession:
             "updated_at": self.updated_at,
             "status": self.status,
             "rejected_frames": self.rejected_frames,
+            "rejection_reasons": dict(self.rejection_reasons),
             "points": [p.to_dict() for p in self.points],
             "quality": self.quality(),
             "samples": [s.to_dict() for s in self.samples],
@@ -318,6 +358,7 @@ class CalibrationSession:
             updated_at=d.get("updated_at", time.time()),
             status=d.get("status", STATUS_IN_PROGRESS),
             rejected_frames=d.get("rejected_frames", 0),
+            rejection_reasons=dict(d.get("rejection_reasons", {})),
         )
         # "points" and "quality" are derived on read, not restored -- keeping
         # them in the file makes it readable by hand, but the objects stay

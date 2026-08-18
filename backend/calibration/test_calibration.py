@@ -195,6 +195,8 @@ try:
     check("point 1 has 2 samples", st.sample_counts[1] == 2)
     check("untouched point reports 0", st.sample_counts[15] == 0)
     check("rejected frames recorded", st.quality.rejected_frames == 3)
+    check("rejection reasons broken down by cause",
+          st.quality.rejection_reasons == {"no_pupil_detected": 3})
     check("session not usable at 3/16 coverage", st.quality.usable is False)
     check("reason given for unusable", len(st.quality.reasons) > 0)
     check("is_complete False", st.is_complete is False)

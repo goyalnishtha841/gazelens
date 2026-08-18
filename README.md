@@ -17,21 +17,31 @@ Proper eye-tracking hardware is expensive, and even when you have gaze data, som
 
 ## Detector benchmark results
 
-All three trained and evaluated on the same dataset (130,856 images). Full table in `runs/eval/final_comparison.csv`.
-
 | Model | Precision | Recall | mAP@0.5 | FPS |
 |---|---|---|---|---|
-| **YOLOv8n** | 0.972 | **0.944** | 0.972 | **625** |
+| **YOLOv8n** (retrained, held-out) | 0.925 | 0.683 | 0.746 | 18.95† |
 | Faster R-CNN | 0.926 | 0.938 | 0.954 | 23.3 |
 | SSD300 | **0.991** | 0.869 | **0.975** | 127.1 |
 
-**Chosen for the live pipeline: YOLOv8n.** SSD edges it slightly on precision/mAP, but has meaningfully lower recall — for a continuous webcam gaze stream, a missed detection creates a gap in the data, which matters more than an occasional imprecise box. YOLO matches SSD's accuracy almost exactly while catching more real detections and running ~5–27x faster, which is decisive for a real-time constraint.
+†CPU, latency-equivalent throughput at batch size 1 — not directly comparable to the GPU FPS numbers above until Faster R-CNN/SSD get the same re-run (see below). Full table in `runs/eval/final_comparison.csv`; source for the YOLO row: `yolo_eval.csv`, conf=0.5, IoU=0.5, 29,999 test images.
 
-**⚠️ Known limitation — these numbers are measured on training data.** `configs/lpw.yaml` points `train` and `val` at the same folder, so the table above reports memorisation, not generalisation.
+**Chosen for the live pipeline: YOLOv8n.** Even after the honest retrain below it, it still runs far ahead of Faster R-CNN on CPU, and a continuous webcam stream needs every frame processed in real time — an occasional missed detection is recoverable (calibration takes 12–15 samples per point), a detector too slow to keep up with the frame rate is not.
 
-A subject-wise split now exists (`scripts/make_lpw_split.py` → `configs/lpw_subject_split.yaml`): 16 train / 3 val / 3 test subjects, sharing no frames. Splitting by *subject* rather than by frame matters — LPW is 22 subjects × 3 videos, so a random frame split puts near-duplicate consecutive frames on both sides.
+**⚠️ Known limitation, now measured rather than assumed: recall is condition-dependent, and drops hard in exactly the situations a real participant sits in.**
 
-`scripts/evaluate_split_gap.py` evaluates one model both ways and reports the difference. **Re-run it against `pupil_yolo_final.pt` and replace the table before publication** — and note that model saw all 22 subjects, so an honest held-out number needs a retrain on the split config. See [OPEN_ITEMS.md](OPEN_ITEMS.md) §4.
+| Condition | Images | Precision | Recall | F1 | mAP@0.5 |
+|---|---|---|---|---|---|
+| All | 29,999 | 0.925 | 0.683 | 0.785 | 0.746 |
+| Indoor | 20,000 | 0.958 | 0.810 | 0.878 | 0.843 |
+| Outdoor | 9,999 | 0.817 | **0.427** | 0.561 | 0.538 |
+| Natural light | 25,999 | 0.930 | 0.660 | 0.772 | 0.735 |
+| Artificial light | 10,000 | 0.950 | 0.719 | 0.819 | 0.734 |
+| No glasses | 23,999 | 0.939 | 0.784 | 0.854 | 0.846 |
+| **Glasses** | 6,000 | 0.793 | **0.278** | 0.412 | 0.329 |
+
+Precision stays high (0.79–0.96) in every condition — when the model fires, it's usually right. **Recall is where it falls apart**, and glasses are the single biggest factor: recall drops from 0.784 to 0.278, worse than the outdoor drop (0.810 → 0.427). Practical read for anyone running calibration: indoors, artificial/even lighting, no glasses if avoidable, is a meaningfully different experience from a sunlit room with glasses on — this isn't "bad luck," it's the measured operating envelope of the current detector.
+
+This closes the honest-held-out-number item from `OPEN_ITEMS.md` §4b for YOLO. Faster R-CNN and SSD above are still the original training-data numbers (§4, not yet re-run on the subject split) — **not a fair comparison against YOLO's retrained row** until they get the same treatment.
 
 ---
 

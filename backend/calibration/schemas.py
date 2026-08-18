@@ -133,6 +133,7 @@ class QualityModel(BaseModel):
     points_total: int
     total_samples: int
     rejected_frames: int
+    rejection_reasons: Dict[str, int] = {}
     detection_rate: float
     both_eyes_rate: float
     mean_confidence: float

@@ -10,6 +10,26 @@ const FRAME_QUALITY = 0.7;
 const RADIUS = 30;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
+// Live per-point feedback for backend/cv/pupil_detector.py's rejection notes
+// (see calibration/routes.py's submit_samples -- these codes are the actual
+// contract, not display strings). Detection runs in two stages, landmarker
+// then YOLO, and only the first stage's failure mode is distinguishable from
+// "no pupil in an eye we did find" -- that split is exactly what tells a
+// participant whether to reposition (no face) or fix glare/angle (no pupil).
+function describeNote(note) {
+  if (!note) return null;
+  if (note.includes("no_face_detected")) {
+    return "Face not detected -- center your face in frame and check lighting.";
+  }
+  if (note.includes("no_pupil_detected")) {
+    return "Face found, but pupils weren't -- the detector's measured recall drops from 78% to 28% with glasses on, and to 43% outdoors/near a window. If either applies, that's very likely it.";
+  }
+  if (note.includes("decode_error")) {
+    return "Camera frames aren't reaching the server correctly (technical error).";
+  }
+  return note;
+}
+
 export default function Calibration({ onComplete, onExit }) {
   const { user } = useAuth();
   const [status, setStatus] = useState("idle"); // idle | running | done | error
@@ -18,6 +38,7 @@ export default function Calibration({ onComplete, onExit }) {
   const [progress, setProgress] = useState(0); // 0-1
   const [cameraError, setCameraError] = useState(null);
   const [quality, setQuality] = useState(null);
+  const [pointFeedback, setPointFeedback] = useState(null); // {accepted, rejected, note} for the last completed point
   const mouseOffset = useRef({ x: 0, y: 0 });
   const dotRef = useRef(null);
 
@@ -46,6 +67,7 @@ export default function Calibration({ onComplete, onExit }) {
 
   const begin = useCallback(async () => {
     setCameraError(null);
+    setPointFeedback(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       streamRef.current = stream;
@@ -126,7 +148,10 @@ export default function Calibration({ onComplete, onExit }) {
 
       try {
         if (frames.length > 0) {
-          await submitCalibrationSamples(calibrationId, currentIndex, frames, targetX, targetY);
+          const result = await submitCalibrationSamples(calibrationId, currentIndex, frames, targetX, targetY);
+          if (!cancelled) {
+            setPointFeedback({ accepted: result.accepted, rejected: result.rejected, note: result.note });
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -291,6 +316,17 @@ export default function Calibration({ onComplete, onExit }) {
         <h1 className="font-label-caps text-label-caps text-on-surface-variant block mt-2">
           Point {currentIndex + 1} of {PATTERN}
         </h1>
+        {pointFeedback && (
+          <p
+            className={`text-[12px] max-w-sm mx-auto mt-3 leading-relaxed ${
+              pointFeedback.accepted > 0 ? "text-secondary" : "text-[#B23A2E]"
+            }`}
+          >
+            {pointFeedback.accepted > 0
+              ? `Last point: ${pointFeedback.accepted}/${pointFeedback.accepted + pointFeedback.rejected} frames captured.`
+              : describeNote(pointFeedback.note) || `Last point: 0/${pointFeedback.rejected} frames captured.`}
+          </p>
+        )}
       </div>
 
       <main

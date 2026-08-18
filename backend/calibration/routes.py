@@ -167,7 +167,7 @@ async def submit_samples(session_id: str, payload: SubmitSamplesRequest) -> Subm
         sample = sample_from_frame_result(result, payload.point_index, target_x, target_y)
         if sample is None:
             rejected += 1
-            session.record_rejection()
+            session.record_rejection(result.note or None)
             if result.note and result.note not in notes:
                 notes.append(result.note)
             continue

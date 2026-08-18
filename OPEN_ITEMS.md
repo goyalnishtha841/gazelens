@@ -138,18 +138,18 @@ split alone, not to a different model or image size.
 
 ### 4b. Re-running it for the *published* model
 
-The measurement above used a reference model trained here on CPU, because
-`pupil_yolo_final.pt` is not on this machine (§1). Once those weights exist:
+**Done for YOLO.** `pupil_yolo_final.pt` was retrained on the subject-disjoint
+split and evaluated held-out, including a per-condition breakdown (indoor/
+outdoor, natural/artificial light, glasses/no glasses) — see the README's
+detector benchmark section, sourced from `yolo_eval.csv` / `yolo_conditions.csv`.
+Headline: recall 0.683 overall, dropping to 0.278 with glasses and 0.427
+outdoors. Precision stays high (0.79–0.96) throughout — false positives
+aren't the problem, missed detections in harder conditions are.
 
-```bash
-python scripts/evaluate_split_gap.py --weights models/pupil_yolo_final.pt --split test
-```
-
-That produces the number for the paper. Note the published model was trained
-on **all 22 subjects**, so subjects 3/18/21 are in its training data — the
-held-out column will only be honest after a retrain on
-`configs/lpw_subject_split.yaml`. Until then, treat 4b as the plan, not the
-result.
+**Still open for Faster R-CNN and SSD** — the README's comparison table still
+carries their original training-data numbers from §4. They need the same
+`evaluate_split_gap.py` treatment before the three-way comparison is fair;
+right now it's an honest YOLO number next to two inflated ones.
 
 ---
 
