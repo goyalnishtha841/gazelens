@@ -81,7 +81,7 @@ def expect_http(label, coro, status_code):
 # isolate: temp storage dir + stub detector, so nothing here touches
 # calibration_data/ or needs a camera
 
-tmp_dir = Path(tempfile.mkdtemp(prefix="gazelens_cal_test_"))
+tmp_dir = Path(tempfile.mkdtemp(prefix="fixation_cal_test_"))
 set_store(CalibrationStore(data_dir=tmp_dir))
 
 stub = StubPipeline()

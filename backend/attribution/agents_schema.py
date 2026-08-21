@@ -36,7 +36,7 @@ AGENTS_SCHEMA_PATH = (
 
 # Private name: must not collide with the real `schemas` module that
 # backend/agents imports when it is run from its own directory.
-_MODULE_NAME = "_gazelens_agents_schemas"
+_MODULE_NAME = "_fixation_agents_schemas"
 
 
 class AgentsSchemaUnavailable(ImportError):

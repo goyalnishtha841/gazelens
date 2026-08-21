@@ -26,6 +26,7 @@ from cv.frame_source import FrameDecodeError, decode_base64_frame
 from cv.pipeline import PupilPipeline, get_pipeline, set_pipeline
 from cv.pupil_detector import (
     DetectorUnavailable,
+    IRIS_ONLY_CONFIDENCE,
     PupilDetector,
     resolve_weights,
 )
@@ -209,6 +210,113 @@ for lib_name, lib in [("numpy", np)] + (
     check(f"most-confident box wins and maps exactly ({lib_name} boxes)", bool(ok))
     check(f"eye_norm differs per eye box size ({lib_name} boxes)",
           res.pupils["left"].y_eye != res.pupils["right"].y_eye)
+
+print("\npupil detector -- iris fusion")
+# Fully synthetic: a controllable iris centre plus a controllable YOLO box,
+# so all three fusion branches (blend / iris-fallback / outlier-reject) and
+# the fuse_iris=False escape hatch can be checked against known numbers,
+# with no dependence on real weights or a real face.
+
+
+class _IrisLandmarker:
+    """One eye region (60x30 at (100,200), matching _StubLandmarker above)
+    with a caller-supplied iris centre."""
+
+    available = True
+
+    def __init__(self, iris_x_px, iris_y_px):
+        region = EyeRegion("left", 100, 200, 160, 230)
+        region.iris_x_px = iris_x_px
+        region.iris_y_px = iris_y_px
+        self.regions = {"left": region}
+
+    def eye_regions(self, frame):
+        return self.regions, {"interocular_norm": 0.3}
+
+    def close(self):
+        pass
+
+
+def _single_box_model(box_xyxy, conf):
+    """A stub YOLO model reporting exactly one in-crop box, or a miss."""
+
+    class _Boxes:
+        def __init__(self):
+            self._n = 0 if box_xyxy is None else 1
+            self.conf = np.asarray([] if box_xyxy is None else [conf])
+            self.xyxy = np.asarray([] if box_xyxy is None else [box_xyxy]).reshape(self._n, 4)
+
+        def __len__(self):
+            return self._n
+
+    class _Pred:
+        boxes = _Boxes()
+
+    class _Model:
+        def predict(self, crop, **kw):
+            return [_Pred()]
+
+        def to(self, device):
+            return self
+
+    return _Model()
+
+
+# Iris fixed at eye_norm (0.5, 0.5) -> full-frame (130, 215) in the 60x30 box.
+iris_x_px, iris_y_px = 130.0, 215.0
+
+# YOLO agrees closely (eye_norm (0.6, 0.6), dist ~0.14 < the 0.35 outlier
+# threshold) -- both signals blend, weighted by YOLO's own confidence.
+agree = PupilDetector(
+    weights_path="unused.pt", landmarker=_IrisLandmarker(iris_x_px, iris_y_px)
+)
+agree._model = _single_box_model((34.0, 16.0, 38.0, 20.0), 0.8)  # centre (36, 18) in-crop
+res = agree.detect(np.zeros((480, 640, 3), dtype=np.uint8))
+pupil = res.pupils["left"]
+check("agreeing YOLO+iris blends", pupil.source == "fused")
+expected_x = 0.8 * 136.0 + 0.2 * iris_x_px
+expected_y = 0.8 * 218.0 + 0.2 * iris_y_px
+check("blend is weighted by YOLO's confidence", abs(pupil.x_px - expected_x) < 1e-6
+      and abs(pupil.y_px - expected_y) < 1e-6)
+
+# YOLO misses the frame entirely -- iris carries the point on its own.
+miss = PupilDetector(
+    weights_path="unused.pt", landmarker=_IrisLandmarker(iris_x_px, iris_y_px)
+)
+miss._model = _single_box_model(None, 0.0)
+res = miss.detect(np.zeros((480, 640, 3), dtype=np.uint8))
+pupil = res.pupils["left"]
+check("YOLO miss falls back to iris", pupil.source == "iris")
+check("iris-only point is exactly the iris centre",
+      pupil.x_px == iris_x_px and pupil.y_px == iris_y_px)
+check("iris-only confidence is the fixed nominal value",
+      pupil.confidence == IRIS_ONLY_CONFIDENCE)
+
+# YOLO fires, but nowhere near the iris (eye_norm ~(0.02, 0.03), dist ~0.67)
+# -- treated as a false positive and rejected in favour of iris.
+outlier = PupilDetector(
+    weights_path="unused.pt", landmarker=_IrisLandmarker(iris_x_px, iris_y_px)
+)
+outlier._model = _single_box_model((0.0, 0.0, 2.0, 2.0), 0.9)
+res = outlier.detect(np.zeros((480, 640, 3), dtype=np.uint8))
+pupil = res.pupils["left"]
+check("YOLO box far from iris is rejected as an outlier", pupil.source == "iris")
+
+# fuse_iris=False must reproduce pre-fusion behaviour exactly, even when
+# iris is available and disagrees -- this is the benchmark-reproducibility
+# escape hatch, so it has to actually ignore iris, not just weight it low.
+disabled = PupilDetector(
+    weights_path="unused.pt",
+    landmarker=_IrisLandmarker(iris_x_px, iris_y_px),
+    fuse_iris=False,
+)
+disabled._model = _single_box_model((0.0, 0.0, 2.0, 2.0), 0.9)
+res = disabled.detect(np.zeros((480, 640, 3), dtype=np.uint8))
+pupil = res.pupils["left"]
+check("fuse_iris=False keeps pure YOLO even off-iris", pupil.source == "yolo")
+check("fuse_iris=False reports YOLO's own confidence", pupil.confidence == 0.9)
+check("fuse_iris=False keeps YOLO's real box, not a collapsed point",
+      pupil.bbox_px[2] - pupil.bbox_px[0] > 0)
 
 print("\nreal detector -- construction must stay cheap and lazy")
 detector = PupilDetector(weights_path="does_not_exist.pt")

@@ -190,7 +190,7 @@ function ReportDetail({ sessionId, onBack }) {
 
       <nav className="flex justify-between items-center w-full px-margin-desktop py-4 bg-surface border-b border-outline-variant sticky top-[32px] z-40 bg-opacity-95 backdrop-blur-sm">
         <div className="flex items-center gap-8">
-          <span className="font-display-lg text-display-lg text-primary">GazeLens</span>
+          <span className="font-display-lg text-display-lg text-primary">Fixation</span>
           <button onClick={onBack} className="text-on-surface-variant font-label-caps text-label-caps hover:bg-surface-container transition-colors px-2 py-1">
             ← DASHBOARD
           </button>
@@ -500,7 +500,7 @@ export default function Dashboard({ initialSessionId, onNavigate, hasCalibration
           so without this, a phone-width visitor has no logo, no way to start
           a session, and no logout: a real dead end, not a cosmetic gap. */}
       <header className="md:hidden flex items-center justify-between px-4 py-3 bg-surface-container-low border-b border-outline-variant shrink-0">
-        <span className="font-display-lg text-display-lg text-primary">GazeLens</span>
+        <span className="font-display-lg text-display-lg text-primary">Fixation</span>
         <div className="flex items-center gap-1">
           <button
             onClick={goToNewSession}
@@ -524,7 +524,7 @@ export default function Dashboard({ initialSessionId, onNavigate, hasCalibration
       {/* Left sidebar */}
       <aside className="hidden md:flex flex-col h-screen w-64 bg-surface-container-low border-r border-outline-variant shrink-0">
         <div className="px-6 py-8">
-          <h1 className="font-display-lg text-display-lg text-primary">GazeLens</h1>
+          <h1 className="font-display-lg text-display-lg text-primary">Fixation</h1>
           <div className="mt-6 flex items-center gap-3">
             <div className="w-10 h-10 bg-primary-container rounded flex items-center justify-center text-on-primary-container">
               <span className="material-symbols-outlined">psychology</span>

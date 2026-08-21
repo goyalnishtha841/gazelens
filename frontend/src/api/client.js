@@ -76,12 +76,28 @@ export async function listTestUis(token) {
   return handleResponse(res);
 }
 
-/** Attach a completed calibration session (backend/calibration) and train its gaze model. */
-export async function linkCalibration(token, sessionId, calibrationSessionId, trainModel = true) {
+/**
+ * Attach a completed calibration session (backend/calibration) and train its
+ * gaze model. Sends the CURRENT window size so the server can refuse to
+ * link against a calibration recorded at a different screen size -- see
+ * CalibrationLinkRequest/screen_mismatch in backend/api/schemas.py. Defaults
+ * to the live window's own size, since that's what "the current screen"
+ * means at the call site (starting a session); pass explicit values only if
+ * a caller needs to check on the participant's behalf ahead of time.
+ */
+export async function linkCalibration(
+  token, sessionId, calibrationSessionId, trainModel = true,
+  screenWidth = window.innerWidth, screenHeight = window.innerHeight,
+) {
   const res = await fetch(`${BASE}/${sessionId}/calibration`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
-    body: JSON.stringify({ calibration_session_id: calibrationSessionId, train_model: trainModel }),
+    body: JSON.stringify({
+      calibration_session_id: calibrationSessionId,
+      train_model: trainModel,
+      screen_width: screenWidth,
+      screen_height: screenHeight,
+    }),
   });
   return handleResponse(res);
 }
@@ -176,7 +192,7 @@ export async function downloadSessionPdf(token, sessionId) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `gazelens-report-${sessionId}.pdf`;
+  a.download = `fixation-report-${sessionId}.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();

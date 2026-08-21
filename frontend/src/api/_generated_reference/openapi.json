@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "GazeLens API",
+    "title": "Fixation API",
     "description": "Webcam gaze estimation and multi-agent UX evaluation.",
     "version": "1.0.0"
   },

@@ -2,67 +2,97 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>GazeUX-Agent Report — {{ session_id }}</title>
+<title>Fixation Report — {{ session_id }}</title>
 <style>
-  @page { margin: 18mm 16mm 14mm 16mm; }
+  @page {
+    /* pdf_backends.py's Chromium path sets its own PDF margin box via
+       Playwright's `margin` option (independent of this @page rule), tuned
+       to leave enough room at the bottom for the footer below. This
+       `margin` value is what WeasyPrint actually uses, if that backend
+       becomes available on a given machine. */
+    margin: 20mm 18mm 20mm 18mm;
+    /* Renders on both backends: WeasyPrint via its native paged-media
+       support, and -- confirmed by direct test, not assumed -- this
+       Chromium build too, so no separate Playwright header/footer template
+       is needed in pdf_backends.py. */
+    @bottom-left { content: "FIXATION · CONFIDENTIAL"; font-family: "Courier New", monospace; font-size: 7pt; color: #999; letter-spacing: 0.08em; }
+    @bottom-right { content: "Page " counter(page) " of " counter(pages); font-family: "Courier New", monospace; font-size: 7pt; color: #999; }
+  }
 
+  /* Same tokens as frontend-new/src/index.css (light mode) -- monochromatic
+     palette, one accent, no semantic red/amber/green. Severity below is
+     conveyed by weight/emphasis, not hue, to match that. */
   :root {
-    --ink: #1c2321;
-    --ink-soft: #5b6460;
-    --paper: #f6f7f5;
-    --rule: #d8d5ce;
-    --accent: #1f6f78;
-    --high: #b23a2e;
-    --high-bg: #f6e6e4;
-    --medium: #a4780a;
-    --medium-bg: #f6eedb;
-    --low: #4b6d5a;
-    --low-bg: #e6ede9;
+    --bg: #f7f7f5;
+    --surface: #ffffff;
+    --ink: #111111;
+    --ink-soft: #777777;
+    --rule: #e7e7e4;
+    --accent: #6c63ff;
+    --accent-soft: #6c63ff1a;
   }
 
   * { box-sizing: border-box; }
 
   body {
-    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
     color: var(--ink);
     background: white;
     font-size: 10pt;
-    line-height: 1.5;
+    line-height: 1.55;
     margin: 0;
   }
 
-  /* ---------- Masthead ---------- */
-  .masthead {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    border-bottom: 2px solid var(--ink);
-    padding-bottom: 8px;
-    margin-bottom: 14px;
-  }
-  .masthead .kicker {
-    font-size: 8pt;
+  .label {
+    font-family: "SF Mono", "Courier New", monospace;
+    font-size: 7.5pt;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--accent);
-    font-weight: bold;
-    margin-bottom: 2px;
-  }
-  .masthead .title-block { flex-shrink: 0; }
-  .masthead h1 {
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 20pt;
-    margin: 0 0 2px 0;
-    letter-spacing: -0.01em;
-    white-space: nowrap;
-  }
-  .masthead .subtitle { font-size: 9pt; color: var(--ink-soft); }
-  .masthead .meta {
-    text-align: right;
-    font-size: 8pt;
+    letter-spacing: 0.14em;
     color: var(--ink-soft);
-    font-family: "Courier New", monospace;
-    line-height: 1.6;
+  }
+
+  /* Thin brand band at the top of the first page -- the one flourish a
+     monochrome + single-accent palette can afford, used exactly once.
+     Deliberately NOT bled to the physical page edge via negative margins:
+     WeasyPrint honours the @page margin above, but the Chromium backend
+     (pdf_backends.py) sets its own, different PDF margin box via
+     Playwright's `margin` option -- the two don't agree on a number, so a
+     bar sized to bleed against one would misalign under the other. Staying
+     inside normal content flow works identically under both. */
+  .accent-bar { height: 4px; background: var(--accent); border-radius: 2px; margin: 0 0 22px 0; }
+
+  /* ---------- Masthead: a real cover strip, not a title-left/meta-right
+     header row -- big title alone, then an itemized attribution/meta strip
+     underneath, the way a delivered audit document opens. ---------- */
+  .masthead { margin-bottom: 22px; }
+  .masthead .kicker {
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+  .masthead h1 {
+    font-size: 27pt;
+    font-weight: 700;
+    margin: 0 0 4px 0;
+    letter-spacing: -0.015em;
+  }
+  .masthead .subtitle { font-size: 11pt; color: var(--ink-soft); }
+
+  .meta-strip {
+    display: flex;
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 2px solid var(--ink);
+  }
+  .meta-strip > div {
+    flex: 1;
+    padding-right: 16px;
+  }
+  .meta-strip .label { display: block; margin-bottom: 5px; }
+  .meta-strip .meta-value {
+    font-size: 10pt;
+    font-weight: 600;
+    color: var(--ink);
   }
 
   /* ---------- Severity banner ---------- */
@@ -70,34 +100,54 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 9px 14px;
-    border-radius: 4px;
-    margin-bottom: 14px;
+    padding: 11px 15px;
+    border-radius: 10px;
+    border: 1px solid var(--rule);
+    border-left-width: 3px;
+    margin-bottom: 18px;
     font-size: 10pt;
-    font-weight: bold;
+    font-weight: 600;
+    background: var(--surface);
     page-break-inside: avoid;
   }
-  .banner-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-  .banner-critical { background: var(--high-bg); color: var(--high); }
-  .banner-critical .banner-dot { background: var(--high); }
-  .banner-warning { background: var(--medium-bg); color: var(--medium); }
-  .banner-warning .banner-dot { background: var(--medium); }
-  .banner-good { background: var(--low-bg); color: var(--low); }
-  .banner-good .banner-dot { background: var(--low); }
+  .banner-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--ink-soft); }
+  .banner-critical { border-left-color: var(--accent); background: var(--accent-soft); }
+  .banner-critical .banner-dot { background: var(--accent); }
+  .banner-warning { border-left-color: var(--ink); }
+  .banner-warning .banner-dot { background: var(--ink); }
+  .banner-good { border-left-color: var(--rule); color: var(--ink-soft); font-weight: 500; }
 
   .summary-text {
-    font-size: 10pt;
-    margin: 0 0 16px 0;
+    font-size: 10.5pt;
+    line-height: 1.65;
+    margin: 0 0 22px 0;
     color: var(--ink);
   }
 
-  h2.section-title {
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 12.5pt;
-    margin: 20px 0 8px 0;
-    padding-bottom: 4px;
-    border-bottom: 1px solid var(--rule);
+  /* Section headers: a numbered badge + real heading, not just a small
+     uppercase label standing in for one -- reads as document structure
+     from across the room, the way a numbered report section should. */
+  .section-title {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin: 32px 0 14px 0;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule);
     page-break-after: avoid;
+  }
+  .section-title .section-num {
+    font-family: "SF Mono", "Courier New", monospace;
+    font-size: 9pt;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.04em;
+  }
+  .section-title .section-heading {
+    font-size: 14pt;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--ink);
   }
 
   /* ---------- Stat cards ---------- */
@@ -109,31 +159,27 @@
   }
   .summary-card {
     flex: 1;
-    background: var(--paper);
+    background: var(--surface);
     border: 1px solid var(--rule);
-    border-radius: 3px;
-    padding: 8px 10px;
+    border-radius: 10px;
+    padding: 12px 14px;
   }
-  .summary-card .label {
-    font-size: 7pt;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--ink-soft);
-    margin-bottom: 3px;
-  }
+  .summary-card .label { display: block; margin-bottom: 5px; }
   .summary-card .value {
-    font-family: "Courier New", monospace;
-    font-size: 10.5pt;
+    font-family: "SF Mono", "Courier New", monospace;
+    font-size: 12pt;
+    font-weight: 600;
+    color: var(--ink);
   }
 
   /* ---------- Heatmap ---------- */
   .heatmap-block {
     text-align: center;
-    margin: 8px 0 2px 0;
+    margin: 12px 0 4px 0;
     page-break-inside: avoid;
   }
-  .heatmap-block img { width: 100%; border: 1px solid var(--rule); border-radius: 3px; }
-  .heatmap-caption { font-size: 7.5pt; color: var(--ink-soft); margin-top: 3px; }
+  .heatmap-block img { width: 100%; border: 1px solid var(--rule); border-radius: 10px; }
+  .heatmap-caption { font-size: 7.5pt; color: var(--ink-soft); margin-top: 5px; }
 
   /* ---------- Issues table ---------- */
   table.issues { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
@@ -141,96 +187,135 @@
   table.issues tr { page-break-inside: avoid; }
   table.issues th {
     text-align: left;
+    font-family: "SF Mono", "Courier New", monospace;
     font-size: 7pt;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.08em;
     color: var(--ink-soft);
-    border-bottom: 1px solid var(--ink);
-    padding: 5px 7px;
+    border-bottom: 1.5px solid var(--ink);
+    padding: 7px 8px;
   }
-  table.issues td { padding: 6px 7px; border-bottom: 1px solid var(--rule); vertical-align: top; }
-  .severity-pill { display: inline-block; font-size: 7pt; font-weight: bold; padding: 2px 7px; border-radius: 9px; }
-  .severity-High { background: var(--high-bg); color: var(--high); }
-  .severity-Medium { background: var(--medium-bg); color: var(--medium); }
-  .severity-Low { background: var(--low-bg); color: var(--low); }
-  .evidence-text { font-family: "Courier New", monospace; font-size: 7.5pt; color: var(--ink-soft); }
+  table.issues td { padding: 9px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  table.issues tbody tr:nth-child(even) td { background: var(--bg); }
+  .severity-pill {
+    display: inline-block;
+    font-family: "SF Mono", "Courier New", monospace;
+    font-size: 7pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 8px;
+    border-radius: 9px;
+    border: 1px solid var(--rule);
+    color: var(--ink-soft);
+    background: var(--surface);
+  }
+  .severity-High { border-color: var(--accent); color: var(--accent); }
+  .severity-Medium { color: var(--ink); }
+  .evidence-text { font-family: "SF Mono", "Courier New", monospace; font-size: 7.5pt; color: var(--ink-soft); }
 
   /* ---------- Recommendation cards ---------- */
   .rec-card {
+    background: var(--surface);
     border: 1px solid var(--rule);
-    border-left: 4px solid var(--ink);
-    border-radius: 2px;
-    padding: 8px 11px;
-    margin-bottom: 8px;
+    border-left: 3px solid var(--ink-soft);
+    border-radius: 10px;
+    padding: 12px 15px;
+    margin-bottom: 10px;
     page-break-inside: avoid;
   }
-  .rec-card.support-Strong { border-left-color: var(--low); }
-  .rec-card.support-Weak { border-left-color: var(--medium); }
-  .rec-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
-  .rec-element { font-family: "Courier New", monospace; font-size: 7.5pt; color: var(--ink-soft); }
-  .confidence-meter { display: flex; align-items: center; gap: 5px; }
-  .confidence-track { width: 55px; height: 5px; background: var(--rule); border-radius: 3px; overflow: hidden; }
-  .confidence-fill { height: 100%; background: var(--ink); }
-  .confidence-label { font-family: "Courier New", monospace; font-size: 7.5pt; }
-  .rec-text { font-size: 9pt; margin-bottom: 5px; }
-  .rec-evidence-list { margin: 0; padding-left: 15px; font-size: 7.5pt; color: var(--ink-soft); font-family: "Courier New", monospace; }
+  .rec-card.support-Strong { border-left-color: var(--accent); }
+  .rec-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
+  .rec-element { font-family: "SF Mono", "Courier New", monospace; font-size: 7.5pt; color: var(--ink-soft); }
+  .confidence-meter { display: flex; align-items: center; gap: 6px; }
+  .confidence-track { width: 55px; height: 4px; background: var(--rule); border-radius: 3px; overflow: hidden; }
+  .confidence-fill { height: 100%; background: var(--accent); }
+  .confidence-label { font-family: "SF Mono", "Courier New", monospace; font-size: 7.5pt; color: var(--ink-soft); }
+  .rec-text { font-size: 9.5pt; line-height: 1.5; margin-bottom: 7px; color: var(--ink); }
+  .rec-evidence-list { margin: 0; padding-left: 15px; font-size: 7.5pt; color: var(--ink-soft); font-family: "SF Mono", "Courier New", monospace; }
 
   /* ---------- Before / After ---------- */
-  table.before-after { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-bottom: 6px; }
+  table.before-after { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-bottom: 10px; }
   table.before-after thead { display: table-header-group; }
   table.before-after tr { page-break-inside: avoid; }
   table.before-after th {
     text-align: left;
+    font-family: "SF Mono", "Courier New", monospace;
     font-size: 7pt;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.08em;
     color: var(--ink-soft);
-    border-bottom: 1px solid var(--ink);
-    padding: 5px 7px;
+    border-bottom: 1.5px solid var(--ink);
+    padding: 7px 8px;
   }
-  table.before-after td { padding: 7px; border-bottom: 1px solid var(--rule); vertical-align: top; }
-  .ba-element { font-family: "Courier New", monospace; font-size: 7.8pt; width: 18%; }
-  .ba-support { display: block; margin-top: 4px; font-size: 7pt; font-family: inherit; }
-  .ba-support.support-Strong { color: var(--low); }
-  .ba-support.support-Weak { color: var(--medium); }
-  .ba-before { font-family: "Courier New", monospace; font-size: 7.5pt; color: var(--ink-soft); width: 38%; }
-  .ba-after { font-size: 8.5pt; width: 44%; }
-  .before-after-note { font-size: 7.3pt; color: var(--ink-soft); margin-bottom: 10px; font-style: italic; }
+  table.before-after td { padding: 9px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  table.before-after tbody tr:nth-child(even) td { background: var(--bg); }
+  .ba-element { font-family: "SF Mono", "Courier New", monospace; font-size: 7.8pt; width: 18%; color: var(--ink); }
+  .ba-support { display: block; margin-top: 4px; font-size: 7pt; font-family: inherit; color: var(--ink-soft); }
+  .ba-support.support-Strong { color: var(--accent); }
+  .ba-before { font-family: "SF Mono", "Courier New", monospace; font-size: 7.5pt; color: var(--ink-soft); width: 38%; }
+  .ba-after { font-size: 8.5pt; width: 44%; color: var(--ink); }
+  .before-after-note { font-size: 7.3pt; color: var(--ink-soft); margin-bottom: 10px; }
 
   .rejected-block {
-    margin-top: 10px;
-    padding: 8px 11px;
-    background: var(--paper);
+    margin-top: 14px;
+    padding: 12px 15px;
+    background: var(--bg);
     border: 1px dashed var(--rule);
-    border-radius: 3px;
+    border-radius: 10px;
     font-size: 7.8pt;
     color: var(--ink-soft);
     page-break-inside: avoid;
   }
-  .rejected-block h3 { font-size: 8.5pt; margin: 0 0 5px 0; color: var(--ink); }
+  .rejected-block h3 {
+    font-family: "SF Mono", "Courier New", monospace;
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+    margin: 0 0 6px 0;
+    color: var(--ink);
+  }
 
-  .empty-state { font-size: 9pt; color: var(--ink-soft); font-style: italic; padding: 6px 0; }
+  .empty-state { font-size: 9pt; color: var(--ink-soft); padding: 6px 0; }
 
   .footer-note {
-    margin-top: 18px;
-    padding-top: 6px;
-    border-top: 1px solid var(--rule);
-    font-size: 7pt;
+    margin-top: 28px;
+    padding-top: 14px;
+    border-top: 2px solid var(--ink);
+    font-size: 7.5pt;
+    line-height: 1.6;
     color: var(--ink-soft);
   }
+  .footer-note strong { color: var(--ink); }
 </style>
 </head>
 <body>
 
+  <div class="accent-bar"></div>
+
   <div class="masthead">
-    <div class="title-block">
-      <div class="kicker">Gaze-Driven UX Evaluation</div>
-      <h1>GazeUX-Agent Report</h1>
-      <div class="subtitle">{{ ui_page.replace("_", " ")|title }}</div>
-    </div>
-    <div class="meta">
-      SESSION {{ session_id }}<br>
-      GENERATED {{ generated_at }}
+    <div class="label kicker">Gaze-Driven UX Evaluation · Confidential</div>
+    <h1>Fixation Report</h1>
+    <div class="subtitle">{{ ui_page.replace("_", " ")|title }}</div>
+
+    <div class="meta-strip">
+      <div>
+        <span class="label">Prepared by</span>
+        <span class="meta-value">Fixation</span>
+      </div>
+      <div>
+        <span class="label">Page evaluated</span>
+        <span class="meta-value">{{ ui_page.replace("_", " ")|title }}</span>
+      </div>
+      <div>
+        <span class="label">Session</span>
+        <span class="meta-value">{{ session_id }}</span>
+      </div>
+      <div style="padding-right: 0;">
+        <span class="label">Generated</span>
+        <span class="meta-value">{{ generated_at }}</span>
+      </div>
     </div>
   </div>
 
@@ -274,7 +359,7 @@
   </div>
   {% endif %}
 
-  <h2 class="section-title">Usability Issues</h2>
+  <div class="section-title"><span class="section-num">01</span><span class="section-heading">Usability Issues</span></div>
   {% if issues %}
   <table class="issues">
     <thead>
@@ -295,7 +380,7 @@
   <div class="empty-state">No usability issues detected against current thresholds.</div>
   {% endif %}
 
-  <h2 class="section-title">Recommendations</h2>
+  <div class="section-title"><span class="section-num">02</span><span class="section-heading">Recommendations</span></div>
   {% if recommendations_kept %}
     {% for rec in recommendations_kept %}
     <div class="rec-card support-{{ rec.support }}">
@@ -328,7 +413,7 @@
   {% endif %}
 
   {% if before_after %}
-  <h2 class="section-title">Before / After</h2>
+  <div class="section-title"><span class="section-num">03</span><span class="section-heading">Before / After</span></div>
   <table class="before-after">
     <thead>
       <tr>
@@ -357,8 +442,9 @@
   {% endif %}
 
   <div class="footer-note">
-    Generated by GazeUX-Agent · Every recommendation above was independently re-verified against raw session
-    metrics by the Critic/Verifier agent before inclusion. Filtered items were rejected for lacking measurable support.
+    <strong>Generated by Fixation</strong> · Gaze-Driven UX Evaluation Platform<br>
+    Every recommendation above was independently re-verified against raw session metrics by the Critic/Verifier
+    agent before inclusion. Filtered items were rejected for lacking measurable support.
   </div>
 
 </body>

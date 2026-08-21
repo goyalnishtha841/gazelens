@@ -35,12 +35,12 @@ API_DIR = Path(__file__).resolve().parent
 
 # Overridable so the tests can point at a temp file instead of the real DB.
 DATABASE_URL = os.environ.get(
-    "GAZELENS_DATABASE_URL",
-    f"sqlite:///{(API_DIR / 'gazelens.db').as_posix()}",
+    "FIXATION_DATABASE_URL",
+    f"sqlite:///{(API_DIR / 'fixation.db').as_posix()}",
 )
 
 # Where per-session bulk data (gaze streams, generated reports) is written.
-DATA_DIR = Path(os.environ.get("GAZELENS_DATA_DIR", API_DIR / "session_data"))
+DATA_DIR = Path(os.environ.get("FIXATION_DATA_DIR", API_DIR / "session_data"))
 
 
 class Base(DeclarativeBase):
@@ -100,7 +100,7 @@ def init_db(drop: bool = False) -> None:
             except OSError as exc:
                 raise RuntimeError(
                     f"cannot create the database directory {db_file.parent}: {exc}\n"
-                    f"GAZELENS_DATABASE_URL={DATABASE_URL}"
+                    f"FIXATION_DATABASE_URL={DATABASE_URL}"
                 ) from exc
 
     try:
@@ -110,7 +110,7 @@ def init_db(drop: bool = False) -> None:
     except OperationalError as exc:
         raise RuntimeError(
             f"could not open the database at {DATABASE_URL}.\n"
-            f"Check the path is writable, or set GAZELENS_DATABASE_URL to one "
+            f"Check the path is writable, or set FIXATION_DATABASE_URL to one "
             f"that is.\nUnderlying error: {exc.orig}"
         ) from exc
 

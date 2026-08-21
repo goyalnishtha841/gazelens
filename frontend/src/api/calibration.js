@@ -26,8 +26,8 @@ async function handleResponse(res) {
   return res.json();
 }
 
-/** pattern: 9 or 16 targets. screenWidth/screenHeight: viewport px. */
-export async function startCalibration({ participantId, pattern = 9, screenWidth, screenHeight, samplesPerPoint }) {
+/** pattern: 9 or 16 targets (16 matches the backend's own default). screenWidth/screenHeight: viewport px. */
+export async function startCalibration({ participantId, pattern = 16, screenWidth, screenHeight, samplesPerPoint }) {
   const res = await fetch(`${BASE}/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

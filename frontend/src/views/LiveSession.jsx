@@ -177,9 +177,12 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
       const link = await linkCalibration(token, created.id, calibrationSessionId, true);
       if (!link.gaze_model_trained) {
         setStartError(
-          "Calibration wasn't accurate enough to train a gaze model. This usually means the pupil " +
-            "detector couldn't find your eyes in enough frames -- try even lighting on your face, sit " +
-            "square to the camera at arm's length, and remove glasses glare if you can."
+          link.screen_mismatch
+            ? "Your screen has changed since you calibrated (different window size, monitor, or " +
+                "zoom level). The gaze mapping is tied to that exact screen, so please recalibrate here."
+            : "Calibration wasn't accurate enough to train a gaze model. This usually means the pupil " +
+                "detector couldn't find your eyes in enough frames -- try even lighting on your face, sit " +
+                "square to the camera at arm's length, and remove glasses glare if you can."
         );
         setStartErrorDetail(link.message);
         setNeedsRecalibration(true);
@@ -462,7 +465,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
       <header className="bg-surface border-b border-outline-variant flex justify-between items-center w-full px-margin-desktop py-4 z-50">
         <div className="flex items-center gap-8">
           <button onClick={handleEnd} className="font-display-lg text-display-lg text-primary hover:opacity-80 transition-opacity">
-            GazeLens
+            Fixation
           </button>
           <nav className="hidden md:flex gap-6 items-center">
             <span className="text-primary font-bold border-b-2 border-primary py-1">Live Session</span>

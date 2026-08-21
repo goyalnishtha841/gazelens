@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from "rea
 import * as authApi from "../api/auth.js";
 
 const AuthContext = createContext(null);
-const TOKEN_STORAGE_KEY = "gazelens_token";
+const TOKEN_STORAGE_KEY = "fixation_token";
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);

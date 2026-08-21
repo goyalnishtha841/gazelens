@@ -24,7 +24,7 @@ import bcrypt
 import jwt
 
 ALGORITHM = "HS256"
-ACCESS_TOKEN_TTL_MINUTES = int(os.environ.get("GAZELENS_TOKEN_TTL_MINUTES", "720"))
+ACCESS_TOKEN_TTL_MINUTES = int(os.environ.get("FIXATION_TOKEN_TTL_MINUTES", "720"))
 
 # bcrypt's hard limit. Enforced here so an over-long password is a clean 422
 # rather than a truncation nobody notices.
@@ -35,7 +35,7 @@ MIN_PASSWORD_LENGTH = 8
 # Where a generated key is persisted when the environment doesn't supply one.
 # Gitignored, like the database.
 SECRET_FILE = Path(
-    os.environ.get("GAZELENS_SECRET_FILE", Path(__file__).resolve().parent / ".secret_key")
+    os.environ.get("FIXATION_SECRET_FILE", Path(__file__).resolve().parent / ".secret_key")
 )
 
 # HS256 keys shorter than this make PyJWT warn (RFC 7518 §3.2).
@@ -58,11 +58,11 @@ def _load_secret() -> str:
     If the file can't be written (read-only checkout, locked-down CI) it falls
     back to the old per-process key and says so.
     """
-    key = os.environ.get("GAZELENS_SECRET_KEY")
+    key = os.environ.get("FIXATION_SECRET_KEY")
     if key:
         if len(key.encode()) < MIN_SECRET_BYTES:
             warnings.warn(
-                f"GAZELENS_SECRET_KEY is only {len(key.encode())} bytes; "
+                f"FIXATION_SECRET_KEY is only {len(key.encode())} bytes; "
                 f"HS256 wants at least {MIN_SECRET_BYTES}.",
                 RuntimeWarning, stacklevel=2,
             )
@@ -82,7 +82,7 @@ def _load_secret() -> str:
         except OSError:
             pass
         warnings.warn(
-            f"GAZELENS_SECRET_KEY was not set, so a key was generated and "
+            f"FIXATION_SECRET_KEY was not set, so a key was generated and "
             f"saved to {SECRET_FILE} (gitignored). Tokens will survive "
             f"restarts. For a deployment, set the environment variable "
             f"instead and delete that file.",
@@ -91,7 +91,7 @@ def _load_secret() -> str:
         return generated
     except OSError as exc:
         warnings.warn(
-            f"GAZELENS_SECRET_KEY is not set and {SECRET_FILE} could not be "
+            f"FIXATION_SECRET_KEY is not set and {SECRET_FILE} could not be "
             f"written ({exc}) -- falling back to a random per-process key. "
             f"Tokens will be invalidated on every restart.",
             RuntimeWarning, stacklevel=2,

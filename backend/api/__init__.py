@@ -1,5 +1,5 @@
 """
-backend/api -- the GazeLens HTTP API and the integration layer.
+backend/api -- the Fixation HTTP API and the integration layer.
 
     cd backend
     uvicorn api.main:app --reload --port 8000

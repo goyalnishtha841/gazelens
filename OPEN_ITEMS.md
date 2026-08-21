@@ -23,7 +23,7 @@ non-interactive session cannot run an OAuth flow).
    Once connected, I can pull the file into `models/` directly.
 2. **Copy it manually** — drop `pupil_yolo_final.pt` into `models/`. Nothing
    else changes: `backend/cv` resolves weights in the order
-   *explicit argument → `$GAZELENS_PUPIL_WEIGHTS` → `pupil_yolo_final.pt` →
+   *explicit argument → `$FIXATION_PUPIL_WEIGHTS` → `pupil_yolo_final.pt` →
    smoke-test stand-in*, so it is picked up automatically.
 
 **Verify it took:**
@@ -176,7 +176,7 @@ lints clean end to end (`ruff check backend/ scripts/ --select F,E9,B,A`).
 has collected participant data worth migrating rather than regenerating** —
 that will be during the pilot, not after it.
 
-**`GAZELENS_SECRET_KEY`** — a key is auto-generated into
+**`FIXATION_SECRET_KEY`** — a key is auto-generated into
 `backend/api/.secret_key` (gitignored) so tokens survive restarts. For
 anything deployed beyond a study laptop, set the environment variable
 explicitly and delete that file.

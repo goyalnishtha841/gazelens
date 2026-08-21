@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* RGB triplets (not hex) -- Tailwind's opacity modifiers (bg-accent/20 etc.)
+   need `rgb(var(--x) / <alpha-value>)`, which only works with component
+   values, not a single hex string. See tailwind.config.js. */
+:root {
+  --color-bg: 247 247 245;
+  --color-surface: 255 255 255;
+  --color-text-primary: 17 17 17;
+  --color-text-secondary: 119 119 119;
+  --color-border: 231 231 228;
+  --color-accent: 108 99 255;
+  --color-accent-soft: #6c63ff1a;
+}
+
+.dark {
+  --color-bg: 11 11 13;
+  --color-surface: 18 18 20;
+  --color-text-primary: 244 244 242;
+  --color-text-secondary: 133 133 140;
+  --color-border: 36 36 40;
+  --color-accent: 169 163 255;
+  --color-accent-soft: #a9a3ff26;
+}
+
+* {
+  border-color: rgb(var(--color-border));
+}
+
+html {
+  color-scheme: light;
+  scroll-behavior: smooth;
+}
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  background-color: rgb(var(--color-bg));
+  color: rgb(var(--color-text-primary));
+  font-family: "Inter", "SF Pro Display", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Theme transition: applied only while the toggle is mid-flight (see
+   ThemeContext) so ordinary hover/focus states don't inherit a 500ms lag. */
+.theme-transitioning,
+.theme-transitioning * {
+  transition: background-color 500ms ease, color 500ms ease, border-color 500ms ease,
+    fill 500ms ease, stroke 500ms ease !important;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+}
+
+@keyframes gaze-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes count-up-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

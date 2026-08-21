@@ -2,9 +2,10 @@
 make_lpw_split.py
 
 Builds a SUBJECT-WISE train/val/test split of LPW, and a deliberately leaky
-train==val config to measure against.
+train==val config to measure against. Defaults to the exact subject split
+behind the published paper's numbers -- see DEFAULT_TEST_SUBJECTS below.
 
-    python scripts/make_lpw_split.py --dataset ../eye-gaze-lpw/dataset
+    python scripts/make_lpw_split.py --dataset dataset
 
 WHY THIS EXISTS
 ---------------
@@ -35,7 +36,6 @@ OUTPUT
 
 import argparse
 import json
-import random
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -43,10 +43,27 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 FRAME_RE = re.compile(r"^(\d+)_(\d+)_(\d+)\.(jpg|jpeg|png)$", re.IGNORECASE)
 
-# 16/3/3 of 22 subjects. Test is held back entirely -- it should be touched
-# once, for the final table, not while tuning.
-DEFAULT_VAL_SUBJECTS = 3
-DEFAULT_TEST_SUBJECTS = 3
+# 13/4/5 of 22 subjects -- the exact split behind the published paper's
+# numbers ("A Comparative Evaluation of Deep Learning Architectures for
+# Pupil Localization: YOLOv8, SSD, and Faster R-CNN"), not a random shuffle.
+# Test is held back entirely -- it should be touched once, for the final
+# table, not while tuning.
+#
+# Subjects were chosen by hand, not at random, because only two of LPW's 22
+# subjects (3 and 5) ever wear glasses, across six videos total -- glasses
+# is the single biggest failure mode this project measures, so where those
+# two land is the binding constraint on the whole split:
+#   - subject 5 -> TEST, so occlusion robustness is measured on data that
+#     had zero influence on any training decision.
+#   - subject 3 -> TRAIN, so the models have actually seen glasses at least
+#     once before being tested on them, rather than measuring
+#     generalisation to a wholly unseen condition.
+# TEST's other subjects were then picked for full recording-condition
+# coverage (indoor/outdoor, natural/artificial light) so the per-condition
+# table has no empty cells; VAL only selects checkpoints and never appears
+# in a reported metric, so it carries no such constraint.
+DEFAULT_TEST_SUBJECTS = ["1", "2", "4", "5", "22"]
+DEFAULT_VAL_SUBJECTS = ["6", "8", "9", "10"]
 
 
 def index_by_subject(images_dir: Path):
@@ -63,11 +80,16 @@ def index_by_subject(images_dir: Path):
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Subject-wise LPW split")
-    ap.add_argument("--dataset", default="../../eye-gaze-lpw/dataset",
-                    help="folder containing images/ and labels/")
-    ap.add_argument("--val-subjects", type=int, default=DEFAULT_VAL_SUBJECTS)
-    ap.add_argument("--test-subjects", type=int, default=DEFAULT_TEST_SUBJECTS)
-    ap.add_argument("--seed", type=int, default=17)
+    ap.add_argument("--dataset", default="dataset",
+                    help="folder containing images/ and labels/ "
+                         "(scripts/run_extract.py + run_labels.py populate this "
+                         "from LPW/LPW/)")
+    ap.add_argument("--val-subjects", nargs="+", default=DEFAULT_VAL_SUBJECTS,
+                    help=f"subject IDs used ONLY to select checkpoints "
+                         f"(default, matching the paper: {' '.join(DEFAULT_VAL_SUBJECTS)})")
+    ap.add_argument("--test-subjects", nargs="+", default=DEFAULT_TEST_SUBJECTS,
+                    help=f"subject IDs used ONLY for the reported numbers "
+                         f"(default, matching the paper: {' '.join(DEFAULT_TEST_SUBJECTS)})")
     ap.add_argument("--limit-per-subject", type=int, default=0,
                     help="sample N frames per subject (0 = all). Use for a "
                          "CPU-feasible run; consecutive frames are nearly "
@@ -91,17 +113,24 @@ def main() -> int:
         return 1
 
     subjects = sorted(by_subject, key=lambda s: int(s))
-    n_val, n_test = args.val_subjects, args.test_subjects
-    if n_val + n_test >= len(subjects):
-        print(f"Only {len(subjects)} subjects; can't hold out {n_val + n_test}.")
+    val_s = sorted(set(args.val_subjects), key=int)
+    test_s = sorted(set(args.test_subjects), key=int)
+
+    overlap = set(val_s) & set(test_s)
+    if overlap:
+        print(f"Subjects {sorted(overlap, key=int)} are in BOTH val and test.")
         return 1
 
-    rng = random.Random(args.seed)
-    shuffled = subjects[:]
-    rng.shuffle(shuffled)
-    test_s = sorted(shuffled[:n_test], key=int)
-    val_s = sorted(shuffled[n_test:n_test + n_val], key=int)
-    train_s = sorted(shuffled[n_test + n_val:], key=int)
+    unknown = (set(val_s) | set(test_s)) - set(subjects)
+    if unknown:
+        print(f"Requested subjects not present in {images_dir}: {sorted(unknown, key=int)}\n"
+              f"Available: {subjects}")
+        return 1
+
+    train_s = sorted((set(subjects) - set(val_s) - set(test_s)), key=int)
+    if not train_s:
+        print("val + test would consume every subject, leaving nothing to train on")
+        return 1
 
     def collect(subject_ids):
         out = []
@@ -145,9 +174,11 @@ def main() -> int:
         "#\n"
         "# `path` below is absolute and machine-specific -- the path lists live\n"
         "# under runs/, which is gitignored. Regenerate on any machine with:\n"
-        f"#   python scripts/make_lpw_split.py --seed {args.seed}"
+        f"#   python scripts/make_lpw_split.py --val-subjects {' '.join(val_s)} "
+        f"--test-subjects {' '.join(test_s)}"
         f"{f' --limit-per-subject {args.limit_per_subject}' if args.limit_per_subject else ''}\n"
-        "# Same seed + same dataset reproduces this exact split.\n"
+        "# Fixed subject IDs, not a random seed -- this split matches the\n"
+        "# published paper's exact train/val/test subjects and is deterministic.\n"
         f"path: {out_dir.resolve().as_posix()}\n"
         "train: train.txt\n"
         "val: val.txt\n"
@@ -170,7 +201,6 @@ def main() -> int:
         encoding="utf-8")
 
     manifest = {
-        "seed": args.seed,
         "limit_per_subject": args.limit_per_subject or None,
         "split_by": "subject",
         "rationale": "LPW frames are consecutive video frames; a random frame "

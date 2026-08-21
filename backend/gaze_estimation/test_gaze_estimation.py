@@ -102,8 +102,8 @@ def expect_http(label, coro, status_code):
 # ----------------------------------------------------------------------
 # isolation: temp dirs for both calibration sessions and trained models
 
-cal_dir = Path(tempfile.mkdtemp(prefix="gazelens_ge_cal_"))
-model_dir = Path(tempfile.mkdtemp(prefix="gazelens_ge_models_"))
+cal_dir = Path(tempfile.mkdtemp(prefix="fixation_ge_cal_"))
+model_dir = Path(tempfile.mkdtemp(prefix="fixation_ge_models_"))
 set_store(CalibrationStore(data_dir=cal_dir))
 set_model_dir(model_dir)
 

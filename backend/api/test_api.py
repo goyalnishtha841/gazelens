@@ -34,13 +34,13 @@ BACKEND = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND))
 
 # Must be set before api.db is imported -- it reads these at module scope.
-_TMP = Path(tempfile.mkdtemp(prefix="gazelens_api_test_"))
-os.environ["GAZELENS_DATABASE_URL"] = f"sqlite:///{(_TMP / 'test.db').as_posix()}"
-os.environ["GAZELENS_DATA_DIR"] = str(_TMP / "data")
+_TMP = Path(tempfile.mkdtemp(prefix="fixation_api_test_"))
+os.environ["FIXATION_DATABASE_URL"] = f"sqlite:///{(_TMP / 'test.db').as_posix()}"
+os.environ["FIXATION_DATA_DIR"] = str(_TMP / "data")
 # >=32 bytes: PyJWT warns below that for HS256 (RFC 7518 §3.2), and a warning
 # on every run trains people to ignore warnings.
 os.environ.setdefault(
-    "GAZELENS_SECRET_KEY",
+    "FIXATION_SECRET_KEY",
     "test-only-key-not-for-deployment-0123456789abcdef",
 )
 
@@ -176,12 +176,12 @@ try:
 
     print("\nauth -- addresses the API will actually accept")
     # EmailStr rejects special-use/reserved domains. This caught a real bug:
-    # init_db --demo-user used to create demo@gazelens.local, which meant the
+    # init_db --demo-user used to create demo@fixation.local, which meant the
     # demo account could never log in -- /api/auth/login 422s on the address
     # before it ever checks the password.
     from pydantic import ValidationError
 
-    for bad in ("demo@gazelens.local", "user@localhost", "not-an-email"):
+    for bad in ("demo@fixation.local", "user@localhost", "not-an-email"):
         try:
             SignupRequest(email=bad, password="whatever-123")
             check(f"rejects {bad}", False)
@@ -407,6 +407,36 @@ try:
                 session_routes.link_calibration(
                     session_id, CalibrationLinkRequest(calibration_session_id="cal_nope"),
                     alice_user, db), 404)
+
+    # ------------------------------------------------------------------
+    print("\nsessions -- calibration link refuses a mismatched screen")
+    # cal_session above was generated at the synthetic default, 1920x1080.
+    mismatched = run(session_routes.link_calibration(
+        session_id,
+        CalibrationLinkRequest(calibration_session_id=cal_session.session_id,
+                                screen_width=1280, screen_height=720),
+        alice_user, db))
+    check("mismatch flagged", mismatched.screen_mismatch is True)
+    check("gaze model not trained on a mismatched screen",
+          mismatched.gaze_model_trained is False)
+    check("message names both sizes", "1920x1080" in mismatched.message
+          and "1280x720" in mismatched.message)
+
+    within_tolerance = run(session_routes.link_calibration(
+        session_id,
+        CalibrationLinkRequest(calibration_session_id=cal_session.session_id,
+                                screen_width=1930, screen_height=1085),
+        alice_user, db))
+    check("a few px of difference is not a mismatch (scrollbar/chrome noise)",
+          within_tolerance.screen_mismatch is False)
+    check("and training proceeds normally", within_tolerance.gaze_model_trained is True)
+
+    no_dims_supplied = run(session_routes.link_calibration(
+        session_id,
+        CalibrationLinkRequest(calibration_session_id=cal_session.session_id),
+        alice_user, db))
+    check("omitting screen dims skips the check rather than assuming a mismatch",
+          no_dims_supplied.screen_mismatch is False)
 
     detail = run(session_routes.get_session(session_id, alice_user, db))
     check("detail exposes the calibration summary", detail.calibration is not None)

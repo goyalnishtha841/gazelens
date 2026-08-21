@@ -150,7 +150,7 @@ print("\ncapture -- a real page through headless Chromium")
 if not render_available():
     skip("capture end-to-end", "playwright not installed")
 else:
-    tmp = Path(tempfile.mkdtemp(prefix="gazelens_render_test_"))
+    tmp = Path(tempfile.mkdtemp(prefix="fixation_render_test_"))
     page = tmp / "fixture.html"
     page.write_text(FIXTURE, encoding="utf-8")
     shot = tmp / "shot.png"

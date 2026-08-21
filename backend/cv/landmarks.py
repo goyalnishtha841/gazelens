@@ -60,6 +60,18 @@ _RIGHT_EYE_IDX = (
     466, 388, 387, 386, 385, 384, 398,
 )
 
+# Iris centre landmarks (only present because face_landmarker.task ships
+# MediaPipe's attention-mesh refinement, which is always on in the Tasks
+# API -- see the module docstring). Each eye gets 5 points: a centre plus 4
+# boundary points; only the centre is used here.
+#
+# Verified empirically against a live frame, not just against MediaPipe's
+# published FACEMESH_LEFT_IRIS/RIGHT_IRIS constants -- those name the sets
+# by the mesh's own left/right, which turned out to be the opposite of this
+# file's camera-side convention (region.iris_x_px landed outside its own
+# eye box until this was swapped). 468 -> left, 473 -> right here.
+_IRIS_CENTER_IDX = {"left": 468, "right": 473}
+
 # Extra margin around the landmark hull, as a fraction of box size. The
 # contour hugs the eyelids; the pupil can sit right on that edge when the
 # user looks to a screen corner, which is exactly the case calibration
@@ -198,6 +210,9 @@ class EyeLandmarker:
         for side, idx in (("left", _LEFT_EYE_IDX), ("right", _RIGHT_EYE_IDX)):
             region = self._box_from_indices(lm, idx, side, w, h)
             if region is not None and region.is_valid:
+                iris = lm[_IRIS_CENTER_IDX[side]]
+                region.iris_x_px = iris.x * w
+                region.iris_y_px = iris.y * h
                 regions[side] = region
 
         return regions, self._head_proxy(lm)

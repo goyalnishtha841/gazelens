@@ -24,7 +24,7 @@ from .models import Session as SessionModel, User
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Create the GazeLens schema")
+    parser = argparse.ArgumentParser(description="Create the Fixation schema")
     parser.add_argument("--reset", action="store_true",
                        help="DROP all tables first -- destroys existing sessions")
     parser.add_argument("--yes", action="store_true", help="skip the --reset prompt")

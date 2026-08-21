@@ -108,7 +108,7 @@ be unable to distinguish it from one that was never created.
 Login returns the same 401 for "no such account" and "wrong password" —
 distinguishing them turns the endpoint into an account-enumeration oracle.
 
-`GAZELENS_SECRET_KEY` **must be set before the pilot study.** Unset, the app
+`FIXATION_SECRET_KEY` **must be set before the pilot study.** Unset, the app
 generates a random key per process and warns loudly: tokens then break on
 every restart, which is annoying in dev and safe everywhere. A hardcoded
 default would have shipped into the deployment and let anyone mint a token

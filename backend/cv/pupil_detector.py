@@ -38,13 +38,13 @@ DEFAULT_WEIGHTS = _MODELS / "pupil_yolo_final.pt"
 SMOKETEST_WEIGHTS = _MODELS / "pupil_smoketest.pt"
 
 # Escape hatch for anyone keeping weights outside the repo.
-WEIGHTS_ENV_VAR = "GAZELENS_PUPIL_WEIGHTS"
+WEIGHTS_ENV_VAR = "FIXATION_PUPIL_WEIGHTS"
 
 
 def resolve_weights(explicit: Optional[Path] = None) -> tuple[Optional[Path], bool]:
     """Pick the weights to use. Returns (path, is_smoketest).
 
-    Order: explicit argument, then $GAZELENS_PUPIL_WEIGHTS, then the real
+    Order: explicit argument, then $FIXATION_PUPIL_WEIGHTS, then the real
     detector, then the synthetic smoke-test stand-in. Returns (None, False)
     when nothing is available.
 
@@ -72,6 +72,47 @@ def resolve_weights(explicit: Optional[Path] = None) -> tuple[Optional[Path], bo
 # operating point.
 DEFAULT_CONF = 0.25
 
+# Iris fusion: blend YOLO's pupil box with MediaPipe's iris-centre landmark
+# (already computed for free during eye-cropping, see landmarks.py) rather
+# than trusting YOLO alone.
+#
+# Why: in visible light (no IR illuminator) the pupil/iris contrast is low,
+# especially with dark eyes -- exactly why the benchmark's recall collapses
+# under glasses (0.278) and outdoor light (0.427). The iris/sclera boundary
+# is much higher-contrast and far more stable to detect. gaze_estimation's
+# calibration regression doesn't care which anatomical point it's fed, so
+# swapping/blending the source is transparent to everything downstream.
+#
+# Disable via $FIXATION_PUPIL_FUSION=0 to reproduce the benchmark's
+# YOLO-only numbers exactly -- the paper's reported precision/recall assume
+# an unblended detector, and this flag keeps that reproducible without a
+# second code path.
+FUSION_ENV_VAR = "FIXATION_PUPIL_FUSION"
+
+# Confidence value reported for an iris-only point. MediaPipe doesn't expose
+# a per-landmark confidence, so this is a fixed nominal value rather than a
+# measurement -- picked to sit comfortably above DEFAULT_CONF so an
+# iris-only sample isn't mistaken for a marginal YOLO detection downstream.
+IRIS_ONLY_CONFIDENCE = 0.5
+
+# How far apart YOLO's box centre and the iris centre can be (in eye_norm
+# units, i.e. fraction of the eye crop) before YOLO is treated as a false
+# positive rather than blended in. A correct detection should have the two
+# nearly concentric; anything this far off the eye box is more likely a
+# reflection, eyelash, or glasses-frame edge than the actual pupil.
+OUTLIER_EYE_NORM_DIST = 0.35
+
+
+def _fusion_enabled(explicit: Optional[bool]) -> bool:
+    if explicit is not None:
+        return explicit
+    from os import environ
+
+    val = environ.get(FUSION_ENV_VAR)
+    if val is None:
+        return True
+    return val.strip().lower() not in ("0", "false", "no", "")
+
 
 class DetectorUnavailable(RuntimeError):
     """Weights missing, or ultralytics not installed."""
@@ -86,6 +127,7 @@ class PupilDetector:
         conf: float = DEFAULT_CONF,
         landmarker: Optional[EyeLandmarker] = None,
         full_frame_fallback: bool = False,
+        fuse_iris: Optional[bool] = None,
     ):
         resolved, is_smoketest = resolve_weights(weights_path)
         # Falls back to DEFAULT_WEIGHTS purely so the error message names the
@@ -98,6 +140,9 @@ class PupilDetector:
         # scene is out of distribution and mostly produces confident
         # nonsense. Useful only for debugging a landmarker problem.
         self.full_frame_fallback = full_frame_fallback
+        # See FUSION_ENV_VAR above -- explicit arg wins, then the env var,
+        # then on by default.
+        self.fuse_iris = _fusion_enabled(fuse_iris)
         self._model = None
 
     # ------------------------------------------------------------------
@@ -206,6 +251,64 @@ class PupilDetector:
         frame_w: int,
         frame_h: int,
     ) -> Optional[PupilDetection]:
+        yolo = self._yolo_best_box(crop_bgr, region)
+
+        iris_px = None
+        if region.iris_x_px is not None and region.iris_y_px is not None:
+            iris_px = (region.iris_x_px, region.iris_y_px)
+
+        if not self.fuse_iris or iris_px is None:
+            # No iris to fuse with (fusion off, or a landmarker -- real or
+            # stubbed -- that doesn't provide one): YOLO alone, unchanged
+            # from pre-fusion behaviour. This is also the path the benchmark
+            # numbers were measured on.
+            if yolo is None:
+                return None
+            x_px, y_px, confidence, bbox_px = yolo
+            return self._point_to_detection(
+                region, frame_w, frame_h, x_px, y_px, confidence,
+                source="yolo", bbox_px=bbox_px,
+            )
+
+        if yolo is None:
+            # YOLO missed this frame entirely -- exactly the case fusion
+            # exists for (glasses/outdoor recall collapse). Iris carries it.
+            return self._point_to_detection(
+                region, frame_w, frame_h,
+                iris_px[0], iris_px[1], IRIS_ONLY_CONFIDENCE, source="iris",
+            )
+
+        yolo_x, yolo_y, yolo_conf, yolo_bbox = yolo
+        yolo_eye = self._eye_norm(yolo_x, yolo_y, region)
+        iris_eye = self._eye_norm(iris_px[0], iris_px[1], region)
+        dist = ((yolo_eye[0] - iris_eye[0]) ** 2 + (yolo_eye[1] - iris_eye[1]) ** 2) ** 0.5
+
+        if dist > OUTLIER_EYE_NORM_DIST:
+            # YOLO's box and the iris centre disagree by more than a real
+            # pupil plausibly could -- trust iris over what's likely a false
+            # positive (reflection, eyelash, glasses-frame edge).
+            return self._point_to_detection(
+                region, frame_w, frame_h,
+                iris_px[0], iris_px[1], IRIS_ONLY_CONFIDENCE, source="iris",
+            )
+
+        # Confidence-weighted blend, in full-frame pixel space (the region
+        # box maps affinely to both eye_norm and frame_norm, so blending
+        # here and re-deriving the other two representations is equivalent
+        # to blending in either of them). High YOLO confidence trusts YOLO;
+        # a marginal detection leans on the more stable iris signal.
+        w = yolo_conf
+        blend_x = w * yolo_x + (1 - w) * iris_px[0]
+        blend_y = w * yolo_y + (1 - w) * iris_px[1]
+        return self._point_to_detection(
+            region, frame_w, frame_h, blend_x, blend_y, yolo_conf,
+            source="fused", bbox_px=yolo_bbox,
+        )
+
+    def _yolo_best_box(self, crop_bgr, region: EyeRegion):
+        """Runs YOLO on one eye crop. Returns (x_px, y_px, confidence,
+        bbox_px) in full-frame pixels for the most confident box, or None
+        on a miss."""
         model = self._ensure_model()
         preds = model.predict(crop_bgr, conf=self.conf, device="cpu", verbose=False)
         if not preds:
@@ -225,18 +328,42 @@ class PupilDetector:
 
         cx_crop = (x1 + x2) / 2
         cy_crop = (y1 + y2) / 2
+        bbox_px = (region.x1 + x1, region.y1 + y1, region.x1 + x2, region.y1 + y2)
+        return region.x1 + cx_crop, region.y1 + cy_crop, confidence, bbox_px
 
+    @staticmethod
+    def _eye_norm(x_px: float, y_px: float, region: EyeRegion) -> tuple[float, float]:
+        x_eye = (x_px - region.x1) / region.width if region.width else 0.0
+        y_eye = (y_px - region.y1) / region.height if region.height else 0.0
+        return x_eye, y_eye
+
+    @staticmethod
+    def _point_to_detection(
+        region: EyeRegion,
+        frame_w: int,
+        frame_h: int,
+        x_px: float,
+        y_px: float,
+        confidence: float,
+        source: str,
+        bbox_px: Optional[tuple[float, float, float, float]] = None,
+    ) -> PupilDetection:
+        x_eye, y_eye = PupilDetector._eye_norm(x_px, y_px, region)
+        # An iris-derived point has no YOLO box to report, so bbox_px
+        # collapses to a single point rather than carrying a sentinel a
+        # caller would have to special-case.
         return PupilDetection(
             side=region.side,
-            x_px=region.x1 + cx_crop,
-            y_px=region.y1 + cy_crop,
-            x_frame=(region.x1 + cx_crop) / frame_w,
-            y_frame=(region.y1 + cy_crop) / frame_h,
-            x_eye=cx_crop / region.width if region.width else 0.0,
-            y_eye=cy_crop / region.height if region.height else 0.0,
+            x_px=x_px,
+            y_px=y_px,
+            x_frame=x_px / frame_w,
+            y_frame=y_px / frame_h,
+            x_eye=x_eye,
+            y_eye=y_eye,
             confidence=confidence,
-            bbox_px=(region.x1 + x1, region.y1 + y1, region.x1 + x2, region.y1 + y2),
+            bbox_px=bbox_px if bbox_px is not None else (x_px, y_px, x_px, y_px),
             eye_region=region,
+            source=source,
         )
 
     def close(self) -> None:
@@ -250,5 +377,8 @@ __all__ = [
     "SMOKETEST_WEIGHTS",
     "WEIGHTS_ENV_VAR",
     "DEFAULT_CONF",
+    "FUSION_ENV_VAR",
+    "IRIS_ONLY_CONFIDENCE",
+    "OUTLIER_EYE_NORM_DIST",
     "resolve_weights",
 ]

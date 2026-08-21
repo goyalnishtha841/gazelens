@@ -71,6 +71,7 @@ def _weasyprint(html_path: Path, pdf_path: Path) -> None:
     HTML(filename=str(html_path)).write_pdf(str(pdf_path))
 
 
+
 def _chromium_render(html_path: Path, pdf_path: Path) -> None:
     from playwright.sync_api import sync_playwright
 
@@ -83,7 +84,17 @@ def _chromium_render(html_path: Path, pdf_path: Path) -> None:
                 path=str(pdf_path),
                 format="A4",
                 print_background=True,      # keep the report's colour blocks
-                margin={"top": "12mm", "bottom": "12mm",
+                # The running footer (page numbers, confidentiality line) is
+                # plain CSS -- report_template.html.j2's @page { @bottom-left
+                # / @bottom-right } margin-box rules. That was written
+                # assuming Chromium's print-to-PDF ignores @page margin
+                # boxes (a WeasyPrint/paged-media feature historically), but
+                # this Chromium build renders it fine on its own -- verified
+                # by generating a PDF with no Playwright-side header/footer
+                # at all and finding the footer already there. So there's
+                # nothing to wire here beyond leaving enough bottom margin
+                # for it to sit in without crowding the last line of content.
+                margin={"top": "14mm", "bottom": "18mm",
                         "left": "10mm", "right": "10mm"},
             )
         finally:

@@ -78,7 +78,7 @@ def main() -> int:
             if not args.headless:
                 import cv2
 
-                cv2.imshow("GazeLens -- pupil detection", _draw(frame, result))
+                cv2.imshow("Fixation -- pupil detection", _draw(frame, result))
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
             elif frames % 30 == 0:

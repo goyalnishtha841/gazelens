@@ -28,7 +28,7 @@ export default function SignIn({ onSwitchToSignup }) {
       <div className="w-full max-w-[400px] bg-white border border-outline p-8 flex flex-col entrance-animation">
         <div className="mb-8">
           <span className="font-label-caps text-label-caps text-primary-container tracking-widest block mb-2">
-            GAZELENS
+            FIXATION
           </span>
           <h1 className="font-headline-md text-headline-md text-on-surface">Sign In</h1>
         </div>
@@ -77,7 +77,7 @@ export default function SignIn({ onSwitchToSignup }) {
 
         <div className={`mt-8 pt-6 border-t border-outline-variant flex justify-center ${submitting ? "opacity-40" : ""}`}>
           <p className="text-secondary text-label-caps">
-            NEW TO GAZELENS?{" "}
+            NEW TO FIXATION?{" "}
             <button type="button" onClick={onSwitchToSignup} className="text-primary-container font-bold hover:underline">
               CREATE ACCOUNT
             </button>

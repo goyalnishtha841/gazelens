@@ -40,6 +40,13 @@ class EyeRegion:
     x2: int
     y2: int
 
+    # Iris centre, in full-frame pixels, from MediaPipe's own iris landmarks
+    # (468-477 -- see landmarks.py). None for any landmarker that doesn't
+    # populate it (older stubs, tests). This is what lets PupilDetector fall
+    # back to or blend with iris position when YOLO is missing or unsure.
+    iris_x_px: Optional[float] = None
+    iris_y_px: Optional[float] = None
+
     @property
     def width(self) -> int:
         return max(0, self.x2 - self.x1)
@@ -73,6 +80,13 @@ class PupilDetection:
     confidence: float
     bbox_px: Tuple[float, float, float, float]   # x1, y1, x2, y2 full-frame
     eye_region: Optional[EyeRegion] = None
+
+    # Which signal actually produced this point -- "yolo" (detector only,
+    # no iris available or fusion disabled), "iris" (YOLO missed or was
+    # rejected as an outlier), or "fused" (confidence-weighted blend of
+    # both). Exists so the benchmark/paper path can filter to "yolo" only
+    # and reproduce numbers unaffected by fusion. See pupil_detector.py.
+    source: str = "yolo"
 
     def to_dict(self) -> dict:
         d = asdict(self)

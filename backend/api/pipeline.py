@@ -72,18 +72,18 @@ def _module_from(name: str, path: Path, extra_syspath: Optional[Path] = None) ->
 
 def _agents_orchestrator() -> ModuleType:
     agents_dir = BACKEND / "agents"
-    return _module_from("_gazelens_orchestrator", agents_dir / "orchestrator.py", agents_dir)
+    return _module_from("_fixation_orchestrator", agents_dir / "orchestrator.py", agents_dir)
 
 
 def _report_generator() -> ModuleType:
     reports_dir = BACKEND / "reports"
-    return _module_from("_gazelens_report_generator",
+    return _module_from("_fixation_report_generator",
                         reports_dir / "report_generator.py", reports_dir)
 
 
 def _heatmap() -> ModuleType:
     reports_dir = BACKEND / "reports"
-    return _module_from("_gazelens_heatmap", reports_dir / "heatmap_stub.py", reports_dir)
+    return _module_from("_fixation_heatmap", reports_dir / "heatmap_stub.py", reports_dir)
 
 
 # ----------------------------------------------------------------------
@@ -145,6 +145,8 @@ def calibration_summary(calibration_session_id: Optional[str]) -> Optional[dict]
             "calibration_session_id": session.session_id,
             "pattern": session.pattern,
             "status": session.status,
+            "screen_width": session.screen_width,
+            "screen_height": session.screen_height,
             **session.quality(),
         }
     except ImportError:      # pragma: no cover - calibration is present

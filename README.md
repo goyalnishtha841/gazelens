@@ -1,13 +1,13 @@
-# GazeLens
-### *Built on the GazeUX-Agent framework — a webcam-based, multi-agent framework for gaze-driven UI/UX evaluation*
+# Fixation
+### *Built on the Fixation framework — a webcam-based, multi-agent framework for gaze-driven UI/UX evaluation*
 
-GazeLens turns an ordinary laptop webcam into a low-cost usability-testing tool. It tracks where someone actually looks while using a web page (or any live URL), maps that attention to specific UI elements, and runs it through a chain of evidence-grounded AI agents that produce a UX report a designer can act on — not a vague "make it better," but "the checkout button got 2% of total gaze time against a 5% threshold, here's the fix, here's the confidence score, here's why the system believes it."
+Fixation turns an ordinary laptop webcam into a low-cost usability-testing tool. It tracks where someone actually looks while using a web page (or any live URL), maps that attention to specific UI elements, and runs it through a chain of evidence-grounded AI agents that produce a UX report a designer can act on — not a vague "make it better," but "the checkout button got 2% of total gaze time against a 5% threshold, here's the fix, here's the confidence score, here's why the system believes it."
 
 ---
 
 ## Why this exists
 
-Proper eye-tracking hardware is expensive, and even when you have gaze data, someone still has to manually work out *why* a design failed. GazeLens closes that gap with three concrete contributions:
+Proper eye-tracking hardware is expensive, and even when you have gaze data, someone still has to manually work out *why* a design failed. Fixation closes that gap with three concrete contributions:
 
 1. **A benchmarked, swappable pupil detector** — comparing YOLOv8, SSD300, and Faster R-CNN on the same dataset, evaluated on precision, recall, mAP@0.5, and inference speed — not just accuracy.
 2. **Gaze-to-UI-element attribution** — converting raw gaze coordinates into per-element metrics (dwell time, time-to-first-fixation, revisit count, scanpath), not just a heatmap.
@@ -139,7 +139,7 @@ The agent and report layers were deliberately built against **hand-authored mock
 ### Backend
 ```bash
 git clone <repo-url>
-cd gazelens
+cd fixation
 
 py -3.12 -m venv .venv                  # Windows;  python3.12 -m venv .venv elsewhere
 .venv/Scripts/activate                  #           source .venv/bin/activate
@@ -154,7 +154,7 @@ playwright install chromium             # backend/render + the report PDF fallba
 # Optional: JWT signing key. If unset, one is generated and saved to
 # backend/api/.secret_key (gitignored) so tokens survive restarts. Set the
 # variable explicitly for anything deployed.
-# export GAZELENS_SECRET_KEY=$(python -c "import secrets;print(secrets.token_urlsafe(48))")
+# export FIXATION_SECRET_KEY=$(python -c "import secrets;print(secrets.token_urlsafe(48))")
 
 cd backend
 python -m api.init_db --demo-user       # create the SQLite schema
@@ -185,7 +185,7 @@ loaded lazily); only live capture is unavailable. `GET /health` reports
 **If you don't have Drive access**, `scripts/make_smoketest_detector.py` trains a
 small pupil detector on synthetic drawn eyes in about a minute on CPU, so the
 live pipeline can be run and tested end to end. `backend/cv` picks weights in
-this order — real detector, `$GAZELENS_PUPIL_WEIGHTS`, smoke-test stand-in —
+this order — real detector, `$FIXATION_PUPIL_WEIGHTS`, smoke-test stand-in —
 so dropping `pupil_yolo_final.pt` into `models/` silently upgrades everything.
 
 > ⚠️ **The smoke-test model is not a measurement instrument.** It was trained on

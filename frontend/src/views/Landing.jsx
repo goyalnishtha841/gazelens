@@ -1,7 +1,7 @@
 const FEATURES = [
   {
     title: "Webcam gaze tracking",
-    body: "No dedicated eye-tracking hardware required — GazeLens estimates gaze from an ordinary laptop webcam.",
+    body: "No dedicated eye-tracking hardware required — Fixation estimates gaze from an ordinary laptop webcam.",
   },
   {
     title: "Element-level attention metrics",
@@ -26,7 +26,7 @@ export default function Landing({ onSignIn, onSignUp }) {
           Know why it matters.
         </h1>
         <p className="text-secondary text-body-lg text-center max-w-xl mx-auto mb-10">
-          GazeLens turns a webcam into a usability-testing tool — tracking real attention, attributing
+          Fixation turns a webcam into a usability-testing tool — tracking real attention, attributing
           it to specific UI elements, and generating evidence-backed recommendations instead of a
           heatmap you have to interpret yourself.
         </p>

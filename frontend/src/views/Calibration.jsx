@@ -2,7 +2,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 import { startCalibration, submitCalibrationSamples, completeCalibration } from "../api/calibration.js";
 
-const PATTERN = 9; // quick 3x3 grid -- backend also supports 16 (thorough); not exposed here yet
+const PATTERN = 16; // thorough 4x4 grid -- backend's own default; 9 (quick 3x3) also supported, not exposed here yet
+// Matches backend/calibration/points.py's PATTERNS mapping -- only the two
+// patterns it supports, so this stays a lookup rather than a formula.
+const GRID_SHAPE = { 9: [3, 3], 16: [4, 4] }[PATTERN];
 const SECONDS_PER_POINT = 2.5;
 const SETTLE_SECONDS = 0.6; // let the participant's eyes land before capturing frames
 const CAPTURE_INTERVAL_MS = 130; // ~15 frames/point, matching the backend's default samples_per_point
@@ -227,7 +230,7 @@ export default function Calibration({ onComplete, onExit }) {
         )}
         <div className="max-w-md text-center entrance-animation">
           <span className="font-label-caps text-label-caps text-on-surface-variant tracking-widest opacity-60 block mb-4">
-            GAZELENS CALIBRATION
+            FIXATION CALIBRATION
           </span>
           <h1 className="font-headline-md text-headline-md mb-3">Calibrate your gaze</h1>
           <p className="text-secondary text-body-md mb-8">
@@ -266,7 +269,7 @@ export default function Calibration({ onComplete, onExit }) {
         )}
         <div className="max-w-md text-center entrance-animation">
           <span className="font-label-caps text-label-caps text-on-surface-variant tracking-widest opacity-60 block mb-4">
-            GAZELENS CALIBRATION
+            FIXATION CALIBRATION
           </span>
           <h1 className="font-headline-md text-headline-md mb-3">
             {usable ? "Calibration Optimized" : "Calibration Complete — Quality Low"}
@@ -311,7 +314,7 @@ export default function Calibration({ onComplete, onExit }) {
 
       <div className="fixed top-12 left-1/2 -translate-x-1/2 z-10 text-center">
         <span className="font-label-caps text-label-caps text-on-surface-variant tracking-widest opacity-60">
-          GAZELENS CALIBRATION
+          FIXATION CALIBRATION
         </span>
         <h1 className="font-label-caps text-label-caps text-on-surface-variant block mt-2">
           Point {currentIndex + 1} of {PATTERN}
@@ -330,8 +333,12 @@ export default function Calibration({ onComplete, onExit }) {
       </div>
 
       <main
-        className="relative z-10 grid grid-cols-3 grid-rows-3"
-        style={{ height: "100vh", width: "100vw", padding: "10vh 10vw", boxSizing: "border-box" }}
+        className="relative z-10 grid"
+        style={{
+          height: "100vh", width: "100vw", padding: "10vh 10vw", boxSizing: "border-box",
+          gridTemplateColumns: `repeat(${GRID_SHAPE[0]}, 1fr)`,
+          gridTemplateRows: `repeat(${GRID_SHAPE[1]}, 1fr)`,
+        }}
       >
         {Array.from({ length: PATTERN }).map((_, i) => (
           <div key={i} className="flex items-center justify-center relative">

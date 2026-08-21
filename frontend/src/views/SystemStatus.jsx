@@ -65,7 +65,7 @@ export default function SystemStatus({ onNavigate, hasCalibration }) {
     <div className="text-on-surface font-body-md">
       <nav className="flex justify-between items-center w-full px-margin-desktop py-4 bg-surface border-b border-outline-variant sticky top-0 z-40">
         <div className="flex items-center gap-8">
-          <span className="font-display-lg text-display-lg text-primary">GazeLens</span>
+          <span className="font-display-lg text-display-lg text-primary">Fixation</span>
           <button
             onClick={() => onNavigate?.("dashboard")}
             className="text-on-surface-variant font-label-caps text-label-caps hover:bg-surface-container transition-colors px-2 py-1"

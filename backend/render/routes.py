@@ -95,7 +95,7 @@ async def capture(payload: CaptureRequest) -> CaptureResponse:
         )
     _reject_private(payload.url)
 
-    with tempfile.TemporaryDirectory(prefix="gazelens_render_") as tmp_dir:
+    with tempfile.TemporaryDirectory(prefix="fixation_render_") as tmp_dir:
         screenshot_path = Path(tmp_dir) / "capture.png"
         try:
             result = capture_page(

@@ -163,6 +163,14 @@ class CalibrationLinkRequest(BaseModel):
 
     calibration_session_id: str = Field(..., min_length=1, max_length=40)
     train_model: bool = True
+    # The live session's CURRENT window.innerWidth/innerHeight, so the
+    # server can refuse to link against a calibration recorded at a
+    # different screen size rather than silently training/serving a
+    # mapping calibrated for different screen geometry. Optional only for
+    # backward compatibility with any caller that predates this check --
+    # omitting it skips the check entirely rather than assuming a match.
+    screen_width: Optional[int] = Field(None, gt=0, le=16384)
+    screen_height: Optional[int] = Field(None, gt=0, le=16384)
 
 
 class CalibrationLinkResponse(BaseModel):
@@ -170,6 +178,12 @@ class CalibrationLinkResponse(BaseModel):
     calibration_session_id: str
     status: str
     gaze_model_trained: bool
+    # True when linking was refused because the caller's screen_width/
+    # screen_height didn't match the calibration's recorded dimensions --
+    # distinct from gaze_model_trained=False for a poor-quality calibration,
+    # since the fix is "use the same screen you calibrated on", not
+    # "recalibrate with better lighting". See session_routes.link_calibration.
+    screen_mismatch: bool = False
     calibration: Optional[Dict[str, Any]] = None
     gaze_model_metrics: Optional[Dict[str, Any]] = None
     message: str

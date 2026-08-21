@@ -28,7 +28,7 @@ export default function SignUp({ onSwitchToSignin }) {
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
       <div className="bg-surface border border-outline-variant w-full max-w-[400px] p-8 entrance-animation">
         <div className="mb-8">
-          <span className="font-label-caps text-label-caps text-primary mb-2 block tracking-[0.2em]">GAZELENS</span>
+          <span className="font-label-caps text-label-caps text-primary mb-2 block tracking-[0.2em]">FIXATION</span>
           <h1 className="font-headline-md text-headline-md text-on-surface">Create Account</h1>
         </div>
 

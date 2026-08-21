@@ -230,6 +230,39 @@ async def get_session(
     return detail
 
 
+# How far apart current and calibration-time screen dimensions can be before
+# refusing to link, as a fraction of the calibration's own size. Not zero --
+# a scrollbar appearing/disappearing or a pixel of browser-chrome rounding
+# shouldn't force a recalibration -- but small enough that it only absorbs
+# that kind of noise, not an actually different window or monitor. Chosen,
+# not measured: there's no real-participant error data yet to tune this
+# against (see OPEN_ITEMS.md #2), so it stays conservative until there is.
+SCREEN_MATCH_TOLERANCE = 0.02
+
+
+def _screen_mismatch(
+    calibration_width: int, calibration_height: int,
+    current_width: Optional[int], current_height: Optional[int],
+) -> bool:
+    """True if the live session's screen is meaningfully different from the
+    one the calibration was recorded on.
+
+    Deliberately a yes/no check, not a correction: the gaze mapping is
+    trained on this specific screen's geometry (see CalibrationLinkRequest's
+    docstring), and there's no reliable way to convert that to a different
+    screen size without either asking the participant for physical
+    measurements or guessing camera intrinsics -- both worse than just
+    requiring a recalibration.
+    """
+    if current_width is None or current_height is None:
+        # Caller didn't supply it -- nothing to compare against, so this
+        # check simply doesn't apply rather than assuming a mismatch.
+        return False
+    dw = abs(current_width - calibration_width) / calibration_width
+    dh = abs(current_height - calibration_height) / calibration_height
+    return dw > SCREEN_MATCH_TOLERANCE or dh > SCREEN_MATCH_TOLERANCE
+
+
 @router.post("/{session_id}/calibration", response_model=CalibrationLinkResponse)
 async def link_calibration(
     session_id: str,
@@ -264,8 +297,23 @@ async def link_calibration(
         session.started_at = datetime.now(timezone.utc)
 
     metrics = None
-    message = "calibration linked"
-    if payload.train_model:
+    screen_mismatch = _screen_mismatch(
+        summary["screen_width"], summary["screen_height"],
+        payload.screen_width, payload.screen_height,
+    )
+
+    if screen_mismatch:
+        # Refuse before spending a training run on a mapping we're about to
+        # reject anyway -- same reasoning as skipping training on a
+        # session that's already processing/complete above.
+        session.gaze_model_trained = False
+        message = (
+            f"screen size changed since calibration ({summary['screen_width']}x"
+            f"{summary['screen_height']} -> {payload.screen_width}x{payload.screen_height}); "
+            f"recalibrate on this screen before starting a session"
+        )
+        session.error = message
+    elif payload.train_model:
         ok, metrics, detail = pipeline.train_gaze_model(payload.calibration_session_id)
         session.gaze_model_trained = ok
         message = f"calibration linked; gaze model {detail}"
@@ -273,6 +321,8 @@ async def link_calibration(
             # Not fatal: a poor calibration is a real study outcome and the
             # participant can recalibrate without losing the session record.
             session.error = detail
+    else:
+        message = "calibration linked"
 
     db.commit()
     db.refresh(session)
@@ -282,6 +332,7 @@ async def link_calibration(
         calibration_session_id=payload.calibration_session_id,
         status=session.status,
         gaze_model_trained=session.gaze_model_trained,
+        screen_mismatch=screen_mismatch,
         calibration=summary,
         gaze_model_metrics=metrics,
         message=message,
@@ -597,7 +648,7 @@ async def get_report_pdf(
     report response tells the caller the HTML version still exists.
     """
     return _report_file(
-        session_id, user, db, "pdf_path", "application/pdf", filename=f"gazelens-report-{session_id}.pdf"
+        session_id, user, db, "pdf_path", "application/pdf", filename=f"fixation-report-{session_id}.pdf"
     )
 
 
