@@ -112,7 +112,29 @@ export default function Calibration({ onComplete, onExit }) {
   useEffect(() => () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     clearInterval(captureTimerRef.current);
+    videoRef.current?.remove();
+    videoRef.current = null;
   }, []);
+
+  // The webcam <video> is created once and lives outside React's tree, so
+  // switching between the intro, dots and accuracy-check screens can never
+  // swap it for a fresh element with no stream (which silently produced
+  // empty frames and "face seen in 0% of frames"). It's kept on screen at
+  // 2px and near-zero opacity: browsers may stop decoding a fully invisible
+  // video.
+  function captureVideo() {
+    if (videoRef.current && document.body.contains(videoRef.current)) return videoRef.current;
+    const v = document.createElement("video");
+    v.muted = true;
+    v.playsInline = true;
+    v.autoplay = true;
+    v.setAttribute("playsinline", "");
+    v.setAttribute("aria-hidden", "true");
+    Object.assign(v.style, { position: "fixed", left: "0", bottom: "0", width: "2px", height: "2px", opacity: "0.01", pointerEvents: "none", zIndex: "-1" });
+    document.body.appendChild(v);
+    videoRef.current = v;
+    return v;
+  }
 
   const captureFrame = useCallback(() => {
     const video = videoRef.current;
@@ -131,14 +153,25 @@ export default function Calibration({ onComplete, onExit }) {
     setValidation(null);
     setValidationError(null);
     try {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
       const stream = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS);
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+      const video = captureVideo();
+      video.srcObject = stream;
+      await video.play().catch(() => {});
+      // wait (briefly) until the camera is actually delivering frames
+      const t0 = performance.now();
+      while (video.readyState < 2 && performance.now() - t0 < 4000) {
+        await new Promise((r) => setTimeout(r, 100));
       }
-    } catch {
-      setCameraError("Couldn't access the webcam. Check browser permissions and that no other app is using it.");
+      if (video.readyState < 2) {
+        throw new Error("camera-no-frames");
+      }
+    } catch (err) {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      setCameraError(err?.message === "camera-no-frames"
+        ? "The camera turned on but isn't sending a picture. Close other apps using it (Zoom, Teams, FaceTime), then try again."
+        : "Couldn't access the webcam. Check browser permissions and that no other app is using it.");
       return;
     }
 
@@ -230,6 +263,20 @@ export default function Calibration({ onComplete, onExit }) {
         return;
       }
 
+      if (frames.length === 0 && currentIndex <= 1) {
+        // Nothing captured for a whole dot: the camera isn't delivering
+        // frames. Stop now with a clear message instead of finishing all 16.
+        const v = videoRef.current;
+        const track = streamRef.current?.getVideoTracks?.()[0];
+        console.error("calibration: no frames", { readyState: v?.readyState, paused: v?.paused, size: [v?.videoWidth, v?.videoHeight], track: track?.readyState, muted: track?.muted });
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        setCameraError(track?.readyState === "ended" || track?.muted
+          ? "The camera stopped sending a picture. Close other apps using it, then try again."
+          : "We couldn't get a picture from your camera. Reload the page and try again.");
+        setStatus("error");
+        return;
+      }
+
       try {
         if (frames.length > 0) {
           const result = await submitCalibrationSamples(calibrationId, order[currentIndex], frames, targetX, targetY);
@@ -275,22 +322,8 @@ export default function Calibration({ onComplete, onExit }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progress]);
 
-  // The capture <video> moves between screens (intro -> dots -> check). If
-  // React ever mounts a fresh element, hand it the live stream again --
-  // otherwise frames come back empty and the whole calibration fails with
-  // "face seen in 0% of frames".
-  const attachVideo = useCallback((el) => {
-    videoRef.current = el;
-    const stream = streamRef.current;
-    if (el && stream && el.srcObject !== stream) {
-      el.srcObject = stream;
-      el.play().catch(() => {});
-    }
-  }, []);
-
   const captureRig = (
     <>
-      <video ref={attachVideo} muted playsInline style={{ position: "fixed", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
       <canvas ref={canvasRef} style={{ display: "none" }} />
     </>
   );
