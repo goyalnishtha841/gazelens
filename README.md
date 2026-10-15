@@ -116,8 +116,9 @@ Webcam → Face/Eye Landmarking → Pupil Detection (YOLOv8n) → Gaze Estimatio
 | Calibration | ✅ Done | `backend/calibration/` — endpoint + storage. **Not yet reconciled with `Calibration.jsx`**, which isn't in this repo (see below) |
 | Gaze estimation | ✅ Done | `backend/gaze_estimation/` — per-session polynomial ridge, degree auto-selected by leave-one-point-out CV. Validated on synthetic sessions only; no real participant data exists yet |
 | UI attribution + metrics | ✅ Done | `backend/attribution/` — gaze + bboxes → `SessionMetrics`, piped end-to-end into the agent chain in its test suite |
-| Heatmap rendering | ⏳ Open | `reports/heatmap_stub.py` still a stub; `attribution` now supplies the real layout + dwell data it needs |
+| Heatmap rendering | ✅ Done | `reports/gaze_heatmap.py`: gaze density over a screenshot of the page as shown, blurred by the session's measured gaze error. The per-element dwell chart and gaze path remain (`heatmap_stub.py`) |
 | Agent chain (behavior/evaluation/recommendation/critic) | ✅ Done | Fully tested against mock session data |
+| Report quality gate + consolidation | ✅ Done | `agents/quality_gate.py` runs first: sessions with too much gaze error (from the calibration accuracy check), too little tracking or too little data get "insufficient" (no findings) or "limited" (nothing above Medium). `agents/consolidate.py` runs last: one issue and one recommendation per element, readable names, and findings on elements smaller than the gaze error downgraded with a caveat. Attribution's near-miss tolerance follows the measured error (`attribution/engine.py` `error_model`) |
 | Report generation | ✅ Done | Generates PDF/HTML reports, tested against multiple scenarios |
 | Arbitrary-URL rendering | ✅ Done | `backend/render/` — Chromium screenshot + DOM element detection. Element **types are inferred**, not authored; every capture reports `low_confidence_fraction` and reports say so |
 | Session/report API endpoints | ✅ Done | `backend/api/` — full lifecycle, ownership-scoped. **Not yet reconciled with `client.js`**, which isn't in this repo |

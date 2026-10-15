@@ -460,6 +460,7 @@ def _run_analysis(session_id: str) -> None:
                 ui_page=session.ui_page or "unknown_page",
                 output_dir=Path(DATA_DIR) / session.id,
                 capture_meta=session.capture_meta,
+                calibration_session_id=session.calibration_session_id,
             )
 
             db.add(Report(

@@ -652,6 +652,39 @@ check("a look at the sidebar is off the page, clamped, flagged",
 pt = pipeline.to_stage_space({**base, "valid": False, "x": 0.0, "y": 0.0}, stage, 1000, 800)
 check("invalid points pass through untouched", pt["x"] == 0.0 and "viewport_x" not in pt)
 
+print("\nreport quality -- labels, page size, measured error, heatmap")
+check("stage remap records the page's pixel size",
+      pipeline.to_stage_space(base, stage, 1000, 800)["stage_px"] == [600, 560])
+check("page size is the median recorded stage size",
+      pipeline.page_size_from_gaze([{"stage_px": [600, 560]}, {"stage_px": [610, 560]},
+                                    {"stage_px": [600, 560]}, {}]) == (600, 560))
+check("no stage size recorded -> None, not a guess", pipeline.page_size_from_gaze([{}]) is None)
+labels = pipeline.element_labels({"subscribe_cta": {"bbox": [0, 0, 1, 1]},
+                                  "x_link": {"bbox": [0, 0, 1, 1], "text": "Read more  "}},
+                                 "article_page")
+check("test-page labels come from its elements.json", labels.get("subscribe_cta") == "Subscribe")
+check("detected elements fall back to their visible text", labels.get("x_link") == "Read more")
+check("unknown calibration -> no measured error", pipeline.gaze_quality_for("cal_nope") == {})
+check("no calibration -> no measured error", pipeline.gaze_quality_for(None) == {})
+
+_heat_dir = Path(_TMP) / "heat"
+_pts = [{"timestamp": i * 0.1, "x": 0.3, "y": 0.4, "valid": True} for i in range(30)]
+_report, _cfg = pipeline.build_metrics(_pts, {"a": [0.2, 0.3, 0.3, 0.3]}, "p", "ses_heat")
+_pr = {"session_id": "ses_heat", "element_labels": {"a": "Area A"}, "quality": None,
+       "behavior_summary": {"first_noticed": "a", "most_attended": "a",
+                            "ignored_important_elements": [], "attention_scattered": False,
+                            "findings": []},
+       "issues": [], "recommendations_kept": [], "recommendations_rejected": []}
+_rendered = pipeline.render_report(_pr, _report.metrics, _cfg, _heat_dir, "ses_heat",
+                                   gaze_points=_pts, page_px=(800, 450), gaze_error_px=60.0)
+check("gaze heatmap and dwell chart both rendered",
+      _rendered["heatmap_path"].endswith("_heatmap.png")
+      and _rendered["dwell_chart_path"].endswith("_dwell.png")
+      and Path(_rendered["heatmap_path"]).exists() and Path(_rendered["dwell_chart_path"]).exists())
+_html = Path(_rendered["html_path"]).read_text()
+check("report uses readable names", "Area A" in _html)
+check("report embeds the dwell chart", "_dwell.png" in _html)
+
 print(f"\n{'=' * 40}\n{passed} passed, {failed} failed\n{'=' * 40}")
 
 if failed:

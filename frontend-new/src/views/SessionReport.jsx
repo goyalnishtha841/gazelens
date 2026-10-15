@@ -90,6 +90,12 @@ export default function SessionReport({ sessionId, onBack }) {
   }
 
   const { behavior_summary, issues, recommendations_kept } = report.pipeline_result;
+  const quality = report.pipeline_result.quality;
+  const labels = report.pipeline_result.element_labels || {};
+  // Readable names from the backend's consolidation step; reports made before
+  // it existed fall back to the raw id.
+  const nameOf = (id) => (id === "__session__" ? "Whole page" : labels[id] || id);
+  const insufficient = quality?.level === "insufficient";
   const highCount = issues.filter((i) => i.severity === "High").length;
   const avgConfidence =
     recommendations_kept.length > 0
@@ -106,6 +112,12 @@ export default function SessionReport({ sessionId, onBack }) {
             <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
           </span>
           {highCount} high-severity issue{highCount !== 1 ? "s" : ""} found. Review before shipping.
+        </div>
+      )}
+
+      {insufficient && (
+        <div className="mb-8 rounded-card border border-accent/40 bg-accent-soft px-4 py-3 text-[13px] text-text-primary">
+          Not enough reliable gaze data to evaluate this page, so no findings were drawn. Recalibrate and run it again.
         </div>
       )}
 
@@ -151,9 +163,11 @@ export default function SessionReport({ sessionId, onBack }) {
       </div>
       {pdfState === "error" && <p className="mt-2 text-[12px] text-accent">No PDF available for this session.</p>}
 
+      {quality && <QualityStrip quality={quality} nameOf={nameOf} />}
+
       <StaggerGroup className="mt-10 grid grid-cols-2 gap-6 border-b border-border pb-10 lg:grid-cols-4">
-        <StaggerItem><Stat value={behavior_summary.first_noticed ?? "--"} label="First noticed" /></StaggerItem>
-        <StaggerItem><Stat value={behavior_summary.most_attended ?? "--"} label="Most attended" /></StaggerItem>
+        <StaggerItem><Stat value={behavior_summary.first_noticed ? nameOf(behavior_summary.first_noticed) : "--"} label="First noticed" /></StaggerItem>
+        <StaggerItem><Stat value={behavior_summary.most_attended ? nameOf(behavior_summary.most_attended) : "--"} label="Most attended" /></StaggerItem>
         <StaggerItem><Stat value={behavior_summary.attention_scattered ? "Yes" : "No"} label="Attention scattered" /></StaggerItem>
         <StaggerItem><Stat value={issues.length} label="Issues found" accent={issues.length > 0} /></StaggerItem>
       </StaggerGroup>
@@ -162,7 +176,7 @@ export default function SessionReport({ sessionId, onBack }) {
         <div>
           <SectionLabel>Heatmap</SectionLabel>
           <Card className="aspect-[4/3] p-0">
-            <ReportImage token={token} sessionId={report.session_id} kind="heatmap" alt="Attention heatmap" emptyLabel="No heatmap for this session." />
+            <ReportImage token={token} sessionId={report.session_id} kind="heatmap" alt="Gaze heatmap over the page" emptyLabel="No heatmap for this session." />
           </Card>
         </div>
         <div>
@@ -170,12 +184,12 @@ export default function SessionReport({ sessionId, onBack }) {
           <div className="space-y-3">
             {behavior_summary.first_noticed && (
               <p className="text-[13px] leading-relaxed text-text-primary">
-                Attention landed first on <span className="font-mono text-[12px]">{behavior_summary.first_noticed}</span>.
+                Attention landed first on <span className="font-medium">{nameOf(behavior_summary.first_noticed)}</span>.
               </p>
             )}
             {behavior_summary.ignored_important_elements.map((el) => (
               <p key={el} className="text-[13px] leading-relaxed text-text-primary">
-                <span className="font-mono text-[12px]">{el}</span> received minimal attention despite its importance.
+                <span className="font-medium">{nameOf(el)}</span> received minimal attention despite its importance.
               </p>
             ))}
             {behavior_summary.attention_scattered && (
@@ -195,7 +209,9 @@ export default function SessionReport({ sessionId, onBack }) {
       <Reveal className="mt-10">
         <SectionLabel>Usability issues</SectionLabel>
         {issues.length === 0 ? (
-          <p className="text-[13px] italic text-text-secondary">No usability issues detected.</p>
+          <p className="text-[13px] italic text-text-secondary">
+            {insufficient ? "Not evaluated: the gaze data wasn't reliable enough." : "No usability issues detected."}
+          </p>
         ) : (
           <StaggerGroup>
             {issues.map((issue, i) => (
@@ -204,13 +220,17 @@ export default function SessionReport({ sessionId, onBack }) {
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <p className="text-[14px] text-text-primary">{issue.issue}</p>
-                      <p className="mt-1 font-mono text-[11px] text-text-secondary">{issue.element_id}</p>
+                      <p className="mt-1 text-[12px] font-medium text-text-secondary">{issue.element_label || nameOf(issue.element_id)}</p>
+                      {issue.also?.length > 0 && (
+                        <p className="mt-1 text-[11px] text-text-secondary">Also: {issue.also.join("; ")}</p>
+                      )}
                     </div>
                     <span className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide ${SEVERITY_STYLE[issue.severity] || SEVERITY_STYLE.Low}`}>
                       {issue.severity}
                     </span>
                   </div>
                   <p className="mt-2 text-[12px] text-text-secondary">{issue.evidence}</p>
+                  {issue.caveat && <p className="mt-1 text-[11px] italic text-text-secondary">{issue.caveat}</p>}
                 </div>
               </StaggerItem>
             ))}
@@ -227,8 +247,13 @@ export default function SessionReport({ sessionId, onBack }) {
                 <StaggerItem key={i}>
                   <div className="group border-t border-border py-4 transition-colors first:border-t-0 first:pt-0 hover:bg-surface">
                     <Label>{rec.support === "Strong" ? "Immediate action" : "Needs review"}</Label>
-                    <p className="mt-1 font-mono text-[11px] text-text-secondary">{rec.element_id}</p>
+                    <p className="mt-1 text-[12px] font-medium text-text-secondary">{rec.element_label || nameOf(rec.element_id)}</p>
                     <p className="mt-1 text-[13px] text-text-primary">{rec.recommendation}</p>
+                    {rec.measurability != null && rec.measurability < 1 && (
+                      <p className="mt-1 text-[11px] text-text-secondary">
+                        Confidence lowered from {Math.round(rec.confidence_raw * 100)} to {Math.round(rec.confidence * 100)}: the element is small relative to the gaze error.
+                      </p>
+                    )}
                   </div>
                 </StaggerItem>
               ))}
@@ -239,6 +264,48 @@ export default function SessionReport({ sessionId, onBack }) {
             <CriticScore scoreOutOf100={scoreOutOf100} count={recommendations_kept.length} />
           </div>
         </Reveal>
+      )}
+    </div>
+  );
+}
+
+const QUALITY_STYLE = {
+  good: "border-border text-text-secondary",
+  limited: "border-text-primary text-text-primary",
+  insufficient: "border-accent bg-accent-soft text-accent",
+};
+
+/** How trustworthy this session's gaze was (backend/agents/quality_gate.py). */
+function QualityStrip({ quality, nameOf }) {
+  return (
+    <div className="mt-6 rounded-card border border-border px-4 py-3 text-[12px]">
+      <div className="flex flex-wrap items-center gap-3">
+        <Label>Measurement quality</Label>
+        <span className={`rounded-full border px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-wide ${QUALITY_STYLE[quality.level] || QUALITY_STYLE.good}`}>
+          {quality.level}
+        </span>
+        {quality.gaze_error_px != null && (
+          <span className="text-text-primary">
+            Gaze error <span className="font-mono">{Math.round(quality.gaze_error_px)} px</span>
+            <span className="text-text-secondary">
+              {" "}({quality.gaze_error_pct_diagonal?.toFixed(1)}% of screen,{" "}
+              {quality.error_source === "accuracy_check" ? "accuracy check" : "calibration estimate"})
+            </span>
+          </span>
+        )}
+      </div>
+      {quality.reasons?.length > 0 && (
+        <ul className="mt-2 space-y-0.5 text-text-secondary">
+          {quality.reasons.map((r) => <li key={r}>· {r}</li>)}
+        </ul>
+      )}
+      {quality.level === "limited" && (
+        <p className="mt-1 text-text-secondary">Severities are capped at Medium for this session.</p>
+      )}
+      {quality.low_confidence_elements?.length > 0 && (
+        <p className="mt-1 text-text-secondary">
+          Too small to measure at this accuracy: {quality.low_confidence_elements.map(nameOf).join(", ")}.
+        </p>
       )}
     </div>
   );

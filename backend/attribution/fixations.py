@@ -79,6 +79,11 @@ MAX_SAMPLE_DURATION = 0.200          # seconds
 # same element -- never to attribute a stray point to something new.
 EDGE_TOLERANCE = 0.01
 
+# Upper bound for an error-derived tolerance (see analyze_session's
+# gaze_error_px). Past this, "just outside the box" would reach the
+# neighbouring element on a typical layout.
+MAX_EDGE_TOLERANCE = 0.06
+
 BACKGROUND = None
 
 
@@ -247,6 +252,7 @@ def _smooth_labels(
     labels: List[Optional[str]],
     boxes: Dict[str, BBox],
     max_gap: float,
+    edge_tolerance: float = EDGE_TOLERANCE,
 ) -> Tuple[List[Optional[str]], int]:
     """Bridge brief excursions out of an element.
 
@@ -286,7 +292,7 @@ def _smooth_labels(
                 box = boxes.get(prev_label)
                 close_enough = True
                 if run_label is BACKGROUND and box is not None:
-                    tolerant = box.expanded(EDGE_TOLERANCE)
+                    tolerant = box.expanded(edge_tolerance)
                     close_enough = all(
                         (not samples[k].valid)
                         or tolerant.contains(positions[k][0], positions[k][1])
@@ -415,8 +421,16 @@ def attribute(
     dispersion_threshold: float = DISPERSION_THRESHOLD,
     max_gap: float = MAX_GAP,
     smoothing_window: int = SMOOTHING_WINDOW,
+    edge_tolerance: float = EDGE_TOLERANCE,
 ) -> AttributionTrace:
-    """The whole pipeline: smooth, label, bridge, detect fixations, segment."""
+    """The whole pipeline: smooth, label, bridge, detect fixations, segment.
+
+    edge_tolerance: how far outside a box (page units) a point may sit and
+    still count as that element -- for bridging a brief excursion, and for a
+    fixation whose centroid landed on background. The fixed default suits a
+    ~40px tracker; analyze_session derives a larger one from the session's
+    measured gaze error.
+    """
     samples = sorted(samples, key=lambda s: s.timestamp)
     durations = _sample_durations(samples)
 
@@ -426,7 +440,8 @@ def attribute(
     positions = smooth_positions(samples, smoothing_window, max_gap)
 
     labels = _raw_labels(samples, positions, boxes, priority)
-    labels, bridged = _smooth_labels(samples, positions, labels, boxes, max_gap)
+    labels, bridged = _smooth_labels(samples, positions, labels, boxes, max_gap,
+                                     edge_tolerance)
 
     fixations = detect_fixations(
         samples,
@@ -444,7 +459,7 @@ def attribute(
         if fix.element_id is BACKGROUND:
             # Just outside a box is almost always estimation error rather than
             # a deliberate fixation on the margin beside a button.
-            fix.element_id = nearest_element(boxes, fix.x, fix.y, EDGE_TOLERANCE)
+            fix.element_id = nearest_element(boxes, fix.x, fix.y, edge_tolerance)
 
     visits = _build_visits(samples, labels, durations)
 
@@ -491,4 +506,5 @@ __all__ = [
     "MAX_GAP",
     "MAX_SAMPLE_DURATION",
     "EDGE_TOLERANCE",
+    "MAX_EDGE_TOLERANCE",
 ]

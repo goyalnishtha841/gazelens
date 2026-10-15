@@ -101,6 +101,72 @@ generic_rec = Recommendation(
 generic_verified = agent4_critic.verify([generic_rec], ignored_cta_session)
 check("generic phrasing rejected", generic_verified[0].kept is False)
 
+print("\nQuality gate -- how much the chain may claim")
+import consolidate   # noqa: E402
+import quality_gate  # noqa: E402
+from orchestrator import run_pipeline  # noqa: E402
+
+DIAG = (1694 ** 2 + 840 ** 2) ** 0.5    # the pilot laptop's screen, ~1891px
+good = quality_gate.assess(quality_gate.QualityInput(
+    gaze_error_px=98, error_source="accuracy_check", screen_diagonal_px=DIAG,
+    tracked_pct=95, total_gaze_time=40, total_fixations=40))
+check("98px over 40s is good, no ceiling", good.level == "good" and good.max_severity == "High")
+fair = quality_gate.assess(quality_gate.QualityInput(
+    gaze_error_px=166, screen_diagonal_px=DIAG, tracked_pct=95, total_gaze_time=40,
+    total_fixations=40))
+check("166px is limited: severities capped at Medium",
+      fair.level == "limited" and fair.max_severity == "Medium")
+bad = quality_gate.assess(quality_gate.QualityInput(
+    gaze_error_px=437, screen_diagonal_px=DIAG, tracked_pct=95, total_gaze_time=24,
+    total_fixations=40))
+check("437px (the first real calibration) is insufficient", bad.level == "insufficient")
+check("every reason names its number", any("437px" in r for r in bad.reasons))
+check("unmeasured accuracy is limited, not good",
+      quality_gate.assess(quality_gate.QualityInput(
+          tracked_pct=95, total_gaze_time=40, total_fixations=40)).level == "limited")
+check("a 3-second session is insufficient whatever the accuracy",
+      quality_gate.assess(quality_gate.QualityInput(
+          gaze_error_px=50, screen_diagonal_px=DIAG, tracked_pct=99, total_gaze_time=3,
+          total_fixations=40)).level == "insufficient")
+
+print("\nConsolidation -- one issue per element, readable, honest about size")
+raw = run_pipeline(ignored_cta_session)
+check("ignored CTA: two rules on one element merge into one issue",
+      len(raw["issues_raw"]) == 2 and len(raw["issues"]) == 1
+      and raw["issues"][0]["merged_count"] == 2 and raw["issues"][0]["also"])
+check("merged issue keeps the most severe rating", raw["issues"][0]["severity"] == "High")
+check("readable label replaces the id", raw["issues"][0]["element_label"] == "Checkout button")
+check("one recommendation card per element", len(raw["recommendations_kept"]) == 1)
+check("labels from the page config win over tidied ids",
+      consolidate.readable_label("checkout_button", {"checkout_button": "Add to cart"}) == "Add to cart")
+check("page-level findings read as 'Whole page'",
+      consolidate.readable_label("__session__") == "Whole page")
+
+eid = raw["issues"][0]["element_id"]
+small = run_pipeline(ignored_cta_session, quality_gate.QualityInput(
+    gaze_error_px=98, error_source="accuracy_check", screen_diagonal_px=DIAG,
+    tracked_pct=95, total_gaze_time=40, total_fixations=40), reliability={eid: 0.5})
+issue = small["issues"][0]
+check("element smaller than the gaze error: downgraded one step, with a caveat",
+      issue["severity_raw"] == "High" and issue["severity"] == "Medium" and "98px" in issue["caveat"])
+rec = small["recommendations_kept"][0]
+check("its recommendation's confidence scales with measurability",
+      rec["measurability"] == 0.5 and rec["confidence"] == round(rec["confidence_raw"] * 0.5, 2))
+
+limited = run_pipeline(ignored_cta_session, quality_gate.QualityInput(
+    gaze_error_px=166, screen_diagonal_px=DIAG, tracked_pct=95, total_gaze_time=40,
+    total_fixations=40))
+check("limited session: nothing rated High",
+      all(i["severity"] != "High" for i in limited["issues"]))
+blocked = run_pipeline(ignored_cta_session, quality_gate.QualityInput(
+    gaze_error_px=437, screen_diagonal_px=DIAG, tracked_pct=95, total_gaze_time=40,
+    total_fixations=40))
+check("insufficient session: no issues or recommendations at all",
+      blocked["quality"]["level"] == "insufficient" and not blocked["issues"]
+      and not blocked["recommendations_kept"])
+check("no quality input = gate skipped (mock data has no measurement)",
+      raw["quality"] is None)
+
 print(f"\n{'=' * 40}\n{passed} passed, {failed} failed\n{'=' * 40}")
 
 if failed:

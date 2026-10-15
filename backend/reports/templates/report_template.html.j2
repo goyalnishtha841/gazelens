@@ -278,6 +278,17 @@
   }
 
   .empty-state { font-size: 9pt; color: var(--ink-soft); padding: 6px 0; }
+  .banner-insufficient { border-left-color: var(--ink); background: var(--accent-soft); }
+  .banner-insufficient .banner-dot { background: var(--ink); }
+  .quality-block { border: 1px solid var(--rule); padding: 8px 12px; margin: 10px 0 14px; font-size: 8.5pt; }
+  .quality-head { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; }
+  .quality-pill { font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 7px; border: 1px solid var(--ink); }
+  .quality-good { border-color: var(--rule); color: var(--ink-soft); }
+  .quality-limited { border-color: var(--ink); }
+  .quality-insufficient { background: var(--ink); color: #fff; }
+  .quality-reasons { margin: 6px 0 0 16px; padding: 0; color: var(--ink-soft); }
+  .issue-also, .issue-caveat, .rec-also { font-size: 7.5pt; color: var(--ink-soft); margin-top: 3px; }
+  .issue-caveat { font-style: italic; }
 
   .footer-note {
     margin-top: 28px;
@@ -326,14 +337,38 @@
 
   <p class="summary-text">{{ summary_html|safe }}</p>
 
+  {% if quality %}
+  <div class="quality-block">
+    <div class="quality-head">
+      <span class="label">Measurement quality</span>
+      <span class="quality-pill quality-{{ quality.level }}">{{ quality.level }}</span>
+      {% if quality.gaze_error_px is not none %}
+      <span>Gaze error <strong>{{ "%.0f"|format(quality.gaze_error_px) }} px</strong>
+        ({{ "%.1f"|format(quality.gaze_error_pct_diagonal) }}% of screen,
+        {{ "accuracy check" if quality.error_source == "accuracy_check" else "calibration estimate" }})</span>
+      {% endif %}
+    </div>
+    {% if quality.reasons %}
+    <ul class="quality-reasons">{% for r in quality.reasons %}<li>{{ r }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if quality.level == "limited" %}
+    <div class="issue-also">Severities are capped at Medium for this session.</div>
+    {% endif %}
+    {% if quality.low_confidence_elements %}
+    <div class="issue-also">Too small to measure at this accuracy:
+      {{ quality.low_confidence_elements|map("label")|join(", ") }}.</div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <div class="summary-grid">
     <div class="summary-card">
       <div class="label">First Noticed</div>
-      <div class="value">{{ behavior.first_noticed or "—" }}</div>
+      <div class="value">{{ behavior.first_noticed|label if behavior.first_noticed else "—" }}</div>
     </div>
     <div class="summary-card">
       <div class="label">Most Attended</div>
-      <div class="value">{{ behavior.most_attended or "—" }}</div>
+      <div class="value">{{ behavior.most_attended|label if behavior.most_attended else "—" }}</div>
     </div>
     <div class="summary-card">
       <div class="label">Attention Scattered</div>
@@ -347,8 +382,19 @@
 
   {% if heatmap_path %}
   <div class="heatmap-block">
-    <img src="{{ heatmap_path }}" alt="Attention map and dwell-time chart">
+    <img src="{{ heatmap_path }}" alt="Gaze heatmap over the page">
+    {% if dwell_chart_path %}
+    <div class="heatmap-caption">Where gaze actually went, over the page as it was shown. Blurred by the measured gaze error, so it is never sharper than the measurement. Dashed boxes are the elements attention was attributed to.</div>
+    {% else %}
     <div class="heatmap-caption">Left: attention by page position. Right: share of total gaze time per element, ranked.</div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if dwell_chart_path %}
+  <div class="heatmap-block">
+    <img src="{{ dwell_chart_path }}" alt="Attention per element and dwell-time ranking">
+    <div class="heatmap-caption">Per element: left, attention by element; right, share of total gaze time per element, ranked.</div>
   </div>
   {% endif %}
 
@@ -369,13 +415,18 @@
       {% for issue in issues %}
       <tr>
         <td><span class="severity-pill severity-{{ issue.severity }}">{{ issue.severity }}</span></td>
-        <td>{{ issue.issue }}<br><span class="evidence-text">{{ issue.element_id }}</span></td>
+        <td>{{ issue.issue }}<br><strong>{{ issue.element_label or (issue.element_id|label) }}</strong>
+          {% if issue.also %}<div class="issue-also">Also: {{ issue.also|join("; ") }}</div>{% endif %}
+          {% if issue.caveat %}<div class="issue-caveat">{{ issue.caveat }}</div>{% endif %}
+        </td>
         <td>{{ issue.heuristic }}</td>
         <td class="evidence-text">{{ issue.evidence }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  {% elif quality and quality.level == "insufficient" %}
+  <div class="empty-state">Not evaluated: the gaze data from this session isn't reliable enough to support findings (see Measurement quality above). Recalibrate and run the session again.</div>
   {% else %}
   <div class="empty-state">No usability issues detected against current thresholds.</div>
   {% endif %}
@@ -385,7 +436,7 @@
     {% for rec in recommendations_kept %}
     <div class="rec-card support-{{ rec.support }}">
       <div class="rec-header">
-        <span class="rec-element">{{ rec.element_id }} · {{ rec.support }}</span>
+        <span class="rec-element">{{ rec.element_label or (rec.element_id|label) }} · {{ rec.support }}</span>
         <div class="confidence-meter">
           <div class="confidence-track">
             <div class="confidence-fill" style="width:{{ (rec.confidence * 100)|round|int }}%;"></div>
@@ -394,6 +445,10 @@
         </div>
       </div>
       <div class="rec-text">{{ rec.recommendation }}</div>
+      {% if rec.also %}<div class="rec-also">Also consider: {{ rec.also|join(" ") }}</div>{% endif %}
+      {% if rec.measurability is defined and rec.measurability < 1 %}
+      <div class="rec-also">Confidence reduced from {{ "%.2f"|format(rec.confidence_raw) }}: the element is small relative to the gaze error.</div>
+      {% endif %}
       <ul class="rec-evidence-list">
         {% for e in rec.evidence %}<li>{{ e }}</li>{% endfor %}
       </ul>
@@ -425,7 +480,7 @@
     <tbody>
       {% for row in before_after %}
       <tr>
-        <td class="ba-element">{{ row.element_id }}<br>
+        <td class="ba-element">{{ row.element_id|label }}<br>
           <span class="ba-support support-{{ row.support }}">{{ row.support }} · {{ "%.2f"|format(row.confidence) }}</span>
         </td>
         <td class="ba-before">{{ row.before }}</td>

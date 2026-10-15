@@ -37,7 +37,8 @@ HEAT_CMAP = LinearSegmentedColormap.from_list("heat", ["#f4f6f4", "#f0d6cd", "#d
 PATH_CMAP = LinearSegmentedColormap.from_list("path", [GOOD, "#c99a3e", ACCENT_HIGH])
 
 
-def generate_attention_figure(session, layout: dict, output_path: str, dwell_threshold_pct: float = 5.0) -> str:
+def generate_attention_figure(session, layout: dict, output_path: str, dwell_threshold_pct: float = 5.0,
+                              names: dict | None = None) -> str:
     """
     layout: element_id -> (x, y, w, h) in normalized [0,1] page-space,
             (x, y) = top-left corner, y grows downward (screen convention).
@@ -75,7 +76,7 @@ def generate_attention_figure(session, layout: dict, output_path: str, dwell_thr
         dwell_pct = session.dwell_pct(element_id)
         text_color = "white" if intensity > 0.55 else INK
         ax_map.text(
-            x + w / 2, y + h / 2, f"{element_id}\n{dwell_pct:.1f}%",
+            x + w / 2, y + h / 2, f"{(names or {}).get(element_id, element_id)}\n{dwell_pct:.1f}%",
             ha="center", va="center", fontsize=7.3, color=text_color, linespacing=1.4,
         )
 
@@ -98,7 +99,7 @@ def generate_attention_figure(session, layout: dict, output_path: str, dwell_thr
     y_pos = range(len(labels))
     ax_bar.barh(y_pos, pcts, color=colors, height=0.55)
     ax_bar.set_yticks(list(y_pos))
-    ax_bar.set_yticklabels(labels, fontsize=8, color=INK)
+    ax_bar.set_yticklabels([(names or {}).get(k, k) for k in labels], fontsize=8, color=INK)
     ax_bar.set_xlabel("% of total gaze time", fontsize=8, color=INK_SOFT)
     ax_bar.axvline(dwell_threshold_pct, color=INK, linestyle="--", linewidth=1, alpha=0.6)
     ax_bar.set_ylim(-0.9, len(labels) - 0.3)
@@ -118,7 +119,7 @@ def generate_attention_figure(session, layout: dict, output_path: str, dwell_thr
     return output_path
 
 
-def generate_scanpath_figure(session, layout: dict, output_path: str) -> str:
+def generate_scanpath_figure(session, layout: dict, output_path: str, names: dict | None = None) -> str:
     """The sequence heatmap can't show: WHERE attention went, in ORDER.
 
     A dwell-time heatmap answers "how much did each element get" but
@@ -157,7 +158,7 @@ def generate_scanpath_figure(session, layout: dict, output_path: str) -> str:
             (x, y), w, h, boxstyle="round,pad=0,rounding_size=0.012",
             linewidth=1.0, edgecolor=FRAME, facecolor="#f4f5f3",
         ))
-        ax.text(x + w / 2, y + h + 0.025, element_id, ha="center", va="top",
+        ax.text(x + w / 2, y + h + 0.025, (names or {}).get(element_id, element_id), ha="center", va="top",
                 fontsize=6.3, color=INK_SOFT)
 
     # Collapse consecutive duplicates -- see docstring.
