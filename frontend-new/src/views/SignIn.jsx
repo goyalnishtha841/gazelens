@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
-import { Label } from "../components/Primitives.jsx";
-import { GazeTrailDecorative } from "../components/GazeTrail.jsx";
+import AuthLayout, { Field } from "../components/AuthLayout.jsx";
 
 export default function SignIn({ onSwitchToSignup, onBackToHome }) {
   const { login } = useAuth();
@@ -24,69 +23,24 @@ export default function SignIn({ onSwitchToSignup, onBackToHome }) {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center px-4">
-      {onBackToHome && (
-        <button
-          onClick={onBackToHome}
-          className="absolute left-6 top-6 flex items-center gap-1.5 text-[12px] text-text-secondary transition-colors hover:text-text-primary"
-        >
-          ← Home
-        </button>
+    <AuthLayout
+      title={<>Welcome <span className="font-serif font-normal italic text-accent">back</span></>}
+      subtitle="Sign in to run a test or open your reports."
+      onBackToHome={onBackToHome}
+      footer={<>New to GazeLens?{" "}<button type="button" onClick={onSwitchToSignup} className="font-medium text-accent hover:opacity-80">Create an account</button></>}
+    >
+      {error && (
+        <div className="mb-5 rounded-[14px] border border-coral/40 bg-coral/10 px-4 py-3 text-[14px] text-text-primary">{error}</div>
       )}
-      <div className="w-full max-w-[380px]">
-        <div className="relative mb-8 h-16">
-          <GazeTrailDecorative seed={3} points={4} edgeToEdge className="text-accent" />
-        </div>
-        <Label>GazeLens</Label>
-        <h1 className="mt-2 font-sans text-[26px] font-semibold text-text-primary">Sign in</h1>
-
-        {error && (
-          <div className="mt-6 rounded-card border border-accent/40 px-4 py-3 text-[13px] text-text-primary">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-5">
-          <div className="flex flex-col gap-1.5">
-            <Label>Email</Label>
-            <input
-              type="email"
-              required
-              readOnly={submitting}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="h-11 rounded-card border border-border bg-surface px-3.5 text-[14px] text-text-primary outline-none transition-colors focus:border-accent"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>Password</Label>
-            <input
-              type="password"
-              required
-              readOnly={submitting}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="h-11 rounded-card border border-border bg-surface px-3.5 text-[14px] text-text-primary outline-none transition-colors focus:border-accent"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={submitting}
-            className="mt-2 h-11 rounded-card bg-text-primary font-label-caps text-[13px] font-medium uppercase tracking-label text-bg transition-opacity hover:opacity-85 disabled:opacity-60"
-          >
-            {submitting ? "Signing in…" : "Continue"}
-          </button>
-        </form>
-
-        <div className="mt-8 border-t border-border pt-6 text-center text-[13px] text-text-secondary">
-          New to GazeLens?{" "}
-          <button type="button" onClick={onSwitchToSignup} className="text-accent hover:opacity-80">
-            Create account
-          </button>
-        </div>
-      </div>
-    </div>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <Field label="Email" type="email" required readOnly={submitting} value={email}
+          onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" />
+        <Field label="Password" type="password" required readOnly={submitting} value={password}
+          onChange={(e) => setPassword(e.target.value)} placeholder="Your password" autoComplete="current-password" />
+        <button type="submit" disabled={submitting} className="mt-2 h-12 w-full rounded-full bg-accent text-[16px] font-semibold text-[#0A0E14] transition-shadow hover:shadow-[0_0_30px_-6px_rgb(var(--color-accent)/0.7)] disabled:opacity-60">
+          {submitting ? "Signing in…" : "Sign in"}
+        </button>
+      </form>
+    </AuthLayout>
   );
 }

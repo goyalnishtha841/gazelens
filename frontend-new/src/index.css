@@ -52,7 +52,7 @@ html.dark {
 body {
   background-color: rgb(var(--color-bg));
   color: rgb(var(--color-text-primary));
-  font-family: "Inter", system-ui, sans-serif;
+  font-family: "Outfit", "Inter", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 

@@ -3,7 +3,9 @@ import { useAuth } from "../context/AuthContext.jsx";
 import {
   startCalibration, submitCalibrationSamples, completeCalibration, validateGaze, CAMERA_CONSTRAINTS,
 } from "../api/calibration.js";
-import { Label } from "../components/Primitives.jsx";
+import { motion } from "framer-motion";
+import GazeField from "../components/GazeField.jsx";
+import IrisMark from "../components/IrisMark.jsx";
 
 // Ported from frontend/src/views/Calibration.jsx -- same backend contract,
 // same 16-point default and dynamic grid shape, same on-screen-position
@@ -52,11 +54,24 @@ const VALIDATION_POINTS = [
 ];
 
 const VERDICT_TEXT = {
-  good: "Accurate enough to attribute gaze to individual page elements.",
-  fair: "Usable for larger page regions; small buttons may be misattributed.",
-  poor: "Too inaccurate to trust. Recalibrate before starting a session.",
-  insufficient: "Your eyes weren't tracked during the check. Recalibrate.",
+  good: "Accurate enough to tell which button or link you were looking at.",
+  fair: "Good enough for larger areas of a page. Small buttons might get mixed up.",
+  poor: "The tracking was too far off to trust. A second try usually fixes it.",
+  insufficient: "We couldn't see your eyes during the check. Let's run the setup again.",
 };
+
+const VERDICT_LOOK = {
+  good: { label: "Good", color: "var(--color-accent)" },
+  fair: { label: "Fair", color: "var(--color-amber)" },
+  poor: { label: "Too low", color: "var(--color-coral)" },
+  insufficient: { label: "Not measured", color: "var(--color-coral)" },
+};
+
+const TIPS = [
+  { title: "Sit an arm's length away", body: "Face the camera straight on, like a video call.", icon: <><circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" /></> },
+  { title: "Light from the front", body: "Avoid a bright window behind you.", icon: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></> },
+  { title: "Move only your eyes", body: "Keep your head still, now and during the test.", icon: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></> },
+];
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 function describeNote(note) {
@@ -270,9 +285,9 @@ export default function Calibration({ onComplete, onExit }) {
   const exitLink = onExit && (
     <button
       onClick={onExit}
-      className="absolute left-6 top-6 flex items-center gap-1.5 text-[12px] text-text-secondary transition-colors hover:text-text-primary"
+      className="absolute left-5 top-5 z-10 rounded-full border border-white/10 bg-surface/50 px-4 py-2 text-[14px] text-text-secondary backdrop-blur transition-colors hover:text-text-primary"
     >
-      ← Dashboard
+      ← Back
     </button>
   );
 
@@ -285,50 +300,62 @@ export default function Calibration({ onComplete, onExit }) {
   // Left off the "running" state on purpose -- mid-capture isn't where you
   // want a stray click ending the session.
   const signOutLink = (
-    <div className="absolute right-6 top-6 flex items-center gap-4">
-      <button
-        onClick={logout}
-        className="text-[12px] text-text-secondary transition-colors hover:text-text-primary"
+    <button
+      onClick={logout}
+      className="absolute right-5 top-5 z-10 rounded-full border border-white/10 bg-surface/50 px-4 py-2 text-[14px] text-text-secondary backdrop-blur transition-colors hover:text-text-primary"
+    >
+      Sign out
+    </button>
+  );
+
+  const btn = "rounded-full bg-accent font-semibold text-[#0A0E14] transition-shadow hover:shadow-[0_0_30px_-6px_rgb(var(--color-accent)/0.7)]";
+  const shell = (children, glow = "var(--color-accent)") => (
+    <div className="relative isolate flex min-h-screen items-center justify-center px-4 py-20">
+      <GazeField className="-z-10" />
+      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[560px]" style={{ background: `radial-gradient(50% 60% at 50% 0%, rgb(${glow} / 0.13), transparent 70%)` }} />
+      {captureRig}
+      {exitLink}
+      {signOutLink}
+      <motion.div
+        initial={{ opacity: 0, y: 18 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+        className="w-full max-w-[720px] rounded-[28px] border border-white/10 bg-surface/70 p-8 text-center shadow-[0_40px_100px_-40px_rgba(0,0,0,0.9)] backdrop-blur-xl sm:p-12"
       >
-        Sign out
-      </button>
+        {children}
+      </motion.div>
     </div>
   );
+
   if (status === "idle" || status === "error") {
-    return (
-      <div className="relative flex min-h-[calc(100vh-73px)] items-center justify-center">
-        {captureRig}
-        {exitLink}
-        {signOutLink}
-        <div className="max-w-md text-center">
-          <Label>GazeLens calibration</Label>
-          <h1 className="mt-4 font-sans text-[28px] font-semibold text-text-primary">Calibrate your gaze</h1>
-          <p className="mt-3 text-[14px] leading-relaxed text-text-secondary">
-            16 points will appear one at a time. Look directly at each one until it fills in, then hold
-            your gaze until the next point appears.
-          </p>
-          <p className="mt-3 text-[13px] leading-relaxed text-text-secondary">
-            Then 5 more points check how accurate it is. Takes about a minute and a half. Every gaze
-            measurement in your session depends on this, so it's worth doing carefully.
-          </p>
-          <ul className="mx-auto mt-4 max-w-sm space-y-1 text-left text-[12px] leading-relaxed text-text-secondary">
-            <li>· Sit about an arm's length from the screen, face square to the camera</li>
-            <li>· Light your face evenly from the front; avoid a bright window behind you</li>
-            <li>· Keep your head still and move only your eyes, here and during the session</li>
-          </ul>
-          {cameraError && (
-            <div className="mt-6 rounded-card border border-accent/40 px-4 py-3 text-left text-[13px] text-text-primary">
-              {cameraError}
+    return shell(
+      <>
+        <div className="mx-auto flex w-fit"><IrisMark size={60} wander /></div>
+        <h1 className="mt-6 text-[36px] font-bold leading-tight tracking-[-0.02em] text-text-primary sm:text-[44px]">
+          Let's teach GazeLens <span className="font-serif font-normal italic text-accent">your eyes</span>
+        </h1>
+        <p className="mx-auto mt-4 max-w-lg text-[17px] leading-relaxed text-text-secondary">
+          A dot will move around the screen. Just look at it until its ring fills up. It takes about a minute and a half, and it's what makes your results accurate.
+        </p>
+        <div className="mt-10 grid gap-3 text-left sm:grid-cols-3">
+          {TIPS.map((t) => (
+            <div key={t.title} className="rounded-[18px] border border-white/10 bg-bg/50 p-5">
+              <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-accent/15 text-accent">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{t.icon}</svg>
+              </span>
+              <div className="mt-4 text-[16px] font-semibold text-text-primary">{t.title}</div>
+              <div className="mt-1 text-[14px] leading-snug text-text-secondary">{t.body}</div>
             </div>
-          )}
-          <button
-            onClick={begin}
-            className="mt-8 h-11 rounded-card bg-text-primary px-8 font-label-caps text-[13px] font-medium uppercase tracking-label text-bg transition-opacity hover:opacity-85"
-          >
-            {status === "error" ? "Try again" : "Start calibration"}
-          </button>
+          ))}
         </div>
-      </div>
+        {cameraError && (
+          <div className="mt-6 rounded-[16px] border border-coral/40 bg-coral/10 px-4 py-3 text-left text-[15px] text-text-primary">{cameraError}</div>
+        )}
+        <button onClick={begin} className={`mt-10 h-12 px-8 text-[16px] ${btn}`}>
+          {status === "error" ? "Try again" : "I'm ready, start"}
+        </button>
+        <p className="mt-4 text-[13px] text-text-secondary">Your browser will ask to use the camera. Click Allow when it does.</p>
+      </>
     );
   }
 
@@ -336,55 +363,74 @@ export default function Calibration({ onComplete, onExit }) {
     const usable = quality?.usable ?? true;
     const verdict = validationError ? "insufficient" : validation?.verdict ?? "insufficient";
     const blocked = verdict === "poor" || verdict === "insufficient";
-    return (
-      <div className="relative flex min-h-[calc(100vh-73px)] items-center justify-center">
-        {captureRig}
-        {exitLink}
-        {signOutLink}
-        <div className="max-w-md text-center">
-          <Label>GazeLens calibration</Label>
-          <h1 className="mt-4 font-sans text-[28px] font-semibold text-text-primary">
-            {blocked ? "Calibration needs another try" : "Calibration complete"}
-          </h1>
-          <p className="mt-2 font-mono text-[12px] text-text-secondary">{calibrationId}</p>
-          {quality && (
-            <p className="mt-3 text-[13px] text-text-secondary">
-              {Math.round(quality.detection_rate * 100)}% detection rate ·{" "}
-              {Math.round(quality.point_coverage * 100)}% point coverage
+    const look = VERDICT_LOOK[verdict] || VERDICT_LOOK.insufficient;
+    const pct = validation?.median_error_pct_diagonal;
+    // the ring fills more the smaller the error; 20% of the screen or worse is empty
+    const fill = pct == null ? 0 : Math.max(0.04, Math.min(1, 1 - pct / 20));
+    const R = 54;
+    const C = 2 * Math.PI * R;
+    return shell(
+      <>
+        <h1 className="text-[36px] font-bold leading-tight tracking-[-0.02em] text-text-primary sm:text-[44px]">
+          {blocked ? <>Let's try that <span className="font-serif font-normal italic text-coral">once more</span></> : <>You're all <span className="font-serif font-normal italic text-accent">set</span></>}
+        </h1>
+        <p className="mx-auto mt-3 max-w-md text-[17px] leading-relaxed text-text-secondary">
+          {validationError || VERDICT_TEXT[verdict]}
+        </p>
+
+        <div className="mx-auto mt-10 flex max-w-lg flex-col items-center gap-8 rounded-[22px] border border-white/10 bg-bg/50 p-6 sm:flex-row sm:text-left">
+          <div className="relative h-[132px] w-[132px] shrink-0">
+            <svg viewBox="0 0 132 132" className="h-full w-full -rotate-90">
+              <circle cx="66" cy="66" r={R} fill="none" stroke="rgb(255 255 255 / 0.08)" strokeWidth="10" />
+              <motion.circle
+                cx="66" cy="66" r={R} fill="none" stroke={`rgb(${look.color})`} strokeWidth="10" strokeLinecap="round"
+                strokeDasharray={C}
+                initial={{ strokeDashoffset: C }}
+                animate={{ strokeDashoffset: C * (1 - fill) }}
+                transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
+                style={{ filter: `drop-shadow(0 0 8px rgb(${look.color} / 0.6))` }}
+              />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-[26px] font-bold tabular-nums text-text-primary">
+                {validation?.median_error_px != null ? Math.round(validation.median_error_px) : "–"}
+              </span>
+              <span className="text-[12px] text-text-secondary">pixels off</span>
+            </div>
+          </div>
+          <div>
+            <span className="rounded-full px-3 py-1 text-[14px] font-semibold" style={{ color: `rgb(${look.color})`, background: `rgb(${look.color} / 0.15)` }}>
+              Accuracy: {look.label}
+            </span>
+            <p className="mt-3 text-[15px] leading-relaxed text-text-secondary">
+              {pct != null
+                ? <>On average, where we think you looked was {pct.toFixed(1)}% of the screen away from the real spot.</>
+                : <>We couldn't measure accuracy this time.</>}
             </p>
-          )}
-          <div className="mt-6 rounded-card border border-border px-4 py-4 text-left">
-            <Label>Accuracy check</Label>
-            {validation?.median_error_px != null && (
-              <p className="mt-2 font-mono text-[22px] font-semibold text-text-primary">
-                {Math.round(validation.median_error_px)} px
-                <span className="ml-2 text-[12px] font-normal text-text-secondary">
-                  median error · {validation.median_error_pct_diagonal.toFixed(1)}% of screen
-                </span>
+            {quality && (
+              <p className="mt-2 text-[13px] text-text-secondary">
+                Face seen in {Math.round(quality.detection_rate * 100)}% of frames · {Math.round(quality.point_coverage * 100)}% of dots captured
               </p>
             )}
-            <p className={`mt-2 text-[13px] leading-relaxed ${blocked ? "text-accent" : "text-text-secondary"}`}>
-              {validationError || VERDICT_TEXT[verdict]}
-            </p>
           </div>
-          {!usable && (
-            <div className="mt-3 rounded-card border border-accent/40 px-4 py-3 text-left text-[13px] text-text-primary">
-              {(quality?.reasons || []).join("; ") || "Calibration quality is below the usable threshold."}
-            </div>
-          )}
-          <button
-            onClick={blocked ? begin : () => onComplete?.(calibrationId)}
-            className="mt-8 h-11 rounded-card bg-text-primary px-8 font-label-caps text-[13px] font-medium uppercase tracking-label text-bg transition-opacity hover:opacity-85"
-          >
-            {blocked ? "Recalibrate" : "Continue to dashboard"}
-          </button>
-          {!blocked && verdict === "fair" && (
-            <button onClick={begin} className="mt-3 block w-full text-[12px] text-text-secondary hover:text-text-primary">
-              Recalibrate for better accuracy
-            </button>
-          )}
         </div>
-      </div>
+
+        {!usable && (
+          <div className="mx-auto mt-4 max-w-lg rounded-[16px] border border-coral/40 bg-coral/10 px-4 py-3 text-left text-[15px] text-text-primary">
+            {(quality?.reasons || []).join("; ") || "The setup didn't capture enough good frames."}
+          </div>
+        )}
+
+        <button onClick={blocked ? begin : () => onComplete?.(calibrationId)} className={`mt-10 h-12 px-8 text-[16px] ${btn}`}>
+          {blocked ? "Redo the setup" : "Continue"}
+        </button>
+        {!blocked && verdict === "fair" && (
+          <button onClick={begin} className="mx-auto mt-4 block text-[14px] text-text-secondary hover:text-text-primary">
+            Redo it for better accuracy
+          </button>
+        )}
+      </>,
+      blocked ? "var(--color-coral)" : "var(--color-accent)",
     );
   }
 
@@ -411,8 +457,8 @@ export default function Calibration({ onComplete, onExit }) {
         {captureRig}
         {themeCorner}
         <div className="fixed left-1/2 top-10 z-10 -translate-x-1/2 text-center">
-          <Label>Accuracy check {currentIndex + 1} of {VALIDATION_POINTS.length}</Label>
-          <p className="mx-auto mt-2 max-w-sm text-[12px] text-text-secondary">Same as before: look at each dot until it fills.</p>
+          <span className="rounded-full border border-white/10 bg-surface/70 px-4 py-1.5 text-[14px] font-medium text-text-primary backdrop-blur">Checking accuracy · {currentIndex + 1} of {VALIDATION_POINTS.length}</span>
+          <p className="mx-auto mt-3 max-w-sm text-[14px] text-text-secondary">Same as before: look at each dot until it fills.</p>
         </div>
         <div className="fixed -translate-x-1/2 -translate-y-1/2" style={{ left: `${vx * 100}vw`, top: `${vy * 100}vh` }}>
           {ring}
@@ -427,11 +473,11 @@ export default function Calibration({ onComplete, onExit }) {
       {exitLink}
       {themeCorner}
       <div className="fixed left-1/2 top-10 z-10 -translate-x-1/2 text-center">
-        <Label>Point {currentIndex + 1} of {PATTERN}</Label>
+        <span className="rounded-full border border-white/10 bg-surface/70 px-4 py-1.5 text-[14px] font-medium text-text-primary backdrop-blur">Dot {currentIndex + 1} of {PATTERN}</span>
         {pointFeedback && (
-          <p className={`mx-auto mt-2 max-w-sm text-[12px] leading-relaxed ${pointFeedback.accepted > 0 ? "text-text-secondary" : "text-accent"}`}>
+          <p className={`mx-auto mt-3 max-w-sm text-[14px] leading-relaxed ${pointFeedback.accepted > 0 ? "text-text-secondary" : "text-coral"}`}>
             {pointFeedback.accepted > 0
-              ? `Last point: ${pointFeedback.accepted}/${pointFeedback.accepted + pointFeedback.rejected} frames captured.`
+              ? `Nice. Got ${pointFeedback.accepted} of ${pointFeedback.accepted + pointFeedback.rejected} frames on the last dot.`
               : describeNote(pointFeedback.note) || `Last point: 0/${pointFeedback.rejected} frames captured.`}
           </p>
         )}

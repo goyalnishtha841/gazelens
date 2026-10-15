@@ -6,7 +6,7 @@ import { getSessionImage } from "../api/client.js";
  * authenticated blob and renders it -- an <img src> can't carry a bearer
  * token, so this bridges that gap. Ported from frontend/src/views/Dashboard.jsx.
  */
-export default function ReportImage({ token, sessionId, kind, alt, emptyLabel }) {
+export default function ReportImage({ token, sessionId, kind, alt, emptyLabel, natural = false }) {
   const [url, setUrl] = useState(null);
   const [status, setStatus] = useState("loading"); // loading | ready | error
 
@@ -35,17 +35,19 @@ export default function ReportImage({ token, sessionId, kind, alt, emptyLabel })
 
   if (status === "loading") {
     return (
-      <div className="flex h-full w-full items-center justify-center">
+      <div className={`flex w-full items-center justify-center ${natural ? "min-h-[260px]" : "h-full"}`}>
         <div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
       </div>
     );
   }
   if (status === "error") {
     return (
-      <div className="flex h-full w-full items-center justify-center p-6 text-center">
+      <div className={`flex w-full items-center justify-center p-6 text-center ${natural ? "min-h-[260px]" : "h-full"}`}>
         <p className="text-[13px] text-text-secondary">{emptyLabel || "Not available for this session."}</p>
       </div>
     );
   }
-  return <img src={url} alt={alt} className="h-full w-full object-contain" />;
+  // natural: take the image's own height (the report viewer), instead of
+  // fitting into a fixed box
+  return <img src={url} alt={alt} className={natural ? "block h-auto w-full rounded-[14px]" : "h-full w-full object-contain"} />;
 }

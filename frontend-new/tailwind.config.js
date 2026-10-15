@@ -23,7 +23,8 @@ export default {
         coral: "rgb(var(--color-coral) / <alpha-value>)",
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
+        // Outfit everywhere, so the app reads like the landing page
+        sans: ["Outfit", "Inter", "system-ui", "sans-serif"],
         // Friendly, rounded headline face (the landing page uses it for all
         // text); the serif italic is for one accented phrase at a time.
         display: ["Outfit", "Inter", "system-ui", "sans-serif"],

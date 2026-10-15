@@ -35,7 +35,7 @@ export function useCountUp(target, durationMs = 900) {
 export function Card({ children, className = "", ...rest }) {
   return (
     <div
-      className={`group rounded-card border border-border bg-surface p-6 transition-shadow duration-300 hover:border-accent/30 hover:shadow-[0_0_0_1px_rgb(var(--color-accent)/0.12),0_0_28px_-10px_rgb(var(--color-accent)/0.45)] ${className}`}
+      className={`group rounded-[20px] border border-border bg-surface/80 p-6 backdrop-blur-sm transition-all duration-300 hover:border-accent/30 hover:shadow-[0_0_0_1px_rgb(var(--color-accent)/0.12),0_0_40px_-14px_rgb(var(--color-accent)/0.5)] ${className}`}
       {...rest}
     >
       {children}
@@ -48,7 +48,7 @@ export function Card({ children, className = "", ...rest }) {
 export function Label({ children, className = "" }) {
   return (
     <span
-      className={`font-mono text-[11px] uppercase tracking-label text-text-secondary ${className}`}
+      className={`text-[12px] font-semibold uppercase tracking-[0.12em] text-text-secondary ${className}`}
     >
       {children}
     </span>

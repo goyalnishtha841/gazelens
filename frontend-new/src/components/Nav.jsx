@@ -31,73 +31,77 @@ export default function Nav({ active, onNavigate, onSignIn, onLogout, loggedOut 
 
   if (loggedOut) return <PublicNav onSignIn={onSignIn} />;
 
-  const headerClass = "sticky top-0 z-40 border-b border-border bg-bg/75 backdrop-blur-md";
-
   return (
-    <header className={headerClass}>
-      <div className="mx-auto flex max-w-[1400px] items-center justify-between px-8 py-4">
-        <button onClick={() => onNavigate("home")} aria-label="GazeLens home">
-          <Wordmark />
+    <header className="sticky top-0 z-40 px-3 pt-3 sm:px-5 sm:pt-4">
+      <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-3 rounded-full border border-white/10 bg-surface/70 py-2 pl-5 pr-2 shadow-[0_12px_40px_-14px_rgba(0,0,0,0.7)] backdrop-blur-xl">
+        <button onClick={() => onNavigate("home")} aria-label="GazeLens home" className="shrink-0">
+          <Wordmark large />
         </button>
-        <nav className="flex items-center gap-5 sm:gap-7">
-          {LINKS.map((l) => (
-              <button
-                key={l.id}
-                onClick={() => onNavigate(l.id)}
-                className={`relative hidden pb-1 font-sans text-[13px] transition-colors sm:inline ${
-                  active === l.id ? "text-text-primary" : "text-text-secondary hover:text-text-primary"
-                }`}
-              >
-                {l.label}
-                {active === l.id && (
-                  <motion.span
-                    layoutId="nav-underline"
-                    className="absolute inset-x-0 -bottom-[1px] h-[1.5px] bg-accent"
-                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                  />
-                )}
-              </button>
-            ))}
 
-          {(
-            <div className="relative">
-              <button
-                onClick={() => setMenuOpen((v) => !v)}
-                className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-[11px] font-medium text-text-primary"
-              >
-                {initials}
-              </button>
-              {menuOpen && (
-                <div className="absolute right-0 top-9 w-40 rounded-card border border-border bg-surface py-1 shadow-sm">
-                  <button
-                    onClick={() => {
-                      onNavigate("calibration");
-                      setMenuOpen(false);
-                    }}
-                    className="block w-full px-3.5 py-2 text-left text-[13px] text-text-primary hover:bg-bg"
-                  >
-                    Recalibrate
-                  </button>
-                  <button
-                    onClick={() => {
-                      onLogout?.();
-                      setMenuOpen(false);
-                    }}
-                    className="block w-full px-3.5 py-2 text-left text-[13px] text-text-secondary hover:bg-bg"
-                  >
-                    Sign out
-                  </button>
-                </div>
+        <nav className="hidden items-center gap-1 md:flex" aria-label="App">
+          {LINKS.map((l) => (
+            <button
+              key={l.id}
+              onClick={() => onNavigate(l.id)}
+              className={`relative rounded-full px-4 py-2 text-[14px] font-medium transition-colors ${
+                active === l.id ? "text-text-primary" : "text-text-secondary hover:text-text-primary"
+              }`}
+            >
+              {active === l.id && (
+                <motion.span
+                  layoutId="app-nav-pill"
+                  className="absolute inset-0 -z-10 rounded-full bg-white/[0.07] ring-1 ring-white/10"
+                  transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                />
               )}
-            </div>
-          )}
+              {l.label}
+            </button>
+          ))}
         </nav>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onNavigate("session")}
+            className="hidden rounded-full bg-accent px-5 py-2.5 text-[14px] font-semibold text-[#0A0E14] transition-shadow hover:shadow-[0_0_24px_-4px_rgb(var(--color-accent)/0.7)] sm:inline"
+          >
+            New test
+          </button>
+          <div className="relative">
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-label="Account menu"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-gradient-to-br from-accent/30 to-cool/30 text-[14px] font-semibold text-text-primary"
+            >
+              {initials}
+            </button>
+            {menuOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="absolute right-0 top-12 w-52 overflow-hidden rounded-[16px] border border-white/10 bg-surface/95 p-1.5 shadow-[0_20px_50px_-15px_rgba(0,0,0,0.8)] backdrop-blur-xl"
+              >
+                {user?.email && <div className="truncate px-3 py-2 text-[12px] text-text-secondary">{user.email}</div>}
+                {[
+                  { label: "Recalibrate", onClick: () => onNavigate("calibration") },
+                  { label: "System status", onClick: () => onNavigate("status") },
+                  { label: "Sign out", onClick: () => onLogout?.(), muted: true },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    onClick={() => { item.onClick(); setMenuOpen(false); }}
+                    className={`block w-full rounded-[10px] px-3 py-2 text-left text-[14px] hover:bg-white/[0.06] ${item.muted ? "text-text-secondary" : "text-text-primary"}`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </div>
+        </div>
       </div>
     </header>
   );
 }
-
-const GITHUB_URL = "https://github.com/goyalnishtha841/gazelens";
 
 /**
  * Landing-page navigation: a frosted capsule floating just below the top of
@@ -170,15 +174,6 @@ function PublicNav({ onSignIn }) {
         </nav>
 
         <div className="flex items-center gap-1.5">
-          <a
-            href={GITHUB_URL}
-            target="_blank"
-            rel="noreferrer"
-            aria-label="GazeLens on GitHub"
-            className="hidden h-10 w-10 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-white/[0.07] hover:text-text-primary md:flex"
-          >
-            <GithubIcon />
-          </a>
           <button
             onClick={onSignIn}
             className="hidden rounded-full px-4 py-2 font-display text-[15px] font-medium text-text-primary transition-colors hover:bg-white/[0.07] sm:inline"
@@ -217,18 +212,11 @@ function PublicNav({ onSignIn }) {
               {l.label}
             </a>
           ))}
-          <div className="mt-1 flex gap-2 border-t border-white/10 p-2 pt-3">
-            <button onClick={onSignIn} className="flex-1 rounded-full border border-white/10 py-2.5 font-display text-[15px] font-medium text-text-primary">Sign in</button>
-            <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="flex flex-1 items-center justify-center gap-2 rounded-full border border-white/10 py-2.5 font-display text-[15px] font-medium text-text-primary"><GithubIcon /> GitHub</a>
+          <div className="mt-1 border-t border-white/10 p-2 pt-3">
+            <button onClick={onSignIn} className="w-full rounded-full border border-white/10 py-2.5 font-display text-[15px] font-medium text-text-primary">Sign in</button>
           </div>
         </motion.nav>
       )}
     </header>
-  );
-}
-
-function GithubIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.04 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.58.23 2.75.11 3.04.74.81 1.19 1.83 1.19 3.09 0 4.41-2.7 5.38-5.26 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z" /></svg>
   );
 }
