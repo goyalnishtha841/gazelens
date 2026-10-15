@@ -40,15 +40,16 @@ VISIBLE_FRACTION = 0.03   # density below this share of the peak is dropped as n
 INK = "#1c2321"
 INK_SOFT = "#5b6460"
 
-# transparent -> blue -> green -> yellow -> red, the convention people read
-# heatmaps with; alpha rises with density so the page stays visible
+# The GazeLens brand ramp -- cool #5B8CFF -> iris #2EE6C5 -> amber #FFB547
+# -> coral #FF6B5A -- so reports and the app share one colour scale. Alpha
+# rises with density so the page stays visible.
 _COLORS = [
-    (0.00, (0.10, 0.30, 0.90, 0.00)),
-    (0.08, (0.10, 0.40, 0.95, 0.12)),
-    (0.20, (0.10, 0.45, 0.95, 0.38)),
-    (0.40, (0.15, 0.75, 0.35, 0.50)),
-    (0.65, (0.98, 0.85, 0.15, 0.62)),
-    (1.00, (0.90, 0.15, 0.10, 0.75)),
+    (0.00, (0.357, 0.549, 1.000, 0.00)),
+    (0.08, (0.357, 0.549, 1.000, 0.12)),
+    (0.20, (0.357, 0.549, 1.000, 0.38)),
+    (0.42, (0.180, 0.902, 0.773, 0.50)),
+    (0.68, (1.000, 0.710, 0.278, 0.62)),
+    (1.00, (1.000, 0.420, 0.353, 0.78)),
 ]
 HEAT_CMAP = LinearSegmentedColormap.from_list(
     "gaze", [(p, c) for p, c in _COLORS]

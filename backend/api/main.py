@@ -1,7 +1,7 @@
 """
 main.py
 
-The Fixation API.
+The GazeLens API (built on the GazeUX-Agent framework).
 
     cd backend
     uvicorn api.main:app --reload --port 8000
@@ -68,7 +68,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="Fixation API",
+    title="GazeLens API",
     description="Webcam gaze estimation and multi-agent UX evaluation.",
     version="1.0.0",
     lifespan=lifespan,

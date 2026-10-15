@@ -1,13 +1,13 @@
-# Fixation
-### *Built on the Fixation framework — a webcam-based, multi-agent framework for gaze-driven UI/UX evaluation*
+# GazeLens
+### *Built on the GazeUX-Agent framework — a webcam-based, multi-agent framework for gaze-driven UI/UX evaluation*
 
-Fixation turns an ordinary laptop webcam into a low-cost usability-testing tool. It tracks where someone actually looks while using a web page (or any live URL), maps that attention to specific UI elements, and runs it through a chain of evidence-grounded AI agents that produce a UX report a designer can act on — not a vague "make it better," but "the checkout button got 2% of total gaze time against a 5% threshold, here's the fix, here's the confidence score, here's why the system believes it."
+GazeLens turns an ordinary laptop webcam into a low-cost usability-testing tool. It tracks where someone actually looks while using a web page (or any live URL), maps that attention to specific UI elements, and runs it through a chain of evidence-grounded AI agents that produce a UX report a designer can act on — not a vague "make it better," but "the checkout button got 2% of total gaze time against a 5% threshold, here's the fix, here's the confidence score, here's why the system believes it."
 
 ---
 
 ## Why this exists
 
-Proper eye-tracking hardware is expensive, and even when you have gaze data, someone still has to manually work out *why* a design failed. Fixation closes that gap with three concrete contributions:
+Proper eye-tracking hardware is expensive, and even when you have gaze data, someone still has to manually work out *why* a design failed. GazeLens closes that gap with three concrete contributions:
 
 1. **A benchmarked, swappable pupil detector** — comparing YOLOv8, SSD300, and Faster R-CNN on the same dataset, evaluated on precision, recall, mAP@0.5, and inference speed — not just accuracy.
 2. **Gaze-to-UI-element attribution** — converting raw gaze coordinates into per-element metrics (dwell time, time-to-first-fixation, revisit count, scanpath), not just a heatmap.
