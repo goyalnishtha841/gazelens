@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { startSession, linkCalibration, estimateGazeFrame, finalizeSession, listTestUis } from "../api/client.js";
 import { renderUrl } from "../api/render.js";
 import { CAMERA_CONSTRAINTS } from "../api/calibration.js";
-import { OneEuroFilter2D } from "../lib/oneEuroFilter.js";
+import { GazeStabilizer } from "../lib/gazeStabilizer.js";
 import { motion } from "framer-motion";
 import { Reveal, StaggerGroup, StaggerItem } from "../components/Motion.jsx";
 import IrisMark from "../components/IrisMark.jsx";
@@ -82,7 +82,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
   const areaRef = useRef(null);
   const scrollerRef = useRef(null);
   const [boxSize, setBoxSize] = useState(null);
-  const smootherRef = useRef(new OneEuroFilter2D());
+  const smootherRef = useRef(new GazeStabilizer());
 
   useEffect(() => {
     listTestUis(token)
@@ -180,8 +180,9 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
           if (stopped) return;
           const g = result.gaze;
           if (g.valid) {
-            const p = smootherRef.current.filter(g.x, g.y, started / 1000);
-            setGazePoint({ x: p.x, y: p.y, onPage: g.in_bounds });
+            const r = stageRef.current?.getBoundingClientRect();
+            const p = smootherRef.current.push(g.x, g.y, r && r.height ? r.width / r.height : 16 / 9);
+            setGazePoint({ x: p.x, y: p.y, onPage: g.in_bounds, jumped: p.jumped });
           }
           setGazeWarning(NOTE_WARNINGS[g.note] ?? null);
         } catch (err) {
@@ -533,7 +534,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
               <div
                 className="pointer-events-none absolute z-20 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-accent transition-all ease-out"
                 style={{
-                  left: `${gazePoint.x * 100}%`, top: `${gazePoint.y * 100}%`, transitionDuration: "60ms",
+                  left: `${gazePoint.x * 100}%`, top: `${gazePoint.y * 100}%`, transitionDuration: gazePoint.jumped ? "90ms" : "320ms",
                   opacity: gazePoint.onPage ? 1 : 0.35,
                   boxShadow: "0 0 16px 2px rgb(var(--color-accent) / 0.4)",
                 }}

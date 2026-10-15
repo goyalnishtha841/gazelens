@@ -478,6 +478,32 @@ def page_screenshot(ui_page: str, capture_meta: Optional[dict],
         return None
 
 
+def attention_summary(metrics, labels: Dict[str, str], top: int = 12) -> Optional[dict]:
+    """Per-element attention for the PDF's bar list and first-look list."""
+    dwell = dict(getattr(metrics, "dwell_time", {}) or {})
+    if not dwell:
+        return None
+    importance = dict(getattr(metrics, "element_importance", {}) or {})
+    ttff = dict(getattr(metrics, "ttff", {}) or {})
+    name = lambda eid: labels.get(eid) or eid.replace("_", " ")
+    total = sum(dwell.values()) or 1.0
+    rows = sorted(({"id": k, "pct": 100.0 * v / total} for k, v in dwell.items()),
+                  key=lambda r: -r["pct"])
+    shown = [r for i, r in enumerate(rows)
+             if i < top or (importance.get(r["id"]) == "high" and r["pct"] < 5.0)][:top + 4]
+    peak = max(10.0, max(r["pct"] for r in rows))
+    bars = [{"name": name(r["id"]), "pct": r["pct"], "width": max(1.5, 100.0 * r["pct"] / peak),
+             "important": importance.get(r["id"]) == "high",
+             "low": importance.get(r["id"]) == "high" and r["pct"] < 5.0} for r in shown]
+    seen = sorted(ttff.items(), key=lambda kv: kv[1])[:10]
+    never = [name(k) for k in dwell if k not in ttff]
+    return {
+        "bars": bars, "hidden": len(rows) - len(shown),
+        "first_look": [{"name": name(k), "s": v} for k, v in seen],
+        "never": never[:6], "never_more": max(0, len(never) - 6),
+    }
+
+
 def render_report(
     pipeline_result: dict,
     metrics,
@@ -488,6 +514,7 @@ def render_report(
     screenshot_path: Optional[str] = None,
     page_px: Optional[Tuple[int, int]] = None,
     gaze_error_px: Optional[float] = None,
+    page_name: Optional[str] = None,
 ) -> Dict[str, Optional[str]]:
     """Heatmap + HTML + PDF. Never fatal.
 
@@ -543,10 +570,22 @@ def render_report(
 
     try:
         scanpath_path = output_dir / f"{session_id}_scanpath.png"
-        _heatmap().generate_scanpath_figure(
-            metrics, ui_config.layout_for_heatmap(), str(scanpath_path),
-            names=pipeline_result.get("element_labels"),
-        )
+        page_w = (page_px or (0, 0))[0]
+        if gaze_points is not None:
+            # the real eye path: fixations from the gaze stream over the page
+            _gaze_heatmap().generate_gaze_path(
+                gaze_points, str(scanpath_path),
+                screenshot_path=screenshot_path,
+                layout=ui_config.layout_for_heatmap(),
+                labels=pipeline_result.get("element_labels"),
+                size=page_px,
+                error_frac=(gaze_error_px / page_w) if gaze_error_px and page_w else None,
+            )
+        else:
+            _heatmap().generate_scanpath_figure(
+                metrics, ui_config.layout_for_heatmap(), str(scanpath_path),
+                names=pipeline_result.get("element_labels"),
+            )
         out["scanpath_path"] = str(scanpath_path)
     except Exception as exc:        # noqa: BLE001
         _note(f"scanpath: {type(exc).__name__}: {exc}")
@@ -554,6 +593,8 @@ def render_report(
     try:
         result = _report_generator().generate_report(
             pipeline_result,
+            page_name=page_name,
+            attention=attention_summary(metrics, pipeline_result.get("element_labels") or {}),
             ui_page=metrics.ui_page,
             output_dir=str(output_dir),
             heatmap_path=out["heatmap_path"],
@@ -700,6 +741,7 @@ def analyse_session(
         screenshot_path=page_screenshot(ui_page, capture_meta, page_px, output_dir, session_id),
         page_px=page_px,
         gaze_error_px=error_px,
+        page_name=(capture_meta or {}).get("final_url", "").replace("https://", "").replace("http://", "").rstrip("/") or None,
     )
 
     from dataclasses import asdict

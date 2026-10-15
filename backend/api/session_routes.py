@@ -665,7 +665,7 @@ async def get_report_pdf(
     report response tells the caller the HTML version still exists.
     """
     return _report_file(
-        session_id, user, db, "pdf_path", "application/pdf", filename=f"fixation-report-{session_id}.pdf"
+        session_id, user, db, "pdf_path", "application/pdf", filename=f"gazelens-report-{session_id}.pdf"
     )
 
 

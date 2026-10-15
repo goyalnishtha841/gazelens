@@ -42,7 +42,7 @@ function pointSeconds(step) {
 function settleSeconds(step) {
   return SETTLE_SECONDS + (step === 0 ? FIRST_POINT_EXTRA_SECONDS : 0);
 }
-const CAPTURE_INTERVAL_MS = 130;
+const CAPTURE_INTERVAL_MS = 80;  // ~24 frames per dot: more samples to average out per-frame noise
 const FRAME_QUALITY = 0.8;
 const RADIUS = 26;
 

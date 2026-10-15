@@ -2,505 +2,306 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>GazeLens Report — {{ session_id }}</title>
+<title>GazeLens report · {{ page_name }}</title>
 <style>
   @page {
     /* pdf_backends.py's Chromium path sets its own PDF margin box via
-       Playwright's `margin` option (independent of this @page rule), tuned
-       to leave enough room at the bottom for the footer below. This
-       `margin` value is what WeasyPrint actually uses, if that backend
-       becomes available on a given machine. */
-    margin: 20mm 18mm 20mm 18mm;
-    /* Renders on both backends: WeasyPrint via its native paged-media
-       support, and -- confirmed by direct test, not assumed -- this
-       Chromium build too, so no separate Playwright header/footer template
-       is needed in pdf_backends.py. */
-    @bottom-left { content: "FIXATION · CONFIDENTIAL"; font-family: "Courier New", monospace; font-size: 7pt; color: #999; letter-spacing: 0.08em; }
-    @bottom-right { content: "Page " counter(page) " of " counter(pages); font-family: "Courier New", monospace; font-size: 7pt; color: #999; }
+       Playwright's `margin` option; this is what WeasyPrint uses. Both
+       render the margin boxes below. */
+    margin: 16mm 15mm 18mm 15mm;
+    @bottom-left { content: "GazeLens · UX report"; font-family: "Helvetica Neue", Arial, sans-serif; font-size: 7.5pt; color: #8A97A8; }
+    @bottom-right { content: "Page " counter(page) " of " counter(pages); font-family: "Helvetica Neue", Arial, sans-serif; font-size: 7.5pt; color: #8A97A8; }
   }
 
-  /* Same tokens as frontend-new/src/index.css (light mode) -- monochromatic
-     palette, one accent, no semantic red/amber/green. Severity below is
-     conveyed by weight/emphasis, not hue, to match that. */
+  /* The app's palette (frontend-new/src/index.css), printed on white. */
   :root {
-    --bg: #f7f7f5;
-    --surface: #ffffff;
-    --ink: #111111;
-    --ink-soft: #777777;
-    --rule: #e7e7e4;
-    --accent: #6c63ff;
-    --accent-soft: #6c63ff1a;
+    --ink: #0F1720;
+    --ink-soft: #5B6878;
+    --rule: #E3E8EE;
+    --tint: #F4F7FA;
+    --night: #0A0E14;
+    --accent: #12B89B;       /* the app's #2EE6C5, darkened to print legibly */
+    --accent-bright: #2EE6C5;
+    --amber: #E09A1F;
+    --coral: #E5533F;
+    --cool: #4C7CF0;
   }
-
   * { box-sizing: border-box; }
-
   body {
-    font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-family: "Outfit", "Helvetica Neue", Helvetica, Arial, sans-serif;
     color: var(--ink);
-    background: white;
     font-size: 10pt;
     line-height: 1.55;
     margin: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
+  .serif { font-family: "Instrument Serif", Georgia, "Times New Roman", serif; font-style: italic; font-weight: 400; }
 
-  .label {
-    font-family: "SF Mono", "Courier New", monospace;
-    font-size: 7.5pt;
-    text-transform: uppercase;
-    letter-spacing: 0.14em;
-    color: var(--ink-soft);
+  /* ---------- cover ---------- */
+  .cover {
+    background: var(--night);
+    color: #E8EEF5;
+    border-radius: 16px;
+    padding: 22px 26px 24px;
+    position: relative;
+    overflow: hidden;
   }
+  .cover::after {
+    content: ""; position: absolute; right: -60px; top: -80px; width: 260px; height: 260px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(46,230,197,0.28), rgba(46,230,197,0) 70%);
+  }
+  .brand { display: flex; align-items: center; gap: 8px; font-size: 13pt; font-weight: 700; letter-spacing: -0.01em; }
+  .brand .lens { color: var(--accent-bright); }
+  .brand-mark { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--accent-bright); position: relative; }
+  .brand-mark::after { content: ""; position: absolute; left: 4px; top: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-bright); }
+  .cover-meta { display: flex; justify-content: space-between; align-items: center; }
+  .cover-date { font-size: 8.5pt; color: #8A97A8; }
+  .cover h1 { font-size: 26pt; line-height: 1.1; letter-spacing: -0.02em; margin: 22px 0 6px; font-weight: 700; }
+  .cover h1 .serif { color: var(--accent-bright); }
+  .cover h1.tone-coral .serif { color: #FF6B5A; }
+  .cover h1.tone-amber .serif { color: #FFB547; }
+  .cover .page { font-size: 10.5pt; color: #B7C2CF; }
+  .cover .summary { margin-top: 12px; font-size: 10.5pt; line-height: 1.6; color: #D5DDE6; max-width: 92%; }
+  .cover .summary strong { color: white; }
+  .chips { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { font-size: 8.5pt; font-weight: 600; padding: 3px 10px; border-radius: 99px; }
+  .chip-High { background: rgba(255,107,90,0.18); color: #FF8B7D; }
+  .chip-Medium { background: rgba(255,181,71,0.18); color: #FFC66E; }
+  .chip-Low { background: rgba(91,140,255,0.2); color: #8FB0FF; }
+  .chip-ok { background: rgba(46,230,197,0.18); color: var(--accent-bright); }
 
-  /* Thin brand band at the top of the first page -- the one flourish a
-     monochrome + single-accent palette can afford, used exactly once.
-     Deliberately NOT bled to the physical page edge via negative margins:
-     WeasyPrint honours the @page margin above, but the Chromium backend
-     (pdf_backends.py) sets its own, different PDF margin box via
-     Playwright's `margin` option -- the two don't agree on a number, so a
-     bar sized to bleed against one would misalign under the other. Staying
-     inside normal content flow works identically under both. */
-  .accent-bar { height: 4px; background: var(--accent); border-radius: 2px; margin: 0 0 22px 0; }
+  /* ---------- numbers ---------- */
+  .stats { display: flex; gap: 10px; margin-top: 14px; page-break-inside: avoid; }
+  .stat { flex: 1; border: 1px solid var(--rule); border-radius: 12px; padding: 11px 13px; }
+  .stat .k { font-size: 8pt; color: var(--ink-soft); }
+  .stat .v { font-size: 12.5pt; font-weight: 700; margin-top: 2px; line-height: 1.25; }
+  .stat .v small { font-size: 8.5pt; font-weight: 500; color: var(--ink-soft); }
+  .good { color: var(--accent); } .limited { color: var(--amber); } .insufficient { color: var(--coral); }
 
-  /* ---------- Masthead: a real cover strip, not a title-left/meta-right
-     header row -- big title alone, then an itemized attribution/meta strip
-     underneath, the way a delivered audit document opens. ---------- */
-  .masthead { margin-bottom: 22px; }
-  .masthead .kicker {
-    color: var(--accent);
-    font-weight: 700;
-    margin-bottom: 10px;
-  }
-  .masthead h1 {
-    font-size: 27pt;
-    font-weight: 700;
-    margin: 0 0 4px 0;
-    letter-spacing: -0.015em;
-  }
-  .masthead .subtitle { font-size: 11pt; color: var(--ink-soft); }
+  /* ---------- sections ---------- */
+  h2 { font-size: 15pt; letter-spacing: -0.015em; margin: 26px 0 4px; page-break-after: avoid; }
+  h2 .serif { color: var(--accent); font-size: 16pt; }
+  .lead { color: var(--ink-soft); font-size: 9.5pt; margin: 0 0 10px; }
+  .figure { page-break-inside: avoid; margin: 8px 0 4px; }
+  .keep { page-break-inside: avoid; break-inside: avoid; }
+  .figure img { width: 100%; border-radius: 12px; display: block; }
+  .two { display: flex; gap: 14px; page-break-inside: avoid; }
+  .two > div { flex: 1; border: 1px solid var(--rule); border-radius: 12px; padding: 12px 14px; }
+  .two h3 { font-size: 10.5pt; margin: 0 0 8px; }
 
-  .meta-strip {
-    display: flex;
-    margin-top: 18px;
-    padding-top: 14px;
-    border-top: 2px solid var(--ink);
-  }
-  .meta-strip > div {
-    flex: 1;
-    padding-right: 16px;
-  }
-  .meta-strip .label { display: block; margin-bottom: 5px; }
-  .meta-strip .meta-value {
-    font-size: 10pt;
-    font-weight: 600;
-    color: var(--ink);
-  }
+  .bar-row { display: flex; align-items: center; gap: 8px; font-size: 8.5pt; margin: 5px 0; }
+  .bar-name { width: 34%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-track { flex: 1; height: 7px; background: var(--tint); border-radius: 99px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--cool), var(--accent), var(--amber)); }
+  .bar-fill.low { background: var(--coral); }
+  .bar-val { width: 38px; text-align: right; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .low-name { color: var(--coral); }
+  .seen-row { display: flex; justify-content: space-between; font-size: 8.5pt; padding: 4px 0; border-bottom: 1px solid var(--tint); }
+  .seen-row .t { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .seen-row .never { color: var(--coral); }
+  .note { font-size: 7.8pt; color: var(--ink-soft); margin-top: 6px; }
 
-  /* ---------- Severity banner ---------- */
-  .banner {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 11px 15px;
-    border-radius: 10px;
-    border: 1px solid var(--rule);
-    border-left-width: 3px;
-    margin-bottom: 18px;
-    font-size: 10pt;
-    font-weight: 600;
-    background: var(--surface);
-    page-break-inside: avoid;
-  }
-  .banner-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--ink-soft); }
-  .banner-critical { border-left-color: var(--accent); background: var(--accent-soft); }
-  .banner-critical .banner-dot { background: var(--accent); }
-  .banner-warning { border-left-color: var(--ink); }
-  .banner-warning .banner-dot { background: var(--ink); }
-  .banner-good { border-left-color: var(--rule); color: var(--ink-soft); font-weight: 500; }
+  /* ---------- findings ---------- */
+  .card { border: 1px solid var(--rule); border-radius: 12px; padding: 12px 14px 12px 18px; margin-bottom: 9px; position: relative; page-break-inside: avoid; }
+  .card .strip { position: absolute; left: 0; top: 0; bottom: 0; width: 5px; border-radius: 12px 0 0 12px; }
+  .strip-High { background: var(--coral); } .strip-Medium { background: var(--amber); } .strip-Low { background: var(--cool); }
+  .card-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+  .card .where { font-size: 8.5pt; color: var(--ink-soft); }
+  .card h4 { font-size: 11pt; margin: 2px 0 0; line-height: 1.35; }
+  .sev { font-size: 8pt; font-weight: 700; padding: 2px 9px; border-radius: 99px; white-space: nowrap; }
+  .sev-High { background: #FDECEA; color: var(--coral); }
+  .sev-Medium { background: #FDF3E1; color: #B87A0E; }
+  .sev-Low { background: #EAF0FE; color: var(--cool); }
+  .evidence { background: var(--tint); border-radius: 8px; padding: 6px 9px; margin-top: 8px; font-size: 8.5pt; color: var(--ink-soft); }
+  .small { font-size: 8pt; color: var(--ink-soft); margin-top: 5px; }
+  .fix { display: flex; gap: 12px; align-items: flex-start; }
+  .conf { width: 46px; flex-shrink: 0; text-align: center; }
+  .conf .n { font-size: 13pt; font-weight: 700; }
+  .conf .lbl { font-size: 7pt; color: var(--ink-soft); }
+  .conf .track { height: 4px; background: var(--tint); border-radius: 99px; margin-top: 3px; overflow: hidden; }
+  .conf .fill { height: 100%; background: var(--accent); }
+  .conf .fill.weak { background: var(--amber); }
+  .fix-text { font-size: 10pt; line-height: 1.5; }
+  .tag { display: inline-block; font-size: 7.5pt; font-weight: 600; padding: 1px 8px; border-radius: 99px; margin-left: 6px; }
+  .tag-Strong { background: #E3F8F3; color: var(--accent); }
+  .tag-Weak { background: #FDF3E1; color: #B87A0E; }
+  .empty { font-size: 9.5pt; color: var(--ink-soft); padding: 10px 14px; border: 1px dashed var(--rule); border-radius: 12px; }
 
-  .summary-text {
-    font-size: 10.5pt;
-    line-height: 1.65;
-    margin: 0 0 22px 0;
-    color: var(--ink);
-  }
-
-  /* Section headers: a numbered badge + real heading, not just a small
-     uppercase label standing in for one -- reads as document structure
-     from across the room, the way a numbered report section should. */
-  .section-title {
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-    margin: 32px 0 14px 0;
-    padding-top: 14px;
-    border-top: 1px solid var(--rule);
-    page-break-after: avoid;
-  }
-  .section-title .section-num {
-    font-family: "SF Mono", "Courier New", monospace;
-    font-size: 9pt;
-    font-weight: 700;
-    color: var(--accent);
-    letter-spacing: 0.04em;
-  }
-  .section-title .section-heading {
-    font-size: 14pt;
-    font-weight: 700;
-    letter-spacing: -0.01em;
-    color: var(--ink);
-  }
-
-  /* ---------- Stat cards ---------- */
-  .summary-grid {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 4px;
-    page-break-inside: avoid;
-  }
-  .summary-card {
-    flex: 1;
-    background: var(--surface);
-    border: 1px solid var(--rule);
-    border-radius: 10px;
-    padding: 12px 14px;
-  }
-  .summary-card .label { display: block; margin-bottom: 5px; }
-  .summary-card .value {
-    font-family: "SF Mono", "Courier New", monospace;
-    font-size: 12pt;
-    font-weight: 600;
-    color: var(--ink);
-  }
-
-  /* ---------- Heatmap ---------- */
-  .heatmap-block {
-    text-align: center;
-    margin: 12px 0 4px 0;
-    page-break-inside: avoid;
-  }
-  .heatmap-block img { width: 100%; border: 1px solid var(--rule); border-radius: 10px; }
-  .heatmap-caption { font-size: 7.5pt; color: var(--ink-soft); margin-top: 5px; }
-
-  /* ---------- Issues table ---------- */
-  table.issues { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
-  table.issues thead { display: table-header-group; }
-  table.issues tr { page-break-inside: avoid; }
-  table.issues th {
-    text-align: left;
-    font-family: "SF Mono", "Courier New", monospace;
-    font-size: 7pt;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--ink-soft);
-    border-bottom: 1.5px solid var(--ink);
-    padding: 7px 8px;
-  }
-  table.issues td { padding: 9px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
-  table.issues tbody tr:nth-child(even) td { background: var(--bg); }
-  .severity-pill {
-    display: inline-block;
-    font-family: "SF Mono", "Courier New", monospace;
-    font-size: 7pt;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    padding: 2px 8px;
-    border-radius: 9px;
-    border: 1px solid var(--rule);
-    color: var(--ink-soft);
-    background: var(--surface);
-  }
-  .severity-High { border-color: var(--accent); color: var(--accent); }
-  .severity-Medium { color: var(--ink); }
-  .evidence-text { font-family: "SF Mono", "Courier New", monospace; font-size: 7.5pt; color: var(--ink-soft); }
-
-  /* ---------- Recommendation cards ---------- */
-  .rec-card {
-    background: var(--surface);
-    border: 1px solid var(--rule);
-    border-left: 3px solid var(--ink-soft);
-    border-radius: 10px;
-    padding: 12px 15px;
-    margin-bottom: 10px;
-    page-break-inside: avoid;
-  }
-  .rec-card.support-Strong { border-left-color: var(--accent); }
-  .rec-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
-  .rec-element { font-family: "SF Mono", "Courier New", monospace; font-size: 7.5pt; color: var(--ink-soft); }
-  .confidence-meter { display: flex; align-items: center; gap: 6px; }
-  .confidence-track { width: 55px; height: 4px; background: var(--rule); border-radius: 3px; overflow: hidden; }
-  .confidence-fill { height: 100%; background: var(--accent); }
-  .confidence-label { font-family: "SF Mono", "Courier New", monospace; font-size: 7.5pt; color: var(--ink-soft); }
-  .rec-text { font-size: 9.5pt; line-height: 1.5; margin-bottom: 7px; color: var(--ink); }
-  .rec-evidence-list { margin: 0; padding-left: 15px; font-size: 7.5pt; color: var(--ink-soft); font-family: "SF Mono", "Courier New", monospace; }
-
-  /* ---------- Before / After ---------- */
-  table.before-after { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-bottom: 10px; }
-  table.before-after thead { display: table-header-group; }
-  table.before-after tr { page-break-inside: avoid; }
-  table.before-after th {
-    text-align: left;
-    font-family: "SF Mono", "Courier New", monospace;
-    font-size: 7pt;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--ink-soft);
-    border-bottom: 1.5px solid var(--ink);
-    padding: 7px 8px;
-  }
-  table.before-after td { padding: 9px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
-  table.before-after tbody tr:nth-child(even) td { background: var(--bg); }
-  .ba-element { font-family: "SF Mono", "Courier New", monospace; font-size: 7.8pt; width: 18%; color: var(--ink); }
-  .ba-support { display: block; margin-top: 4px; font-size: 7pt; font-family: inherit; color: var(--ink-soft); }
-  .ba-support.support-Strong { color: var(--accent); }
-  .ba-before { font-family: "SF Mono", "Courier New", monospace; font-size: 7.5pt; color: var(--ink-soft); width: 38%; }
-  .ba-after { font-size: 8.5pt; width: 44%; color: var(--ink); }
-  .before-after-note { font-size: 7.3pt; color: var(--ink-soft); margin-bottom: 10px; }
-
-  .rejected-block {
-    margin-top: 14px;
-    padding: 12px 15px;
-    background: var(--bg);
-    border: 1px dashed var(--rule);
-    border-radius: 10px;
-    font-size: 7.8pt;
-    color: var(--ink-soft);
-    page-break-inside: avoid;
-  }
-  .rejected-block h3 {
-    font-family: "SF Mono", "Courier New", monospace;
-    font-size: 7.5pt;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    font-weight: 700;
-    margin: 0 0 6px 0;
-    color: var(--ink);
-  }
-
-  .empty-state { font-size: 9pt; color: var(--ink-soft); padding: 6px 0; }
-  .banner-insufficient { border-left-color: var(--ink); background: var(--accent-soft); }
-  .banner-insufficient .banner-dot { background: var(--ink); }
-  .quality-block { border: 1px solid var(--rule); padding: 8px 12px; margin: 10px 0 14px; font-size: 8.5pt; }
-  .quality-head { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; }
-  .quality-pill { font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 7px; border: 1px solid var(--ink); }
-  .quality-good { border-color: var(--rule); color: var(--ink-soft); }
-  .quality-limited { border-color: var(--ink); }
-  .quality-insufficient { background: var(--ink); color: #fff; }
-  .quality-reasons { margin: 6px 0 0 16px; padding: 0; color: var(--ink-soft); }
-  .issue-also, .issue-caveat, .rec-also { font-size: 7.5pt; color: var(--ink-soft); margin-top: 3px; }
-  .issue-caveat { font-style: italic; }
-
-  .footer-note {
-    margin-top: 28px;
-    padding-top: 14px;
-    border-top: 2px solid var(--ink);
-    font-size: 7.5pt;
-    line-height: 1.6;
-    color: var(--ink-soft);
-  }
-  .footer-note strong { color: var(--ink); }
+  /* ---------- how we checked ---------- */
+  .agents { display: flex; gap: 8px; page-break-inside: avoid; }
+  .agent { flex: 1; background: var(--tint); border-radius: 10px; padding: 9px 10px; font-size: 8pt; }
+  .agent b { display: block; font-size: 8.8pt; color: var(--ink); margin-bottom: 2px; }
+  .agent .num { color: var(--accent); font-weight: 700; }
+  .quality { margin-top: 10px; font-size: 8.5pt; color: var(--ink-soft); page-break-inside: avoid; }
+  .quality strong { color: var(--ink); }
+  .rejected { margin-top: 8px; font-size: 8pt; color: var(--ink-soft); }
+  .end { margin-top: 22px; padding-top: 10px; border-top: 1px solid var(--rule); font-size: 8pt; color: var(--ink-soft); }
 </style>
 </head>
 <body>
+{% set SEV = {"High": "Fix first", "Medium": "Worth fixing", "Low": "Minor"} %}
+{% set worst = issues[0].severity if issues else None %}
+{% set insufficient = quality and quality.level == "insufficient" %}
 
-  <div class="accent-bar"></div>
-
-  <div class="masthead">
-    <div class="label kicker">Gaze-Driven UX Evaluation · Confidential</div>
-    <h1>GazeLens Report</h1>
-    <div class="subtitle">{{ ui_page.replace("_", " ")|title }}</div>
-
-    <div class="meta-strip">
-      <div>
-        <span class="label">Prepared by</span>
-        <span class="meta-value">GazeLens</span>
-      </div>
-      <div>
-        <span class="label">Page evaluated</span>
-        <span class="meta-value">{{ ui_page.replace("_", " ")|title }}</span>
-      </div>
-      <div>
-        <span class="label">Session</span>
-        <span class="meta-value">{{ session_id }}</span>
-      </div>
-      <div style="padding-right: 0;">
-        <span class="label">Generated</span>
-        <span class="meta-value">{{ generated_at }}</span>
-      </div>
-    </div>
+<div class="cover">
+  <div class="cover-meta">
+    <div class="brand"><span class="brand-mark"></span><span>Gaze<span class="lens">Lens</span></span></div>
+    <div class="cover-date">{{ generated_at }} · {{ session_id }}</div>
   </div>
-
-  <div class="banner banner-{{ banner_level }}">
-    <span class="banner-dot"></span>
-    <span>{{ banner_text }}</span>
-  </div>
-
-  <p class="summary-text">{{ summary_html|safe }}</p>
-
-  {% if quality %}
-  <div class="quality-block">
-    <div class="quality-head">
-      <span class="label">Measurement quality</span>
-      <span class="quality-pill quality-{{ quality.level }}">{{ quality.level }}</span>
-      {% if quality.gaze_error_px is not none %}
-      <span>Gaze error <strong>{{ "%.0f"|format(quality.gaze_error_px) }} px</strong>
-        ({{ "%.1f"|format(quality.gaze_error_pct_diagonal) }}% of screen,
-        {{ "accuracy check" if quality.error_source == "accuracy_check" else "calibration estimate" }})</span>
-      {% endif %}
-    </div>
-    {% if quality.reasons %}
-    <ul class="quality-reasons">{% for r in quality.reasons %}<li>{{ r }}</li>{% endfor %}</ul>
-    {% endif %}
-    {% if quality.level == "limited" %}
-    <div class="issue-also">Severities are capped at Medium for this session.</div>
-    {% endif %}
-    {% if quality.low_confidence_elements %}
-    <div class="issue-also">Too small to measure at this accuracy:
-      {{ quality.low_confidence_elements|map("label")|join(", ") }}.</div>
-    {% endif %}
-  </div>
-  {% endif %}
-
-  <div class="summary-grid">
-    <div class="summary-card">
-      <div class="label">First Noticed</div>
-      <div class="value">{{ behavior.first_noticed|label if behavior.first_noticed else "—" }}</div>
-    </div>
-    <div class="summary-card">
-      <div class="label">Most Attended</div>
-      <div class="value">{{ behavior.most_attended|label if behavior.most_attended else "—" }}</div>
-    </div>
-    <div class="summary-card">
-      <div class="label">Attention Scattered</div>
-      <div class="value">{{ "Yes" if behavior.attention_scattered else "No" }}</div>
-    </div>
-    <div class="summary-card">
-      <div class="label">Issues Found</div>
-      <div class="value">{{ issues|length }}</div>
-    </div>
-  </div>
-
-  {% if heatmap_path %}
-  <div class="heatmap-block">
-    <img src="{{ heatmap_path }}" alt="Gaze heatmap over the page">
-    {% if dwell_chart_path %}
-    <div class="heatmap-caption">Where gaze actually went, over the page as it was shown. Blurred by the measured gaze error, so it is never sharper than the measurement. Dashed boxes are the elements attention was attributed to.</div>
-    {% else %}
-    <div class="heatmap-caption">Left: attention by page position. Right: share of total gaze time per element, ranked.</div>
-    {% endif %}
-  </div>
-  {% endif %}
-
-  {% if dwell_chart_path %}
-  <div class="heatmap-block">
-    <img src="{{ dwell_chart_path }}" alt="Attention per element and dwell-time ranking">
-    <div class="heatmap-caption">Per element: left, attention by element; right, share of total gaze time per element, ranked.</div>
-  </div>
-  {% endif %}
-
-  {% if scanpath_path %}
-  <div class="heatmap-block">
-    <img src="{{ scanpath_path }}" alt="Gaze path in visit order">
-    <div class="heatmap-caption">Fixation sequence, in order -- green is first, red is last. The heatmap above shows how much attention each element got; this shows the order attention moved between them, which is what the layout-confusion and repeated-revisit findings below are based on.</div>
-  </div>
-  {% endif %}
-
-  <div class="section-title"><span class="section-num">01</span><span class="section-heading">Usability Issues</span></div>
-  {% if issues %}
-  <table class="issues">
-    <thead>
-      <tr><th>Severity</th><th>Issue</th><th>Heuristic</th><th>Evidence</th></tr>
-    </thead>
-    <tbody>
-      {% for issue in issues %}
-      <tr>
-        <td><span class="severity-pill severity-{{ issue.severity }}">{{ issue.severity }}</span></td>
-        <td>{{ issue.issue }}<br><strong>{{ issue.element_label or (issue.element_id|label) }}</strong>
-          {% if issue.also %}<div class="issue-also">Also: {{ issue.also|join("; ") }}</div>{% endif %}
-          {% if issue.caveat %}<div class="issue-caveat">{{ issue.caveat }}</div>{% endif %}
-        </td>
-        <td>{{ issue.heuristic }}</td>
-        <td class="evidence-text">{{ issue.evidence }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% elif quality and quality.level == "insufficient" %}
-  <div class="empty-state">Not evaluated: the gaze data from this session isn't reliable enough to support findings (see Measurement quality above). Recalibrate and run the session again.</div>
+  {% if insufficient %}
+  <h1 class="tone-coral">Not enough <span class="serif">reliable</span> data</h1>
+  {% elif not issues %}
+  <h1>Nothing important was <span class="serif">missed</span></h1>
   {% else %}
-  <div class="empty-state">No usability issues detected against current thresholds.</div>
+  <h1 class="tone-{{ 'coral' if worst == 'High' else 'amber' if worst == 'Medium' else '' }}">{{ issues|length }} {{ "thing" if issues|length == 1 else "things" }} <span class="serif">worth fixing</span></h1>
   {% endif %}
+  <div class="page">UX report for {{ page_name }}</div>
+  <div class="summary">{{ summary_html|safe }}</div>
+  <div class="chips">
+    {% if issues %}
+      {% for level in ["High", "Medium", "Low"] %}
+        {% set n = issues|selectattr("severity", "equalto", level)|list|length %}
+        {% if n %}<span class="chip chip-{{ level }}">{{ n }} {{ SEV[level]|lower }}</span>{% endif %}
+      {% endfor %}
+    {% elif not insufficient %}
+      <span class="chip chip-ok">All key parts were seen</span>
+    {% endif %}
+  </div>
+</div>
 
-  <div class="section-title"><span class="section-num">02</span><span class="section-heading">Recommendations</span></div>
-  {% if recommendations_kept %}
-    {% for rec in recommendations_kept %}
-    <div class="rec-card support-{{ rec.support }}">
-      <div class="rec-header">
-        <span class="rec-element">{{ rec.element_label or (rec.element_id|label) }} · {{ rec.support }}</span>
-        <div class="confidence-meter">
-          <div class="confidence-track">
-            <div class="confidence-fill" style="width:{{ (rec.confidence * 100)|round|int }}%;"></div>
-          </div>
-          <span class="confidence-label">{{ "%.2f"|format(rec.confidence) }}</span>
-        </div>
-      </div>
-      <div class="rec-text">{{ rec.recommendation }}</div>
-      {% if rec.also %}<div class="rec-also">Also consider: {{ rec.also|join(" ") }}</div>{% endif %}
-      {% if rec.measurability is defined and rec.measurability < 1 %}
-      <div class="rec-also">Confidence reduced from {{ "%.2f"|format(rec.confidence_raw) }}: the element is small relative to the gaze error.</div>
-      {% endif %}
-      <ul class="rec-evidence-list">
-        {% for e in rec.evidence %}<li>{{ e }}</li>{% endfor %}
-      </ul>
+<div class="stats">
+  <div class="stat">
+    <div class="k">Tracking accuracy</div>
+    {% if quality and quality.gaze_error_px is not none %}
+    <div class="v {{ quality.level }}">{{ {"good": "Good", "limited": "Fair", "insufficient": "Too low"}[quality.level] }} <small>{{ "%.0f"|format(quality.gaze_error_px) }} px off</small></div>
+    {% else %}<div class="v">–</div>{% endif %}
+  </div>
+  <div class="stat"><div class="k">Noticed first</div><div class="v">{{ behavior.first_noticed|label if behavior.first_noticed else "–" }}</div></div>
+  <div class="stat"><div class="k">Most attention</div><div class="v">{{ behavior.most_attended|label if behavior.most_attended else "–" }}</div></div>
+  <div class="stat"><div class="k">Problems found</div><div class="v">{{ issues|length }}</div></div>
+</div>
+
+{% if heatmap_path %}
+<div class="keep"><h2>Where people <span class="serif">looked</span></h2>
+<p class="lead">Warm colours show where eyes stayed longest. The blur matches how accurate the tracking was, so the map is never sharper than the measurement.</p>
+<div class="figure"><img src="{{ heatmap_path }}" alt="Gaze heatmap over the page"></div></div>
+{% endif %}
+
+{% if scanpath_path %}
+<div class="keep"><h2>The path their <span class="serif">eyes</span> took</h2>
+<p class="lead">Each circle is an area people looked at, numbered in the order it was first seen. Bigger circles got more time; arrows show each move.</p>
+<div class="figure"><img src="{{ scanpath_path }}" alt="Eye path in visit order"></div></div>
+{% endif %}
+
+{% if attention %}
+<div class="two" style="margin-top: 14px;">
+  <div>
+    <h3>Share of attention</h3>
+    {% for row in attention.bars %}
+    <div class="bar-row">
+      <span class="bar-name {{ 'low-name' if row.low }}">{{ row.name }}{% if row.important %} ★{% endif %}</span>
+      <span class="bar-track"><span class="bar-fill {{ 'low' if row.low }}" style="display:block; width: {{ row.width }}%;"></span></span>
+      <span class="bar-val">{{ "%.1f"|format(row.pct) }}%</span>
     </div>
     {% endfor %}
-  {% else %}
-  <div class="empty-state">No recommendations passed verification for this session.</div>
-  {% endif %}
-
-  {% if recommendations_rejected %}
-  <div class="rejected-block">
-    <h3>Filtered by verification ({{ recommendations_rejected|length }})</h3>
-    {% for rec in recommendations_rejected %}
-    <div style="margin-bottom:5px;"><em>{{ rec.recommendation }}</em> — {{ rec.evidence|join("; ") }}</div>
+    <div class="note">★ important part of the page · red = important but under 5% of attention{% if attention.hidden %} · {{ attention.hidden }} smaller parts not shown{% endif %}</div>
+  </div>
+  <div>
+    <h3>First look</h3>
+    {% for row in attention.first_look %}
+    <div class="seen-row"><span>{{ row.name }}</span><span class="t">{{ "%.1f"|format(row.s) }} s</span></div>
     {% endfor %}
+    {% for name in attention.never %}
+    <div class="seen-row"><span>{{ name }}</span><span class="never">never looked at</span></div>
+    {% endfor %}
+    {% if attention.never_more %}<div class="note">+ {{ attention.never_more }} more never looked at</div>{% endif %}
   </div>
-  {% endif %}
+</div>
+{% endif %}
 
-  {% if before_after %}
-  <div class="section-title"><span class="section-num">03</span><span class="section-heading">Before / After</span></div>
-  <table class="before-after">
-    <thead>
-      <tr>
-        <th>Element</th>
-        <th>Before — measured</th>
-        <th>After — recommended change</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in before_after %}
-      <tr>
-        <td class="ba-element">{{ row.element_id|label }}<br>
-          <span class="ba-support support-{{ row.support }}">{{ row.support }} · {{ "%.2f"|format(row.confidence) }}</span>
-        </td>
-        <td class="ba-before">{{ row.before }}</td>
-        <td class="ba-after">{{ row.after }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  <div class="before-after-note">
-    "Before" is the critic's own re-verified evidence, not a re-lookup -- the same number the recommendation above
-    is grounded in. "After" is the instruction, not a rendered mockup: nothing in this pipeline has measured what a
-    redesigned page would actually produce, so no image is shown claiming to be one.
+<h2>What to <span class="serif">fix</span></h2>
+<p class="lead">Most urgent first. Each one comes with the measurement behind it.</p>
+{% if issues %}
+  {% for issue in issues %}
+  <div class="card">
+    <span class="strip strip-{{ issue.severity }}"></span>
+    <div class="card-head">
+      <div>
+        <div class="where">{{ issue.element_label or (issue.element_id|label) }}</div>
+        <h4>{{ issue.issue }}</h4>
+      </div>
+      <span class="sev sev-{{ issue.severity }}">{{ SEV.get(issue.severity, issue.severity) }}</span>
+    </div>
+    <div class="evidence">{{ issue.evidence }}</div>
+    {% if issue.also %}<div class="small">Also: {{ issue.also|join("; ") }}</div>{% endif %}
+    {% if issue.caveat %}<div class="small"><em>{{ issue.caveat }}</em></div>{% endif %}
+    {% if issue.heuristic %}<div class="small">Design principle: {{ issue.heuristic }}</div>{% endif %}
   </div>
-  {% endif %}
+  {% endfor %}
+{% elif insufficient %}
+<div class="empty">Not evaluated: the tracking in this session wasn't accurate enough to support findings. Recalibrate and run the test again.</div>
+{% else %}
+<div class="empty">No usability problems were found against the current thresholds.</div>
+{% endif %}
 
-  <div class="footer-note">
-    <strong>Generated by GazeLens</strong> · Gaze-Driven UX Evaluation Platform<br>
-    Every recommendation above was independently re-verified against raw session metrics by the Critic/Verifier
-    agent before inclusion. Filtered items were rejected for lacking measurable support.
+<h2>How to <span class="serif">fix it</span></h2>
+<p class="lead">Suggestions that passed the critic agent's check against the raw numbers.</p>
+{% if recommendations_kept %}
+  {% for rec in recommendations_kept %}
+  {% set pct = (rec.confidence * 100)|round|int %}
+  <div class="card">
+    <div class="fix">
+      <div class="conf">
+        <div class="n">{{ pct }}</div>
+        <div class="lbl">confidence</div>
+        <div class="track"><div class="fill {{ 'weak' if rec.support != 'Strong' }}" style="width: {{ pct }}%;"></div></div>
+      </div>
+      <div>
+        <div class="where">{{ rec.element_label or (rec.element_id|label) }}<span class="tag tag-{{ 'Strong' if rec.support == 'Strong' else 'Weak' }}">{{ "Strong evidence" if rec.support == "Strong" else "Weaker evidence" }}</span></div>
+        <div class="fix-text">{{ rec.recommendation|clean }}</div>
+        {% if rec.also %}<div class="small">Also consider: {{ rec.also|map("clean")|join(" ") }}</div>{% endif %}
+        {% if rec.measurability is defined and rec.measurability < 1 %}
+        <div class="small">Confidence lowered from {{ (rec.confidence_raw * 100)|round|int }}: this part of the page is small compared with the tracking error.</div>
+        {% endif %}
+      </div>
+    </div>
   </div>
+  {% endfor %}
+{% else %}
+<div class="empty">No suggestions passed verification for this session.</div>
+{% endif %}
+
+<h2>How we <span class="serif">checked</span></h2>
+<p class="lead">Four AI agents worked through this test, each building on the last.</p>
+<div class="agents">
+  <div class="agent"><b>1 · Behaviour</b>Described what people did on the page.</div>
+  <div class="agent"><b>2 · Evaluation</b>Checked it against usability principles: <span class="num">{{ issues|length }}</span> {{ "problem" if issues|length == 1 else "problems" }} kept.</div>
+  <div class="agent"><b>3 · Recommendation</b>Drafted <span class="num">{{ recommendations_kept|length + recommendations_rejected|length }}</span> {{ "fix" if (recommendations_kept|length + recommendations_rejected|length) == 1 else "fixes" }}.</div>
+  <div class="agent"><b>4 · Critic</b>Kept <span class="num">{{ recommendations_kept|length }}</span>, threw out <span class="num">{{ recommendations_rejected|length }}</span> not backed by the data.</div>
+</div>
+{% if quality %}
+<div class="quality">
+  <strong>Tracking quality:</strong>
+  {% if quality.gaze_error_px is not none %}
+    on average {{ "%.0f"|format(quality.gaze_error_px) }} px ({{ "%.1f"|format(quality.gaze_error_pct_diagonal) }}% of the screen) from the true spot,
+    measured by the {{ "accuracy check after calibration" if quality.error_source == "accuracy_check" else "calibration itself" }}.
+  {% endif %}
+  {% if quality.level == "limited" %}Because accuracy was only fair, no finding is rated above "Worth fixing".{% endif %}
+  {% if quality.reasons %}{{ quality.reasons|join("; ") }}.{% endif %}
+  {% if quality.low_confidence_elements %}
+  <br>Too small to measure reliably at this accuracy: {{ quality.low_confidence_elements|map("label")|list|unique|list|truncate_list(8)|join(", ") }}.
+  {% endif %}
+</div>
+{% endif %}
+{% if recommendations_rejected %}
+<div class="rejected">
+  <strong>Thrown out by the critic:</strong>
+  {% for rec in recommendations_rejected %}{{ rec.recommendation|clean }}{% if not loop.last %} · {% endif %}{% endfor %}
+</div>
+{% endif %}
+
+<div class="end">Generated by GazeLens, gaze-driven UX evaluation. Gaze was estimated from an ordinary webcam; treat findings on small elements as indicative.</div>
 
 </body>
 </html>

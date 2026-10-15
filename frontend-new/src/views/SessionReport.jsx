@@ -231,6 +231,37 @@ function ReportBody({ report, onBack, pdfState, onDownload }) {
       <Reveal once className="mt-16">
         <ReliabilityCard quality={quality} nameOf={nameOf} rejected={(pr.recommendations_rejected || []).length} warnings={report.warnings || []} />
       </Reveal>
+
+      {/* ---------------------------------------------------------- take it with you */}
+      <Reveal once className="mt-10">
+        <div className="relative overflow-hidden rounded-[26px] border border-accent/25 bg-surface/70 p-7 backdrop-blur sm:p-9">
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(60% 120% at 100% 0%, rgb(var(--color-accent) / 0.16), transparent 60%)" }} />
+          <div className="relative flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-5">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[16px] bg-accent/15 text-accent">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5M12 11v6m0 0-2.5-2.5M12 17l2.5-2.5" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-[22px] font-semibold tracking-tight text-text-primary">Take this report <Serif className="text-accent">with you</Serif></h3>
+                <p className="mt-1 text-[15px] text-text-secondary">A ready-to-share PDF with the heatmap, eye path, problems and fixes.</p>
+              </div>
+            </div>
+            <button
+              onClick={onDownload}
+              disabled={pdfState === "downloading"}
+              className="flex h-12 shrink-0 items-center gap-2 rounded-full bg-accent px-7 text-[15px] font-semibold text-[#0A0E14] transition-shadow hover:shadow-[0_0_30px_-6px_rgb(var(--color-accent)/0.7)] disabled:opacity-60"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                {pdfState === "success" ? <path d="M4 12.5 9.5 18 20 6" /> : <path d="M12 3v13m0 0-5-5m5 5 5-5M4 20h16" />}
+              </svg>
+              {pdfState === "downloading" ? "Preparing…" : pdfState === "success" ? "Downloaded" : "Download PDF"}
+            </button>
+          </div>
+          {pdfState === "error" && <p className="relative mt-4 text-[14px] text-coral">The PDF isn't ready for this session yet. Try again in a moment.</p>}
+        </div>
+      </Reveal>
     </div>
   );
 }
