@@ -166,11 +166,13 @@ export async function getSessionImage(token, sessionId, kind) {
  * Requires the session's calibration to be linked and its gaze model
  * trained (POST /api/sessions/{id}/calibration) first.
  */
-export async function estimateGazeFrame(token, sessionId, frameB64, timestamp) {
+export async function estimateGazeFrame(token, sessionId, frameB64, timestamp, stage) {
+  // stage: {x, y, w, h} as viewport fractions -- where the evaluated page is
+  // drawn. The server remaps gaze into it (api/pipeline.py to_stage_space).
   const res = await fetch(`${BASE}/${sessionId}/gaze/frame`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
-    body: JSON.stringify({ frame: frameB64, timestamp: timestamp ?? null }),
+    body: JSON.stringify({ frame: frameB64, timestamp: timestamp ?? null, stage: stage ?? null }),
   });
   return handleResponse(res);
 }

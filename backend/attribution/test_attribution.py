@@ -432,6 +432,39 @@ check("out-of-order gaze is sorted, not trusted",
       analyze_session(list(reversed(samples)), cfg, "ooo").metrics.scanpath[0]
       == m.scanpath[0])
 
+print("\nerror-aware attribution")
+from attribution.engine import error_model  # noqa: E402
+from attribution.fixations import EDGE_TOLERANCE, MAX_EDGE_TOLERANCE  # noqa: E402
+
+cfg = build_ui_config("p", {
+    "big": {"bbox": [0.1, 0.1, 0.4, 0.4], "type": "image"},
+    "tiny": {"bbox": [0.7, 0.7, 0.05, 0.03], "type": "CTA", "importance": "high"},
+})
+tol, rel = error_model(cfg, 50.0, (1000, 600))
+check("tolerance = gaze error in page units",
+      abs(error_model(cfg, 40.0, (1000, 600))[0] - 40.0 / 800.0) < 1e-9)
+check("big element is measurable (smaller side / error >= 1)", rel["big"] >= 1.0)
+check("18px-tall element under 50px error is not", abs(rel["tiny"] - 18 / 50) < 1e-3)
+check("tolerance never below the fixed default", error_model(cfg, 1.0, (1000, 600))[0] == EDGE_TOLERANCE)
+check("tolerance capped", error_model(cfg, 900.0, (1000, 600))[0] == MAX_EDGE_TOLERANCE)
+
+# A steady fixation just below the big box (y=0.53, box ends at 0.50): the
+# fixed 1% tolerance calls it background; 50px of measured error claims it.
+near = [{"timestamp": i * 0.1, "x": 0.3, "y": 0.53, "valid": True} for i in range(10)]
+plain = analyze_session(gaze_samples_from_dicts(near), cfg, "s")
+aware = analyze_session(gaze_samples_from_dicts(near), cfg, "s",
+                        gaze_error_px=50.0, viewport_px=(1000, 600))
+check("fixed tolerance leaves a near-miss fixation on background",
+      plain.metrics.fixation_count["big"] == 0)
+check("measured-error tolerance attributes it to the box",
+      aware.metrics.fixation_count["big"] == 1)
+check("reliability and low-confidence list reach the diagnostics",
+      aware.to_dict()["diagnostics"]["low_confidence_elements"] == ["tiny"]
+      and aware.to_dict()["diagnostics"]["gaze_error_px"] == 50.0)
+check("a warning names the unmeasurable element", any("tiny" in w for w in aware.warnings))
+check("without an error, nothing changes", plain.element_reliability == {}
+      and plain.edge_tolerance == EDGE_TOLERANCE)
+
 print(f"\n{'=' * 40}\n{passed} passed, {failed} failed\n{'=' * 40}")
 
 if failed:

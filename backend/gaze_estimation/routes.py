@@ -9,6 +9,7 @@ FastAPI router for gaze estimation.
     DELETE /api/gaze/models/{session_id}             discard
     POST   /api/gaze/models/{session_id}/estimate    one frame -> one GazePoint
     POST   /api/gaze/models/{session_id}/estimate/batch   a burst of frames
+    POST   /api/gaze/models/{session_id}/validate    frames at a NEW dot -> error
 
 Thin, same as backend/calibration/routes.py: validate, delegate, respond.
 
@@ -37,6 +38,8 @@ from .schemas import (
     ModelSummary,
     TrainRequest,
     TrainResponse,
+    ValidateRequest,
+    ValidateResponse,
 )
 from .training import (
     POOR_FIT_PX_FRACTION,
@@ -44,8 +47,36 @@ from .training import (
     has_model,
     list_models,
     load_model,
+    save_model,
     train_session,
+    validation_frames_path_for,
 )
+from .validation import record_point, score_point
+
+
+def _append_validation_frames(session_id, payload, frames, points) -> None:
+    """Keep every check frame's features and prediction, one JSON per line."""
+    import json
+    import uuid
+
+    path = validation_frames_path_for(session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # one id per request, so a dot redone straight away stays separable
+    attempt = uuid.uuid4().hex[:12]
+    with path.open("a", encoding="utf-8") as fh:
+        for fr, pt in zip(frames, points):
+            fh.write(json.dumps({
+                "attempt": attempt,
+                "point_index": payload.point_index,
+                "target_x": payload.target_x,
+                "target_y": payload.target_y,
+                "timestamp": fr.timestamp,
+                "note": fr.note,
+                "pupils": {s: {"x_eye": p.x_eye, "y_eye": p.y_eye}
+                           for s, p in fr.pupils.items()},
+                "head_proxy": fr.head_proxy,
+                "predicted": pt.to_dict(),
+            }) + "\n")
 
 router = APIRouter(prefix="/api/gaze", tags=["gaze estimation"])
 
@@ -224,3 +255,49 @@ async def estimate_batch(
 
 
 __all__ = ["router"]
+
+
+@router.post("/models/{session_id}/validate", response_model=ValidateResponse)
+def validate(session_id: str, payload: ValidateRequest) -> ValidateResponse:
+    """Score the model on one fresh dot shown AFTER calibration.
+
+    The one endpoint here that takes webcam frames rather than pupil
+    coordinates: validation has to run the same frame -> cv -> model path
+    the live session runs, or it measures something else. Trains the model
+    first if the calibration hasn't been trained yet.
+
+    A plain `def`, not `async def`: decoding and landmarking are blocking
+    CPU work, and FastAPI runs sync handlers in its threadpool instead of
+    on the event loop.
+    """
+    import cv
+
+    if not has_model(session_id):
+        try:
+            train_session(session_id)
+        except SessionNotFound as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"no calibration session {session_id!r} -- calibrate first",
+            ) from exc
+        except InsufficientCalibrationData as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            ) from exc
+        clear_estimator(session_id)
+
+    estimator = _estimator(session_id)
+    estimator.reset()
+    pipeline = cv.get_pipeline()
+    frames = [pipeline.process_encoded(frame) for frame in payload.frames]
+    points = [estimator.estimate_frame_result(fr) for fr in frames]
+
+    result = score_point(points, payload.target_x, payload.target_y, estimator.model)
+    summary = record_point(estimator.model, payload.point_index, result)
+    save_model(estimator.model)
+    _append_validation_frames(session_id, payload, frames, points)
+
+    return ValidateResponse(
+        session_id=session_id, point_index=payload.point_index,
+        point=result, summary=summary,
+    )

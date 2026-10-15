@@ -75,6 +75,11 @@ def _agents_orchestrator() -> ModuleType:
     return _module_from("_fixation_orchestrator", agents_dir / "orchestrator.py", agents_dir)
 
 
+def _gaze_heatmap() -> ModuleType:
+    reports_dir = BACKEND / "reports"
+    return _module_from("_fixation_gaze_heatmap", reports_dir / "gaze_heatmap.py", reports_dir)
+
+
 def _report_generator() -> ModuleType:
     reports_dir = BACKEND / "reports"
     return _module_from("_fixation_report_generator",
@@ -154,7 +159,8 @@ def calibration_summary(calibration_session_id: Optional[str]) -> Optional[dict]
 
 
 def estimate_gaze_frame(calibration_session_id: str, frame_b64: str,
-                         timestamp: Optional[float] = None) -> dict:
+                         timestamp: Optional[float] = None,
+                         stage: Optional[dict] = None) -> dict:
     """One webcam frame -> one on-screen GazePoint, for the live session loop.
 
     ADDED DURING FRONTEND INTEGRATION -- this composition didn't exist as a
@@ -178,21 +184,81 @@ def estimate_gaze_frame(calibration_session_id: str, frame_b64: str,
 
     frame_result = cv.get_pipeline().process_encoded(frame_b64, timestamp=timestamp)
     estimator = get_estimator(calibration_session_id)
-    point = estimator.estimate_frame_result(frame_result)
-    return point.to_dict()
+    point = estimator.estimate_frame_result(frame_result).to_dict()
+    if not stage:
+        return point
+    return to_stage_space(point, stage, *estimator.screen)
+
+
+def to_stage_space(point: dict, stage: dict, screen_w: int, screen_h: int) -> dict:
+    """Re-express a viewport-normalised GazePoint relative to the stage.
+
+    Calibration targets are measured against the whole browser viewport, so
+    that is what the model predicts. The live UI draws the evaluated page in
+    an inset stage (header, padding, sidebar), and both the on-screen cursor
+    and element attribution work in that page's own [0,1] space. Without
+    this, a look at the sidebar would land 90% of the way across the page.
+
+    The viewport position is kept as viewport_x/viewport_y. A point outside
+    the stage is clamped to its edge with in_bounds=False and note
+    "off_page", the same treatment the model gives off-screen predictions.
+    """
+    out = dict(point)
+    if not point.get("valid"):
+        return out
+    sx = (point["x"] - stage["x"]) / stage["w"]
+    sy = (point["y"] - stage["y"]) / stage["h"]
+    inside = 0.0 <= sx <= 1.0 and 0.0 <= sy <= 1.0
+    sx, sy = min(1.0, max(0.0, sx)), min(1.0, max(0.0, sy))
+    out.update(
+        viewport_x=point["x"], viewport_y=point["y"],
+        x=sx, y=sy,
+        # pixels of the stage itself, matching x/y the way the
+        # viewport-space x_px matched the viewport
+        x_px=sx * stage["w"] * screen_w, y_px=sy * stage["h"] * screen_h,
+        in_bounds=bool(point.get("in_bounds")) and inside,
+        # the page's size as shown, in screen pixels -- lets the report
+        # screenshot the page at the size the participant saw it
+        stage_px=[round(stage["w"] * screen_w), round(stage["h"] * screen_h)],
+    )
+    if not inside and not out.get("note"):
+        out["note"] = "off_page"
+    return out
 
 
 def train_gaze_model(calibration_session_id: str) -> Tuple[bool, Optional[dict], str]:
     """Fit this session's gaze model. Returns (ok, metrics, message)."""
     try:
         from gaze_estimation import train_session
+        from gaze_estimation.estimator import clear_estimator
+        from gaze_estimation.training import has_model, load_model
+        from gaze_estimation.validation import validation_gate
     except ImportError as exc:      # pragma: no cover
         return False, None, f"gaze_estimation unavailable: {exc}"
+
+    # A completed calibration never changes, so a model already trained on
+    # it (typically during the calibration screen's validation pass) is
+    # reused. Retraining would produce the same fit and throw away the
+    # validation results stored on it.
+    if has_model(calibration_session_id):
+        try:
+            model = load_model(calibration_session_id)
+        except ValueError:
+            model = None            # older model format -- retrain below
+        if model is not None:
+            ok, why = validation_gate(model)
+            if ok is False:
+                return False, model.metrics, why
+            return True, model.metrics, (
+                f"reused ({model.feature_set} deg{model.degree}), held-out median "
+                f"{model.metrics['median_error_px']:.0f}px, {why}"
+            )
 
     try:
         result = train_session(calibration_session_id)
     except Exception as exc:        # noqa: BLE001 -- surfaced to the caller
         return False, None, f"{type(exc).__name__}: {exc}"
+    clear_estimator(calibration_session_id)
 
     return True, result.metrics, (
         f"trained ({result.selection['chosen']['feature_set']} "
@@ -253,18 +319,130 @@ def to_document_space(
     return translated, scrolled
 
 
-def build_metrics(gaze_points: List[dict], layout: dict, ui_page: str, session_id: str):
-    """Gaze stream + element layout -> SessionMetrics (+ diagnostics)."""
+def build_metrics(gaze_points: List[dict], layout: dict, ui_page: str, session_id: str,
+                  gaze_error_px: Optional[float] = None,
+                  page_px: Optional[Tuple[float, float]] = None):
+    """Gaze stream + element layout -> SessionMetrics (+ diagnostics).
+
+    With gaze_error_px and page_px, attribution is error-aware (see
+    attribution.engine.analyze_session).
+    """
     from attribution import analyze_session, build_ui_config, gaze_samples_from_dicts
 
     ui_config = build_ui_config(ui_page=ui_page, elements=layout)
     samples = gaze_samples_from_dicts(gaze_points)
-    return analyze_session(samples, ui_config, session_id=session_id), ui_config
+    report = analyze_session(samples, ui_config, session_id=session_id,
+                             gaze_error_px=gaze_error_px, viewport_px=page_px)
+    return report, ui_config
 
 
-def run_agents(metrics) -> dict:
-    """SessionMetrics -> the agent chain's verdict, verbatim."""
-    return _agents_orchestrator().run_pipeline(metrics)
+def run_agents(metrics, quality=None, labels=None, reliability=None) -> dict:
+    """SessionMetrics -> quality gate -> agent chain -> consolidated verdict."""
+    return _agents_orchestrator().run_pipeline(metrics, quality, labels, reliability)
+
+
+# ----------------------------------------------------------------------
+# what the report needs to know about the measurement
+
+
+def gaze_quality_for(calibration_session_id: Optional[str]) -> dict:
+    """The calibration's measured gaze error, for the quality gate.
+
+    Prefers the accuracy check (fresh dots after calibration) over the
+    leave-one-point-out estimate, which shares every confound of the
+    calibration it came from. Empty dict when nothing was measured.
+    """
+    if not calibration_session_id:
+        return {}
+    try:
+        from gaze_estimation.training import has_model, load_model
+        from gaze_estimation.validation import VALIDATION_KEY
+
+        if not has_model(calibration_session_id):
+            return {}
+        model = load_model(calibration_session_id)
+    except Exception:           # noqa: BLE001 -- a missing model just means "unknown"
+        return {}
+    check = model.metrics.get(VALIDATION_KEY) or {}
+    if check.get("median_error_px") is not None:
+        error, source = float(check["median_error_px"]), "accuracy_check"
+    elif model.metrics.get("median_error_px") is not None:
+        error, source = float(model.metrics["median_error_px"]), "calibration_cv"
+    else:
+        return {}
+    return {"error_px": error, "source": source,
+            "screen": (model.screen_width, model.screen_height)}
+
+
+def page_size_from_gaze(gaze_points: List[dict]) -> Optional[Tuple[int, int]]:
+    """The page's on-screen pixel size, as recorded by to_stage_space."""
+    sizes = [tuple(p["stage_px"]) for p in gaze_points
+             if p.get("stage_px") and all(p["stage_px"])]
+    if not sizes:
+        return None
+    ws, hs = sorted(s[0] for s in sizes), sorted(s[1] for s in sizes)
+    return int(ws[len(ws) // 2]), int(hs[len(hs) // 2])
+
+
+TEST_UIS_DIR = BACKEND.parent / "test_uis"
+
+
+def element_labels(layout: dict, ui_page: str) -> Dict[str, str]:
+    """element_id -> readable name: the layout's own label, the test page's
+    elements.json label, or the element's visible text. Ids with none of
+    these are left out and get a tidied-up id downstream."""
+    authored: Dict[str, dict] = {}
+    config = TEST_UIS_DIR / ui_page / "elements.json"
+    if ui_page and config.exists():
+        try:
+            authored = json.loads(config.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            authored = {}
+    labels: Dict[str, str] = {}
+    for eid, spec in (layout or {}).items():
+        spec = spec if isinstance(spec, dict) else {}
+        label = (spec.get("label") or (authored.get(eid) or {}).get("label")
+                 or (spec.get("text") or "").strip())
+        if label:
+            labels[eid] = label[:60]
+    return labels
+
+
+def page_screenshot(ui_page: str, capture_meta: Optional[dict],
+                    page_px: Optional[Tuple[int, int]], output_dir: Path,
+                    session_id: str) -> Optional[str]:
+    """A screenshot that lines up with the layout's coordinates, or None.
+
+    URL sessions reuse the capture taken at session start, but only when it
+    covers the same area as the layout: a document-scope layout spans the
+    whole scrollable page while that capture is one screen. Test pages are
+    screenshotted now, at the size they were shown at. Never raises.
+    """
+    meta = capture_meta or {}
+    if meta.get("screenshot_path"):
+        shot = meta["screenshot_path"]
+        if not Path(shot).exists():
+            return None
+        if meta.get("scope") == "document":
+            vw, vh = (meta.get("viewport") or [0, 0])[:2]
+            dw, dh = (meta.get("document_size") or [0, 0])[:2]
+            if not (vw and vh and dw and dh) or abs(vh / vw - dh / dw) > 0.03 * (dh / dw):
+                return None
+        return shot
+
+    page_dir = TEST_UIS_DIR / (ui_page or "")
+    if not ui_page or not (page_dir / "index.html").exists():
+        return None
+    try:
+        from render import capture_page as _capture
+
+        path = Path(output_dir) / f"{session_id}_page.png"
+        result = _capture((page_dir / "index.html").resolve().as_uri(),
+                          viewport=tuple(page_px or (1280, 720)),
+                          screenshot_path=path, scope="viewport")
+        return result.screenshot_path
+    except Exception:           # noqa: BLE001 -- the heatmap falls back to boxes
+        return None
 
 
 def render_report(
@@ -273,8 +451,17 @@ def render_report(
     ui_config,
     output_dir: Path,
     session_id: str,
+    gaze_points: Optional[List[dict]] = None,
+    screenshot_path: Optional[str] = None,
+    page_px: Optional[Tuple[int, int]] = None,
+    gaze_error_px: Optional[float] = None,
 ) -> Dict[str, Optional[str]]:
     """Heatmap + HTML + PDF. Never fatal.
+
+    With gaze_points, the main image is the real gaze heatmap over the page
+    screenshot (reports/gaze_heatmap.py), blurred by the measured gaze error;
+    the per-element dwell figure is kept as a second chart. Without them
+    (older callers) the dwell figure is the heatmap, as before.
 
     A report that can't be rendered must not lose the analysis: the metrics
     and the agents' findings are already computed and stored by the caller,
@@ -283,29 +470,53 @@ def render_report(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     out: Dict[str, Optional[str]] = {
-        "heatmap_path": None, "scanpath_path": None, "html_path": None,
-        "pdf_path": None, "pdf_backend": None, "render_error": None,
+        "heatmap_path": None, "dwell_chart_path": None, "scanpath_path": None,
+        "html_path": None, "pdf_path": None, "pdf_backend": None, "render_error": None,
     }
 
+    def _note(msg: str) -> None:
+        prev = out["render_error"]
+        out["render_error"] = f"{prev}; {msg}" if prev else msg
+
+    dwell_target = "heatmap_path"
+    if gaze_points is not None:
+        dwell_target = "dwell_chart_path"
+        try:
+            heatmap_path = output_dir / f"{session_id}_heatmap.png"
+            page_w = (page_px or (0, 0))[0]
+            _gaze_heatmap().generate_gaze_heatmap(
+                gaze_points, str(heatmap_path),
+                screenshot_path=screenshot_path,
+                layout=ui_config.layout_for_heatmap(),
+                labels=pipeline_result.get("element_labels"),
+                size=page_px,
+                sigma_frac=(gaze_error_px / page_w) if gaze_error_px and page_w else None,
+                sigma_px=gaze_error_px,
+            )
+            out["heatmap_path"] = str(heatmap_path)
+        except Exception as exc:    # noqa: BLE001
+            _note(f"heatmap: {type(exc).__name__}: {exc}")
+
     try:
-        heatmap_path = output_dir / f"{session_id}_heatmap.png"
+        suffix = "dwell" if dwell_target == "dwell_chart_path" else "heatmap"
+        dwell_path = output_dir / f"{session_id}_{suffix}.png"
         _heatmap().generate_attention_figure(
-            metrics, ui_config.layout_for_heatmap(), str(heatmap_path)
+            metrics, ui_config.layout_for_heatmap(), str(dwell_path),
+            names=pipeline_result.get("element_labels"),
         )
-        out["heatmap_path"] = str(heatmap_path)
+        out[dwell_target] = str(dwell_path)
     except Exception as exc:        # noqa: BLE001
-        out["render_error"] = f"heatmap: {type(exc).__name__}: {exc}"
+        _note(f"dwell chart: {type(exc).__name__}: {exc}")
 
     try:
         scanpath_path = output_dir / f"{session_id}_scanpath.png"
         _heatmap().generate_scanpath_figure(
-            metrics, ui_config.layout_for_heatmap(), str(scanpath_path)
+            metrics, ui_config.layout_for_heatmap(), str(scanpath_path),
+            names=pipeline_result.get("element_labels"),
         )
         out["scanpath_path"] = str(scanpath_path)
     except Exception as exc:        # noqa: BLE001
-        prev = out["render_error"]
-        msg = f"scanpath: {type(exc).__name__}: {exc}"
-        out["render_error"] = f"{prev}; {msg}" if prev else msg
+        _note(f"scanpath: {type(exc).__name__}: {exc}")
 
     try:
         result = _report_generator().generate_report(
@@ -314,6 +525,7 @@ def render_report(
             output_dir=str(output_dir),
             heatmap_path=out["heatmap_path"],
             scanpath_path=out["scanpath_path"],
+            dwell_chart_path=out["dwell_chart_path"],
         )
         out["html_path"] = result.get("html_path")
         out["pdf_path"] = result.get("pdf_path")
@@ -323,9 +535,7 @@ def render_report(
             # so it shows on the report, not raised.
             out["render_error"] = f"pdf: {result['pdf_error'].splitlines()[0]}"
     except Exception as exc:        # noqa: BLE001
-        prev = out["render_error"]
-        msg = f"report: {type(exc).__name__}: {exc}"
-        out["render_error"] = f"{prev}; {msg}" if prev else msg
+        _note(f"report: {type(exc).__name__}: {exc}")
 
     return out
 
@@ -408,8 +618,13 @@ def analyse_session(
     ui_page: str,
     output_dir: Path,
     capture_meta: Optional[dict] = None,
+    calibration_session_id: Optional[str] = None,
 ) -> dict:
     """The whole chain in one call. Returns everything the caller stores.
+
+    calibration_session_id lets the chain use the calibration's measured
+    gaze error: for error-aware attribution, the quality gate, and the
+    heatmap's blur.
 
     Raises only if the ANALYSIS fails (no gaze, unusable layout). Rendering
     failures come back in the result dict, because losing the PDF is not
@@ -418,10 +633,40 @@ def analyse_session(
     # Put gaze and boxes in the same coordinate system before anything else.
     gaze_points, scrolled = to_document_space(gaze_points, capture_meta)
 
-    report, ui_config = build_metrics(gaze_points, layout, ui_page, session_id)
-    pipeline_result = run_agents(report.metrics)
+    quality = gaze_quality_for(calibration_session_id)
+    error_px = quality.get("error_px")
+    page_px = page_size_from_gaze(gaze_points) or quality.get("screen")
+    if (capture_meta or {}).get("scope") == "document" and (capture_meta or {}).get("document_size"):
+        # the layout spans the whole scrollable page, not one screen
+        page_px = tuple(capture_meta["document_size"])
+
+    report, ui_config = build_metrics(gaze_points, layout, ui_page, session_id,
+                                      gaze_error_px=error_px, page_px=page_px)
+    diag = report.to_dict()["diagnostics"]
+    screen = quality.get("screen")
+    gate = _agents_orchestrator().quality_gate
+    quality_input = gate.QualityInput(
+        gaze_error_px=error_px,
+        error_source=quality.get("source"),
+        screen_diagonal_px=(screen[0] ** 2 + screen[1] ** 2) ** 0.5 if screen else None,
+        tracked_pct=diag["tracked_pct"],
+        total_gaze_time=report.metrics.total_gaze_time,
+        total_fixations=diag["total_fixations"],
+        low_confidence_elements=diag["low_confidence_elements"],
+    )
+    pipeline_result = run_agents(
+        report.metrics, quality_input,
+        labels=element_labels(layout, ui_page),
+        reliability=diag["element_reliability"] or None,
+    )
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     rendered = render_report(
-        pipeline_result, report.metrics, ui_config, output_dir, session_id
+        pipeline_result, report.metrics, ui_config, output_dir, session_id,
+        gaze_points=gaze_points,
+        screenshot_path=page_screenshot(ui_page, capture_meta, page_px, output_dir, session_id),
+        page_px=page_px,
+        gaze_error_px=error_px,
     )
 
     from dataclasses import asdict

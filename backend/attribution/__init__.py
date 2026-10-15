@@ -58,13 +58,20 @@ from .fixations import (                                   # noqa: E402
     detect_fixations,
 )
 from .metrics import AttributionReport, build_metrics      # noqa: E402
-from .engine import analyze_session, gaze_samples_from_dicts   # noqa: E402
+from .engine import (                                     # noqa: E402
+    RELIABLE_SIZE_RATIO,
+    analyze_session,
+    error_model,
+    gaze_samples_from_dicts,
+)
 from .routes import router                                 # noqa: E402
 
 __all__ = [
     "router",
     "SessionMetrics",
     "analyze_session",
+    "error_model",
+    "RELIABLE_SIZE_RATIO",
     "gaze_samples_from_dicts",
     "AttributionReport",
     "build_metrics",

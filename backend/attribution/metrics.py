@@ -61,7 +61,7 @@ scanpath
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from .agents_schema import SessionMetrics
 from .elements import UIConfig
@@ -90,6 +90,15 @@ class AttributionReport:
     overlapping_elements: List[List[str]] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
 
+    # Error-aware attribution (engine.analyze_session with gaze_error_px).
+    # element_reliability = the element's smaller side / the session's median
+    # gaze error: below 1.0 the tracker's own error is bigger than the
+    # element, so a hit on it is about as likely to be noise as attention.
+    gaze_error_px: Optional[float] = None
+    edge_tolerance: Optional[float] = None
+    element_reliability: Dict[str, float] = field(default_factory=dict)
+    low_confidence_elements: List[str] = field(default_factory=list)
+
     def to_dict(self) -> dict:
         from dataclasses import asdict
 
@@ -106,6 +115,10 @@ class AttributionReport:
                 "unfixated_elements": self.unfixated_elements,
                 "overlapping_elements": self.overlapping_elements,
                 "warnings": self.warnings,
+                "gaze_error_px": self.gaze_error_px,
+                "edge_tolerance": self.edge_tolerance,
+                "element_reliability": self.element_reliability,
+                "low_confidence_elements": self.low_confidence_elements,
             },
         }
 

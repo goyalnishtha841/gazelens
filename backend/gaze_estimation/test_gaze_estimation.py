@@ -84,15 +84,26 @@ def check(label, condition):
         failed += 1
 
 
-def run(coro):
-    return asyncio.run(coro)
+def run(result):
+    # sync handlers (blocking CPU work) return directly; async ones need a loop
+    return asyncio.run(result) if asyncio.iscoroutine(result) else result
+
+
+def _raises(fn) -> bool:
+    try:
+        fn()
+    except Exception:       # noqa: BLE001
+        return True
+    return False
 
 
 def expect_http(label, coro, status_code):
     from fastapi import HTTPException
 
     try:
-        run(coro)
+        # a zero-arg callable wraps a sync handler, which would otherwise
+        # raise before this try could catch it
+        run(coro() if callable(coro) else coro)
     except HTTPException as exc:
         check(f"{label} -> {status_code}", exc.status_code == status_code)
         return
@@ -580,6 +591,188 @@ finally:
     shutil.rmtree(cal_dir, ignore_errors=True)
     shutil.rmtree(model_dir, ignore_errors=True)
 
+
+print("\nlandmark feature sets -- iris beats a signal-less pupil feature")
+# Mirrors the first real calibration: the pupil-in-eye-box columns are pure
+# noise, the iris/blendshape columns carry the target. Selection must find
+# the iris set, and the pose set must be refused because the head was still.
+from gaze_estimation.estimator import head_moved     # noqa: E402
+from gaze_estimation.training import train_from_rows  # noqa: E402
+
+rng = np.random.default_rng(7)
+iris_rows = []
+grid = [(gx, gy) for gy in (0.2, 0.4, 0.6, 0.8) for gx in (0.2, 0.4, 0.6, 0.8)]
+for idx, (tx, ty) in enumerate(grid):
+    for _ in range(13):
+        iris_rows.append({
+            "target_x": tx, "target_y": ty, "point_index": idx, "confidence": 0.9,
+            "screen_width": 1694, "screen_height": 840,
+            "left_x_eye": 0.5 + rng.normal(0, 0.015), "left_y_eye": 0.5 + rng.normal(0, 0.02),
+            "right_x_eye": 0.5 + rng.normal(0, 0.015), "right_y_eye": 0.5 + rng.normal(0, 0.02),
+            "iris_h_l": 0.35 + 0.30 * tx + rng.normal(0, 0.004),
+            "iris_h_r": 0.36 + 0.30 * tx + rng.normal(0, 0.004),
+            "iris_v_l": 0.02 + 0.10 * ty + rng.normal(0, 0.003),
+            "iris_v_r": 0.02 + 0.10 * ty + rng.normal(0, 0.003),
+            "bs_h": 1.2 * (tx - 0.5) + rng.normal(0, 0.03),
+            "bs_v": -(ty - 0.5) + rng.normal(0, 0.03),
+            "blink": 0.05,
+            "head_yaw": 2.0 + rng.normal(0, 0.2), "head_pitch": -5.0 + rng.normal(0, 0.2),
+            "head_tx": 0.5, "head_ty": 1.0, "head_tz": -55.0,
+        })
+# a blink row with a wildly wrong iris reading must be dropped, not fitted
+iris_rows.append({**iris_rows[0], "blink": 0.95, "iris_h_l": 5.0, "iris_h_r": 5.0})
+
+result = train_from_rows(iris_rows, session_id="cal_iris_test", persist=False)
+chosen = result.selection["chosen"]["feature_set"]
+check(f"an iris feature set is selected (got {chosen})", chosen.startswith("iris"))
+check(f"held-out error is small ({result.median_error_px:.0f}px)",
+      result.median_error_px < 80)
+check("iris_pose refused when the head barely moved",
+      chosen != "iris_pose")
+check("calibration pose reference stored on the model",
+      abs(result.model.pose_ref.get("head_yaw", 99) - 2.0) < 0.5
+      and result.model.pose_ref.get("head_tz") == -55.0)
+check("round-trips pose_ref through JSON",
+      GazeModel.from_dict(result.model.to_dict()).pose_ref == result.model.pose_ref)
+lid_rows = [{**r, "lid_l": 0.30 - 0.1 * r["target_y"], "lid_r": 0.31 - 0.1 * r["target_y"]}
+            for r in iris_rows]
+lid_ds = build_dataset(lid_rows, feature_set="iris_lid")
+check("iris_lid builds 5 features from the eyelid columns", lid_ds.X.shape[1] == 5)
+check("rows without eyelid columns can't build iris_lid",
+      _raises(lambda: build_dataset(iris_rows, feature_set="iris_lid")))
+blink_ds = build_dataset(iris_rows, feature_set="iris")
+check("blink row dropped from the dataset", blink_ds.dropped_rows == 1)
+
+ref = result.model.pose_ref
+check("same pose -> not head_moved", not head_moved({"head_yaw": 2.0, "head_pitch": -5.0,
+                                                    "head_tz": -55.0}, ref))
+check("10 deg turn -> head_moved", head_moved({"head_yaw": 12.5, "head_pitch": -5.0,
+                                               "head_tz": -55.0}, ref))
+check("leaning in 20% -> head_moved", head_moved({"head_yaw": 2.0, "head_pitch": -5.0,
+                                                 "head_tz": -44.0}, ref))
+live = LiveGazeEstimator(result.model)
+pt = live.estimate(left=(0.5, 0.5), right=(0.5, 0.5),
+                   head_proxy={**{k: iris_rows[5][k] for k in
+                                  ("iris_h_l", "iris_h_r", "iris_v_l", "iris_v_r",
+                                   "bs_h", "bs_v")},
+                               "head_yaw": 20.0, "head_pitch": -5.0, "head_tz": -55.0})
+check("live point flags head_moved but stays valid", pt.valid and pt.note == "head_moved")
+
+print("\nvalidation pass -- fresh dots after calibration")
+import cv                                                     # noqa: E402
+from cv.testing import StubPipeline                           # noqa: E402
+from gaze_estimation.schemas import ValidateRequest           # noqa: E402
+from gaze_estimation.training import load_model               # noqa: E402
+from gaze_estimation.validation import (                      # noqa: E402
+    VALIDATION_KEY,
+    validation_gate,
+)
+
+
+class _IrisStub(StubPipeline):
+    """StubPipeline plus landmark gaze features that track the target the
+    same way the iris_rows above do (noise-free)."""
+
+    def _result(self, frame_id, timestamp):
+        r = super()._result(frame_id, timestamp)
+        tx, ty = self._target
+        r.head_proxy = {
+            "iris_h_l": 0.35 + 0.30 * tx, "iris_h_r": 0.36 + 0.30 * tx,
+            "iris_v_l": 0.02 + 0.10 * ty, "iris_v_r": 0.02 + 0.10 * ty,
+            "bs_h": 1.2 * (tx - 0.5), "bs_v": -(ty - 0.5), "blink": 0.0,
+            "head_yaw": 2.0, "head_pitch": -5.0, "head_tz": -55.0,
+        }
+        return r
+
+
+val_dir = Path(tempfile.mkdtemp(prefix="gaze_val_"))
+stub = _IrisStub()
+saved_model_dir = training_mod.MODEL_DIR
+try:
+    set_model_dir(val_dir)
+    training_mod.MODEL_DIR = val_dir
+    clear_cache()
+    train_from_rows(iris_rows, session_id="cal_valtest", persist=True)
+    cv.set_pipeline(stub)
+
+    stub.aim_at(0.5, 0.5)
+    resp = routes.validate("cal_valtest", ValidateRequest(
+        point_index=0, target_x=0.5, target_y=0.5, frames=["x"] * 8))
+    check("validation point scored on all frames",
+          resp.point["n_valid"] == 8 and resp.point["usable"])
+    check(f"on-target validation error is small ({resp.point['error_px']:.0f}px)",
+          resp.point["error_px"] < 60)
+    stub.aim_at(0.3, 0.7)
+    resp = routes.validate("cal_valtest", ValidateRequest(
+        point_index=1, target_x=0.3, target_y=0.7, frames=["x"] * 8))
+    check("summary covers both points with a good verdict",
+          resp.summary["n_usable"] == 2 and resp.summary["verdict"] == "good")
+    stored = load_model("cal_valtest")
+    check("validation persisted on the model, beside the CV method name",
+          stored.metrics[VALIDATION_KEY]["n_points"] == 2
+          and stored.metrics["validation"] == "leave_one_point_out")
+    check("gate passes a good validation", validation_gate(stored)[0] is True)
+
+    # participant looks somewhere else entirely: redo point 1 as a miss
+    stub.aim_at(0.9, 0.1)
+    resp = routes.validate("cal_valtest", ValidateRequest(
+        point_index=1, target_x=0.1, target_y=0.9, frames=["x"] * 8))
+    check("re-submitting a point replaces it", resp.summary["n_points"] == 2)
+    stub.aim_at(0.9, 0.9)
+    routes.validate("cal_valtest", ValidateRequest(
+        point_index=2, target_x=0.1, target_y=0.1, frames=["x"] * 8))
+    ok, why = validation_gate(load_model("cal_valtest"))
+    check(f"gate refuses a poor validation ({why[:40]}...)", ok is False)
+
+    import json as _json
+    from gaze_estimation.training import validation_frames_path_for
+    frames_file = validation_frames_path_for("cal_valtest")
+    lines = frames_file.read_text().splitlines()
+    check("every check frame saved with its features and prediction",
+          len(lines) == 8 * 4
+          and "iris_h_l" in _json.loads(lines[0])["head_proxy"]
+          and "predicted" in _json.loads(lines[0]))
+
+    stub.fail_next = 8
+    resp = routes.validate("cal_valtest", ValidateRequest(
+        point_index=3, target_x=0.5, target_y=0.5, frames=["x"] * 8))
+    check("a dot with no tracked frames is unusable, not zero error",
+          resp.point["usable"] is False and resp.point["error_px"] is None)
+    print("\noffline evaluation -- scoring variants on saved check frames")
+    from gaze_estimation.offline_eval import (
+        fit_variant,
+        load_check_dots,
+        score_dots,
+        summarise as summarise_variant,
+        variant_names,
+    )
+    dots = load_check_dots(frames_file)
+    check("check frames grouped into one entry per dot", [d["point_index"] for d in dots] == [0, 1, 2, 3])
+    check("a redone dot keeps only its last attempt",
+          dots[1]["target_x"] == 0.1 and len(dots[1]["rows"]) == 8)
+    predict = fit_variant(iris_rows, "iris_blend", "medians")
+    scored = score_dots(predict, dots, "cal_valtest", 1694, 840)
+    check("a dot with no tracked frames is skipped, not scored",
+          sorted(d.point_index for d in scored) == [0, 1, 2])
+    check(f"on-target dot scores near zero ({scored[0].error_px:.0f}px)", scored[0].error_px < 60)
+    check("signed error points the right way (looked right of a left target)",
+          scored[1].dx_px > 0 and scored[1].dy_px < 0)
+    check("medians fit can't build a feature set the rows lack",
+          fit_variant(iris_rows, "iris_lid", "medians") is None)
+    summary = summarise_variant("iris_blend/medians", scored)
+    check("summary pools dots and counts sessions", summary.dots == 3 and summary.sessions == 1)
+    check("variants list the shipped model first, then every set x method",
+          variant_names(["iris"]) == ["auto", "iris/frames", "iris/medians"])
+
+    expect_http("validating an uncalibrated session",
+                lambda: routes.validate("cal_nope", ValidateRequest(
+                    point_index=0, target_x=0.5, target_y=0.5, frames=["x"])), 404)
+finally:
+    cv.set_pipeline(None)
+    clear_cache()
+    set_model_dir(None)
+    training_mod.MODEL_DIR = saved_model_dir
+    shutil.rmtree(val_dir, ignore_errors=True)
 
 print(f"\n{'=' * 40}\n{passed} passed, {failed} failed\n{'=' * 40}")
 

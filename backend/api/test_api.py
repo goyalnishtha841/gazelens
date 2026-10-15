@@ -74,8 +74,10 @@ def check(label, condition):
         failed += 1
 
 
-def run(coro):
-    return asyncio.run(coro)
+def run(result):
+    # Handlers doing blocking CPU work are plain `def` (FastAPI threadpool),
+    # the rest are coroutines -- accept both.
+    return asyncio.run(result) if asyncio.iscoroutine(result) else result
 
 
 def expect_http(label, target, status_code):
@@ -634,6 +636,54 @@ finally:
     warnings.filterwarnings("ignore")
     shutil.rmtree(_TMP, ignore_errors=True)
 
+
+print("\nlive gaze -- viewport -> stage remap")
+# The page is drawn in a stage covering x 0.1-0.7, y 0.2-0.9 of the viewport.
+stage = {"x": 0.1, "y": 0.2, "w": 0.6, "h": 0.7}
+base = {"timestamp": 1.0, "x": 0.4, "y": 0.55, "x_px": 400.0, "y_px": 440.0,
+        "valid": True, "in_bounds": True, "confidence": 1.0, "note": ""}
+pt = pipeline.to_stage_space(base, stage, 1000, 800)
+check("stage centre maps to page centre", abs(pt["x"] - 0.5) < 1e-9 and abs(pt["y"] - 0.5) < 1e-9)
+check("viewport position kept alongside", pt["viewport_x"] == 0.4 and pt["viewport_y"] == 0.55)
+check("pixels are stage pixels", abs(pt["x_px"] - 300.0) < 1e-9 and abs(pt["y_px"] - 280.0) < 1e-9)
+pt = pipeline.to_stage_space({**base, "x": 0.85}, stage, 1000, 800)
+check("a look at the sidebar is off the page, clamped, flagged",
+      pt["x"] == 1.0 and pt["in_bounds"] is False and pt["note"] == "off_page")
+pt = pipeline.to_stage_space({**base, "valid": False, "x": 0.0, "y": 0.0}, stage, 1000, 800)
+check("invalid points pass through untouched", pt["x"] == 0.0 and "viewport_x" not in pt)
+
+print("\nreport quality -- labels, page size, measured error, heatmap")
+check("stage remap records the page's pixel size",
+      pipeline.to_stage_space(base, stage, 1000, 800)["stage_px"] == [600, 560])
+check("page size is the median recorded stage size",
+      pipeline.page_size_from_gaze([{"stage_px": [600, 560]}, {"stage_px": [610, 560]},
+                                    {"stage_px": [600, 560]}, {}]) == (600, 560))
+check("no stage size recorded -> None, not a guess", pipeline.page_size_from_gaze([{}]) is None)
+labels = pipeline.element_labels({"subscribe_cta": {"bbox": [0, 0, 1, 1]},
+                                  "x_link": {"bbox": [0, 0, 1, 1], "text": "Read more  "}},
+                                 "article_page")
+check("test-page labels come from its elements.json", labels.get("subscribe_cta") == "Subscribe")
+check("detected elements fall back to their visible text", labels.get("x_link") == "Read more")
+check("unknown calibration -> no measured error", pipeline.gaze_quality_for("cal_nope") == {})
+check("no calibration -> no measured error", pipeline.gaze_quality_for(None) == {})
+
+_heat_dir = Path(_TMP) / "heat"
+_pts = [{"timestamp": i * 0.1, "x": 0.3, "y": 0.4, "valid": True} for i in range(30)]
+_report, _cfg = pipeline.build_metrics(_pts, {"a": [0.2, 0.3, 0.3, 0.3]}, "p", "ses_heat")
+_pr = {"session_id": "ses_heat", "element_labels": {"a": "Area A"}, "quality": None,
+       "behavior_summary": {"first_noticed": "a", "most_attended": "a",
+                            "ignored_important_elements": [], "attention_scattered": False,
+                            "findings": []},
+       "issues": [], "recommendations_kept": [], "recommendations_rejected": []}
+_rendered = pipeline.render_report(_pr, _report.metrics, _cfg, _heat_dir, "ses_heat",
+                                   gaze_points=_pts, page_px=(800, 450), gaze_error_px=60.0)
+check("gaze heatmap and dwell chart both rendered",
+      _rendered["heatmap_path"].endswith("_heatmap.png")
+      and _rendered["dwell_chart_path"].endswith("_dwell.png")
+      and Path(_rendered["heatmap_path"]).exists() and Path(_rendered["dwell_chart_path"]).exists())
+_html = Path(_rendered["html_path"]).read_text()
+check("report uses readable names", "Area A" in _html)
+check("report embeds the dwell chart", "_dwell.png" in _html)
 
 print(f"\n{'=' * 40}\n{passed} passed, {failed} failed\n{'=' * 40}")
 

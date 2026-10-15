@@ -103,6 +103,36 @@ IRIS_ONLY_CONFIDENCE = 0.5
 OUTLIER_EYE_NORM_DIST = 0.35
 
 
+# Where the live pipeline's pupil point comes from:
+#   "iris"  -- MediaPipe's iris landmark only. No YOLO, no weights needed.
+#              The default for get_pipeline(): on a laptop webcam the eye is
+#              ~30px wide, LPW-trained YOLO is out of domain there, and the
+#              first real calibration with YOLO in the loop had no usable
+#              gaze signal. Gaze itself is regressed from landmark features
+#              (cv/landmarks.py _gaze_features), not from this point.
+#   "fused" -- YOLO blended with iris (see fuse_iris below). Kept for the
+#              detector-vs-iris ablation in the paper.
+#   "yolo"  -- YOLO alone, as benchmarked.
+# PupilDetector's own default stays "fused" (via fuse_iris) so the detector
+# tests and benchmark scripts are unchanged; only get_pipeline() opts in.
+PUPIL_SOURCE_ENV_VAR = "FIXATION_PUPIL_SOURCE"
+PUPIL_SOURCES = ("iris", "fused", "yolo")
+LIVE_DEFAULT_PUPIL_SOURCE = "iris"
+
+# Above this mean eyeBlink score the iris landmark is a guess on a closed
+# lid, so the eye is reported as not found.
+BLINK_REJECT_SCORE = 0.5
+
+
+def live_pupil_source() -> str:
+    from os import environ
+
+    val = (environ.get(PUPIL_SOURCE_ENV_VAR) or LIVE_DEFAULT_PUPIL_SOURCE).strip().lower()
+    if val not in PUPIL_SOURCES:
+        raise ValueError(f"${PUPIL_SOURCE_ENV_VAR}={val!r}; expected one of {PUPIL_SOURCES}")
+    return val
+
+
 def _fusion_enabled(explicit: Optional[bool]) -> bool:
     if explicit is not None:
         return explicit
@@ -128,6 +158,7 @@ class PupilDetector:
         landmarker: Optional[EyeLandmarker] = None,
         full_frame_fallback: bool = False,
         fuse_iris: Optional[bool] = None,
+        pupil_source: Optional[str] = None,
     ):
         resolved, is_smoketest = resolve_weights(weights_path)
         # Falls back to DEFAULT_WEIGHTS purely so the error message names the
@@ -143,6 +174,13 @@ class PupilDetector:
         # See FUSION_ENV_VAR above -- explicit arg wins, then the env var,
         # then on by default.
         self.fuse_iris = _fusion_enabled(fuse_iris)
+        if pupil_source is None:
+            pupil_source = "fused" if self.fuse_iris else "yolo"
+        if pupil_source not in PUPIL_SOURCES:
+            raise ValueError(f"pupil_source {pupil_source!r}; expected one of {PUPIL_SOURCES}")
+        self.pupil_source = pupil_source
+        # An explicit pupil_source wins over the fusion env var.
+        self.fuse_iris = pupil_source == "fused"
         self._model = None
 
     # ------------------------------------------------------------------
@@ -183,6 +221,8 @@ class PupilDetector:
     @property
     def available(self) -> bool:
         """True if a real detection could actually run right now."""
+        if self.pupil_source == "iris":
+            return self.landmarker.available
         try:
             self._ensure_model()
         except DetectorUnavailable:
@@ -227,6 +267,22 @@ class PupilDetector:
             eye_regions=regions,
             head_proxy=head_proxy,
         )
+
+        if self.pupil_source == "iris":
+            blink = (head_proxy or {}).get("blink", 0.0)
+            if blink > BLINK_REJECT_SCORE:
+                result.note = "no_pupil_detected"
+                return result
+            for side, region in regions.items():
+                if region.iris_x_px is None or region.iris_y_px is None:
+                    continue
+                result.pupils[side] = self._point_to_detection(
+                    region, w, h, region.iris_x_px, region.iris_y_px,
+                    confidence=round(1.0 - blink, 4), source="iris",
+                )
+            if not result.pupils:
+                result.note = "no_pupil_detected"
+            return result
 
         for side, region in regions.items():
             crop = frame_bgr[region.y1:region.y2, region.x1:region.x2]
@@ -378,6 +434,9 @@ __all__ = [
     "WEIGHTS_ENV_VAR",
     "DEFAULT_CONF",
     "FUSION_ENV_VAR",
+    "PUPIL_SOURCE_ENV_VAR",
+    "PUPIL_SOURCES",
+    "live_pupil_source",
     "IRIS_ONLY_CONFIDENCE",
     "OUTLIER_EYE_NORM_DIST",
     "resolve_weights",

@@ -223,11 +223,25 @@ class GazeBatchResponse(BaseModel):
     status: str
 
 
+class StageRect(BaseModel):
+    x: float = Field(..., ge=0.0, le=1.0)
+    y: float = Field(..., ge=0.0, le=1.0)
+    w: float = Field(..., gt=0.0, le=1.0)
+    h: float = Field(..., gt=0.0, le=1.0)
+
+
 class GazeFrameRequest(BaseModel):
     """One webcam frame for the live session loop -- see pipeline.estimate_gaze_frame."""
 
     frame: str = Field(..., description="base64 JPEG, raw or a data: URL")
     timestamp: Optional[float] = None
+    stage: Optional[StageRect] = Field(
+        None,
+        description="Where the evaluated page is drawn, as a fraction of the "
+                    "viewport. The gaze model maps to the VIEWPORT (that is what "
+                    "calibration targets were measured in); when the page sits "
+                    "inside a smaller stage, gaze is remapped into it.",
+    )
 
 
 class GazeFrameResponse(BaseModel):

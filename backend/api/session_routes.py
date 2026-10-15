@@ -378,7 +378,7 @@ async def append_gaze(
 
 
 @router.post("/{session_id}/gaze/frame", response_model=GazeFrameResponse)
-async def estimate_gaze_frame(
+def estimate_gaze_frame(
     session_id: str,
     payload: GazeFrameRequest,
     user: User = Depends(get_current_user),
@@ -396,6 +396,12 @@ async def estimate_gaze_frame(
     itself; this endpoint IS the live gaze stream for a browser-driven
     session. Returned too, so the client can draw the cursor without a
     second round trip.
+
+    A plain `def` on purpose: frame decoding, landmarking and inference are
+    blocking CPU work. As `async def` they ran on the event loop, so every
+    other request -- including the next frame -- queued behind them and the
+    cursor lagged further the longer a session ran. FastAPI runs sync
+    handlers in its threadpool.
     """
     session = owned_session(session_id, user, db)
     if session.status in (STATUS_PROCESSING, STATUS_COMPLETE):
@@ -412,7 +418,8 @@ async def estimate_gaze_frame(
 
     try:
         point = pipeline.estimate_gaze_frame(
-            session.calibration_session_id, payload.frame, timestamp=payload.timestamp
+            session.calibration_session_id, payload.frame, timestamp=payload.timestamp,
+            stage=payload.stage.model_dump() if payload.stage else None,
         )
     except FileNotFoundError as exc:
         raise HTTPException(
@@ -453,6 +460,7 @@ def _run_analysis(session_id: str) -> None:
                 ui_page=session.ui_page or "unknown_page",
                 output_dir=Path(DATA_DIR) / session.id,
                 capture_meta=session.capture_meta,
+                calibration_session_id=session.calibration_session_id,
             )
 
             db.add(Report(

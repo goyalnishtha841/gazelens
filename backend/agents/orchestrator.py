@@ -9,29 +9,76 @@ gets replaced by a real metrics source.
 """
 
 from dataclasses import asdict
+from typing import Dict, Optional
+
 from schemas import SessionMetrics
 import agent1_behavior
 import agent2_evaluation
 import agent3_recommendation
 import agent4_critic
+import consolidate
+import quality_gate
 
 
-def run_pipeline(session: SessionMetrics) -> dict:
+def run_pipeline(
+    session: SessionMetrics,
+    quality: Optional[quality_gate.QualityInput] = None,
+    labels: Optional[Dict[str, str]] = None,
+    reliability: Optional[Dict[str, float]] = None,
+) -> dict:
+    """Quality gate -> Agents 1-4 -> consolidation.
+
+    quality: how trustworthy the session's gaze was (see quality_gate.py).
+      None skips the gate -- mock sessions and the agent tests have no
+      measurement behind them to judge.
+    labels: element_id -> readable name, for the report.
+    reliability: element_id -> size/gaze-error ratio, from attribution.
+
+    "issues" and "recommendations_kept" are the consolidated lists (one per
+    element); "issues_raw" / "recommendations_raw" keep the agents' own
+    output for audit.
+    """
+    verdict = quality_gate.assess(quality) if quality is not None else None
+    labels = labels or {}
+    result = {
+        "session_id": session.session_id,
+        "quality": asdict(verdict) if verdict else None,
+        "element_labels": {e: consolidate.readable_label(e, labels)
+                           for e in session.element_type},
+    }
+
+    if verdict is not None and verdict.level == "insufficient":
+        # Don't let rules fire on numbers we already know are noise.
+        result.update({
+            "behavior_summary": {"session_id": session.session_id, "first_noticed": None,
+                                 "most_attended": None, "ignored_important_elements": [],
+                                 "attention_scattered": False, "findings": []},
+            "issues": [], "issues_raw": [],
+            "recommendations_kept": [], "recommendations_raw": [],
+            "recommendations_rejected": [],
+        })
+        return result
+
     behavior = agent1_behavior.analyze(session)
     issues = agent2_evaluation.evaluate(behavior, session)
     recommendations = agent3_recommendation.recommend_all(issues)
     verified = agent4_critic.verify(recommendations, session)
+    kept = [asdict(v) for v in verified if v.kept]
+    rejected = [asdict(v) for v in verified if not v.kept]
+    raw_issues = [asdict(i) for i in issues]
+    gaze_error = verdict.gaze_error_px if verdict else None
 
-    kept = [v for v in verified if v.kept]
-    rejected = [v for v in verified if not v.kept]
-
-    return {
-        "session_id": session.session_id,
+    result.update({
         "behavior_summary": asdict(behavior),
-        "issues": [asdict(i) for i in issues],
-        "recommendations_kept": [asdict(v) for v in kept],
-        "recommendations_rejected": [asdict(v) for v in rejected],
-    }
+        "issues": consolidate.merge_issues(
+            raw_issues, labels, reliability, gaze_error,
+            max_severity=verdict.max_severity if verdict else "High"),
+        "issues_raw": raw_issues,
+        "recommendations_kept": consolidate.merge_recommendations(kept, labels, reliability),
+        "recommendations_raw": kept,
+        "recommendations_rejected": rejected,
+    })
+    return result
 
 
 if __name__ == "__main__":

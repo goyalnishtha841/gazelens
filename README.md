@@ -116,8 +116,9 @@ Webcam → Face/Eye Landmarking → Pupil Detection (YOLOv8n) → Gaze Estimatio
 | Calibration | ✅ Done | `backend/calibration/` — endpoint + storage. **Not yet reconciled with `Calibration.jsx`**, which isn't in this repo (see below) |
 | Gaze estimation | ✅ Done | `backend/gaze_estimation/` — per-session polynomial ridge, degree auto-selected by leave-one-point-out CV. Validated on synthetic sessions only; no real participant data exists yet |
 | UI attribution + metrics | ✅ Done | `backend/attribution/` — gaze + bboxes → `SessionMetrics`, piped end-to-end into the agent chain in its test suite |
-| Heatmap rendering | ⏳ Open | `reports/heatmap_stub.py` still a stub; `attribution` now supplies the real layout + dwell data it needs |
+| Heatmap rendering | ✅ Done | `reports/gaze_heatmap.py`: gaze density over a screenshot of the page as shown, blurred by the session's measured gaze error. The per-element dwell chart and gaze path remain (`heatmap_stub.py`) |
 | Agent chain (behavior/evaluation/recommendation/critic) | ✅ Done | Fully tested against mock session data |
+| Report quality gate + consolidation | ✅ Done | `agents/quality_gate.py` runs first: sessions with too much gaze error (from the calibration accuracy check), too little tracking or too little data get "insufficient" (no findings) or "limited" (nothing above Medium). `agents/consolidate.py` runs last: one issue and one recommendation per element, readable names, and findings on elements smaller than the gaze error downgraded with a caveat. Attribution's near-miss tolerance follows the measured error (`attribution/engine.py` `error_model`) |
 | Report generation | ✅ Done | Generates PDF/HTML reports, tested against multiple scenarios |
 | Arbitrary-URL rendering | ✅ Done | `backend/render/` — Chromium screenshot + DOM element detection. Element **types are inferred**, not authored; every capture reports `low_confidence_fraction` and reports say so |
 | Session/report API endpoints | ✅ Done | `backend/api/` — full lifecycle, ownership-scoped. **Not yet reconciled with `client.js`**, which isn't in this repo |
@@ -181,6 +182,17 @@ To reproduce an exact environment (pilot study, paper numbers) use
 Without them the API still starts and every test suite still passes (all are
 loaded lazily); only live capture is unavailable. `GET /health` reports
 `cv_available` so you can tell which state you're in.
+
+**Live gaze does not use the pupil detector.** The live pipeline takes the
+pupil point from MediaPipe's iris landmarks and regresses gaze from
+landmark features: iris position relative to the eye corners, MediaPipe's
+`eyeLook*` blendshapes and head pose. It needs only `face_landmarker.task`.
+YOLO on a ~30 px webcam eye crop is out of domain for an LPW-trained model,
+and with it in the loop the first real calibration had no usable gaze
+signal (437 px median error). To run the detector live for the iris-vs-YOLO
+ablation, set `FIXATION_PUPIL_SOURCE=fused` (blend) or `yolo` (detector
+only). Calibration now ends with a 5-dot accuracy check, and a session
+refuses a calibration whose check error exceeds 15% of the screen diagonal.
 
 **If you don't have Drive access**, `scripts/make_smoketest_detector.py` trains a
 small pupil detector on synthetic drawn eyes in about a minute on CPU, so the
