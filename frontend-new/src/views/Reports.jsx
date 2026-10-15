@@ -8,7 +8,7 @@ export default function Reports({ onNavigate }) {
     <div className="mx-auto flex max-w-[1400px] px-8 py-8">
       <Sidebar active="reports" onNavigate={onNavigate} />
       <main className="flex-1 max-w-3xl pl-0 md:pl-10">
-        <Label>Fixation Report</Label>
+        <Label>GazeLens Report</Label>
         <h1 className="mt-2 font-sans text-[32px] font-semibold tracking-tight text-text-primary">
           {project.name}
         </h1>

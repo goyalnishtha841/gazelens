@@ -4,7 +4,6 @@ import {
   startCalibration, submitCalibrationSamples, completeCalibration, validateGaze, CAMERA_CONSTRAINTS,
 } from "../api/calibration.js";
 import { Label } from "../components/Primitives.jsx";
-import ThemeToggle from "../components/ThemeToggle.jsx";
 
 // Ported from frontend/src/views/Calibration.jsx -- same backend contract,
 // same 16-point default and dynamic grid shape, same on-screen-position
@@ -277,16 +276,8 @@ export default function Calibration({ onComplete, onExit }) {
     </button>
   );
 
-  // Theme toggle has to be reachable on every screen, including this one --
-  // it's the only thing rendered during forced calibration (no Nav anywhere
-  // in reach), so a standalone corner control is the only way to get it
-  // there. Present in all four states, including "running": flipping the
-  // theme mid-capture is harmless, unlike sign-out below.
-  const themeCorner = (
-    <div className="absolute right-6 top-6">
-      <ThemeToggle />
-    </div>
-  );
+  // GazeLens is dark-only, so there is no theme control to place here.
+  const themeCorner = null;
 
   // Signing out has to be reachable even when calibration is forced (first
   // login, or any reload -- calibrationSessionId isn't persisted, so this
@@ -295,7 +286,6 @@ export default function Calibration({ onComplete, onExit }) {
   // want a stray click ending the session.
   const signOutLink = (
     <div className="absolute right-6 top-6 flex items-center gap-4">
-      <ThemeToggle />
       <button
         onClick={logout}
         className="text-[12px] text-text-secondary transition-colors hover:text-text-primary"
@@ -311,7 +301,7 @@ export default function Calibration({ onComplete, onExit }) {
         {exitLink}
         {signOutLink}
         <div className="max-w-md text-center">
-          <Label>Fixation calibration</Label>
+          <Label>GazeLens calibration</Label>
           <h1 className="mt-4 font-sans text-[28px] font-semibold text-text-primary">Calibrate your gaze</h1>
           <p className="mt-3 text-[14px] leading-relaxed text-text-secondary">
             16 points will appear one at a time. Look directly at each one until it fills in, then hold
@@ -352,7 +342,7 @@ export default function Calibration({ onComplete, onExit }) {
         {exitLink}
         {signOutLink}
         <div className="max-w-md text-center">
-          <Label>Fixation calibration</Label>
+          <Label>GazeLens calibration</Label>
           <h1 className="mt-4 font-sans text-[28px] font-semibold text-text-primary">
             {blocked ? "Calibration needs another try" : "Calibration complete"}
           </h1>

@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 import { Label } from "../components/Primitives.jsx";
 import { GazeTrailDecorative } from "../components/GazeTrail.jsx";
-import ThemeToggle from "../components/ThemeToggle.jsx";
 
 export default function SignIn({ onSwitchToSignup, onBackToHome }) {
   const { login } = useAuth();
@@ -34,14 +33,11 @@ export default function SignIn({ onSwitchToSignup, onBackToHome }) {
           ← Home
         </button>
       )}
-      <div className="absolute right-6 top-6">
-        <ThemeToggle />
-      </div>
       <div className="w-full max-w-[380px]">
         <div className="relative mb-8 h-16">
           <GazeTrailDecorative seed={3} points={4} edgeToEdge className="text-accent" />
         </div>
-        <Label>Fixation</Label>
+        <Label>GazeLens</Label>
         <h1 className="mt-2 font-sans text-[26px] font-semibold text-text-primary">Sign in</h1>
 
         {error && (
@@ -85,7 +81,7 @@ export default function SignIn({ onSwitchToSignup, onBackToHome }) {
         </form>
 
         <div className="mt-8 border-t border-border pt-6 text-center text-[13px] text-text-secondary">
-          New to Fixation?{" "}
+          New to GazeLens?{" "}
           <button type="button" onClick={onSwitchToSignup} className="text-accent hover:opacity-80">
             Create account
           </button>
