@@ -7,6 +7,7 @@ import StackedStory from "../components/StackedStory.jsx";
 import { CheckIcon } from "../components/LandingVisuals.jsx";
 import GazeHero from "../components/GazeHero.jsx";
 import { Reveal, StaggerGroup, StaggerItem } from "../components/Motion.jsx";
+import { AudienceSwitcher, HeroFloaters, HowItWorksJourney } from "../components/LandingSections.jsx";
 
 /*
  * Landing page, written for someone who has never used an eye tracker.
@@ -28,12 +29,6 @@ const FACTS = [
   { value: "PDF", label: "report to share with your team" },
 ];
 
-const AUDIENCES = [
-  { emoji: "🎨", tone: "accent", title: "Designers", text: "Check that your layout leads the eye to what matters, before anything gets built." },
-  { emoji: "💻", tone: "cool", title: "Developers", text: "Test a new page or feature with real people before you launch it." },
-  { emoji: "🎓", tone: "amber", title: "Students & researchers", text: "Run eye-tracking studies for projects and papers without booking a lab." },
-  { emoji: "🛍️", tone: "coral", title: "Shop owners", text: "Find out why visitors look around but never click “Buy”." },
-];
 
 const STEPS = [
   { tone: "cool", tag: "about 1 minute", title: "Set up your camera", body: "Look at a few dots on your screen. This teaches GazeLens how your eyes move." },
@@ -52,12 +47,6 @@ const FAQS = [
   { q: "Who is GazeLens for?", a: "Designers, developers, students and researchers who want to know whether people notice the right things on a page, without booking an eye-tracking lab." },
 ];
 
-const TONE = {
-  cool: { text: "text-cool", bg: "bg-cool", soft: "bg-cool/10" },
-  accent: { text: "text-accent", bg: "bg-accent", soft: "bg-accent/10" },
-  amber: { text: "text-amber", bg: "bg-amber", soft: "bg-amber/10" },
-  coral: { text: "text-coral", bg: "bg-coral", soft: "bg-coral/10" },
-};
 
 export default function Landing({ onNavigate }) {
   const start = () => onNavigate?.();
@@ -194,19 +183,9 @@ export default function Landing({ onNavigate }) {
         <SectionHeading
           eyebrow="Who it's for"
           title="Made for anyone who builds for the web"
-          text="You don't need to know anything about eye tracking. If you care whether people notice the right things, GazeLens is for you."
+          text="Pick who you are and see the kind of thing GazeLens would show you. No eye-tracking knowledge needed."
         />
-        <div className="mt-14 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {AUDIENCES.map((a, i) => (
-            <Reveal once key={a.title} delay={i * 0.06}>
-              <div className="group h-full rounded-[20px] border border-border bg-surface p-6 transition-all duration-300 hover:-translate-y-1 hover:border-accent/40">
-                <span className={`flex h-12 w-12 items-center justify-center rounded-[14px] text-[24px] ${TONE[a.tone].soft}`}>{a.emoji}</span>
-                <h3 className="mt-5 text-[19px] font-semibold tracking-tight">{a.title}</h3>
-                <p className="mt-2 text-[15px] leading-relaxed text-text-secondary">{a.text}</p>
-              </div>
-            </Reveal>
-          ))}
-        </div>
+        <AudienceSwitcher />
       </section>
 
       {/* ------------------------------------------------------------ how */}
@@ -214,25 +193,9 @@ export default function Landing({ onNavigate }) {
         <SectionHeading
           eyebrow="How it works"
           title="From setup to report in four easy steps"
-          text="No training needed. If you can look at a screen, you can use GazeLens."
+          text="No training needed. Scroll through to watch each step happen."
         />
-        <div className="relative mt-24">
-          <ScanpathLine />
-          <div className="relative grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {STEPS.map((s, i) => (
-              <Reveal once key={s.title} delay={i * 0.08}>
-                <div className="group h-full rounded-[20px] border border-border bg-surface p-6 transition-all duration-300 hover:-translate-y-1 hover:border-accent/40">
-                  <div className="flex items-center justify-between">
-                    <span className={`flex h-11 w-11 items-center justify-center rounded-full text-[17px] font-bold ${TONE[s.tone].soft} ${TONE[s.tone].text}`}>{i + 1}</span>
-                    <span className="rounded-full border border-border px-2.5 py-0.5 text-[12px] text-text-secondary">{s.tag}</span>
-                  </div>
-                  <h3 className="mt-5 text-[20px] font-semibold tracking-tight">{s.title}</h3>
-                  <p className="mt-2 text-[15px] leading-relaxed text-text-secondary">{s.body}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
+        <HowItWorksJourney steps={STEPS} />
       </section>
 
       {/* ------------------------------------------------------------ faq */}
@@ -308,37 +271,6 @@ function SectionHeading({ eyebrow, title, text }) {
   );
 }
 
-/** Small product moments floating around the headline (wide screens only). */
-function HeroFloaters() {
-  const reduce = useReducedMotion();
-  const float = (delay) => (reduce ? {} : {
-    animate: { y: [0, -10, 0] },
-    transition: { duration: 6, repeat: Infinity, ease: "easeInOut", delay },
-  });
-  const card = "w-[230px] rounded-[18px] border border-border bg-surface/85 p-4 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] backdrop-blur";
-  return (
-    <div aria-hidden="true" className="pointer-events-none absolute inset-0 hidden xl:block">
-      <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.8, duration: 0.7 }} className="absolute left-0 top-[18%]">
-        <motion.div {...float(0)} className={card}>
-          <div className="flex items-center gap-2 text-[13px] font-semibold text-text-primary">
-            <span className="text-accent"><IrisMark size={20} wander /></span> Live tracking
-          </div>
-          <div className="mt-2 text-[13px] text-text-secondary">Looking at: <span className="font-medium text-accent">Sign-up button</span></div>
-        </motion.div>
-      </motion.div>
-
-      <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.9, duration: 0.7 }} className="absolute right-0 top-[30%]">
-        <motion.div {...float(0.8)} className={`${card} border-amber/30`}>
-          <div className="flex items-center gap-2 text-[12px] font-semibold text-amber"><span className="h-1.5 w-1.5 rounded-full bg-amber" /> Worth fixing</div>
-          <div className="mt-1 text-[14px] font-semibold leading-snug text-text-primary">“Add to cart” was noticed late</div>
-          <div className="mt-1 text-[12px] text-text-secondary">First seen after 6.1 seconds</div>
-        </motion.div>
-      </motion.div>
-
-    </div>
-  );
-}
-
 /** Bottom of the first screen: tells newcomers there's more below. */
 function ScrollCue() {
   const reduce = useReducedMotion();
@@ -392,47 +324,3 @@ function Faq() {
   );
 }
 
-/** The "How it works" connector: an eye-path hopping across the 4 steps. */
-function ScanpathLine() {
-  const reduce = useReducedMotion();
-  return (
-    <div className="pointer-events-none absolute -top-14 left-0 hidden h-12 w-full lg:block" aria-hidden="true">
-      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 1000 48" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="scan-grad" x1="0" x2="1">
-            <stop offset="0" stopColor="rgb(var(--color-cool))" />
-            <stop offset="0.4" stopColor="rgb(var(--color-accent))" />
-            <stop offset="0.7" stopColor="rgb(var(--color-amber))" />
-            <stop offset="1" stopColor="rgb(var(--color-coral))" />
-          </linearGradient>
-        </defs>
-        {/* pathLength animation owns the dashes, so the drawn line is solid;
-            a static dashed copy underneath keeps the eye-path look */}
-        <path d={CONNECTOR_PATH} fill="none" stroke="rgb(var(--color-border))" strokeWidth="1" strokeDasharray="4 5" vectorEffect="non-scaling-stroke" />
-        <motion.path
-          d={CONNECTOR_PATH} fill="none" stroke="url(#scan-grad)" strokeWidth="1.5" vectorEffect="non-scaling-stroke"
-          initial={{ pathLength: reduce ? 1 : 0 }}
-          whileInView={{ pathLength: 1 }}
-          viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 1.6, ease: "easeInOut" }}
-        />
-      </svg>
-      {/* HTML dots so they stay round; the outer span centres, the inner one
-          scales (a motion transform would override the translate) */}
-      {["cool", "accent", "amber", "coral"].map((tone, i) => (
-        <span key={tone} className="absolute bottom-0 -translate-x-1/2 translate-y-1/2" style={{ left: `${12.5 + i * 25}%` }}>
-          <motion.span
-            className={`block h-3 w-3 rounded-full ring-4 ring-bg ${TONE[tone].bg}`}
-            initial={{ scale: reduce ? 1 : 0 }}
-            whileInView={{ scale: 1 }}
-            viewport={{ once: true, margin: "-80px" }}
-            transition={{ delay: reduce ? 0 : 0.3 + i * 0.35, type: "spring", stiffness: 380, damping: 18 }}
-          />
-        </span>
-      ))}
-    </div>
-  );
-}
-
-// Peaks between steps, touching down above each card's centre (12.5/37.5/...%).
-const CONNECTOR_PATH = "M 125 44 Q 250 2 375 44 Q 500 2 625 44 Q 750 2 875 44";
