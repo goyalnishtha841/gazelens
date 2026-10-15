@@ -24,29 +24,16 @@ const HEAT =
  * Hero: floating product moments + a virtual eye that visits them
  * ==================================================================== */
 
-// Where the eye rests, as % of the hero box. 0 is the headline.
-const HERO_STOPS = [
-  { x: 50, y: 41 },
-  { x: 11, y: 25 },
-  { x: 89, y: 30 },
-  { x: 88, y: 67 },
-  { x: 11, y: 66 },
-];
+// The cards take turns lighting up, as if someone were looking at each.
+const HERO_CARDS = 4;
 
 export function HeroFloaters() {
   const reduce = useReducedMotion();
-  const [stop, setStop] = useState(0);
-  const [trail, setTrail] = useState([HERO_STOPS[0]]);
+  const [lit, setLit] = useState(0);
 
   useEffect(() => {
     if (reduce) return;
-    const id = setInterval(() => {
-      setStop((s) => {
-        const next = (s + 1) % HERO_STOPS.length;
-        setTrail((t) => [...t.slice(-3), HERO_STOPS[next]]);
-        return next;
-      });
-    }, 2300);
+    const id = setInterval(() => setLit((s) => (s + 1) % HERO_CARDS), 2600);
     return () => clearInterval(id);
   }, [reduce]);
 
@@ -54,49 +41,23 @@ export function HeroFloaters() {
     animate: { y: [0, -9, 0] },
     transition: { duration: 6, repeat: Infinity, ease: "easeInOut", delay },
   });
+  // every card is the same size so the hero reads as one balanced set
   const card = (active, tone = "accent") =>
-    `rounded-[18px] border bg-surface/85 p-4 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] backdrop-blur transition-all duration-500 ${
-      active ? `border-transparent ring-2 ${TONE[tone].ring} shadow-[0_0_50px_-12px_rgb(${TONE[tone].rgb}/0.6)]` : "border-border"
+    `flex h-[160px] w-[260px] flex-col rounded-[18px] border bg-surface/85 p-4 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] backdrop-blur transition-all duration-700 ${
+      active ? `border-transparent ring-1 ${TONE[tone].ring} shadow-[0_0_50px_-14px_rgb(${TONE[tone].rgb}/0.55)]` : "border-border"
     }`;
-  const pos = HERO_STOPS[stop];
+  const slot = (side, top, delay) => ({
+    initial: { opacity: 0, x: side === "left" ? -20 : 20 },
+    animate: { opacity: 1, x: 0 },
+    transition: { delay, duration: 0.7 },
+    className: `absolute ${side === "left" ? "left-0" : "right-0"} ${top}`,
+  });
 
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 hidden xl:block">
-      {/* the eye's recent path */}
-      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-        {trail.slice(1).map((p, i) => {
-          const a = trail[i];
-          return (
-            <motion.line
-              key={`${i}-${p.x}-${p.y}-${trail.length}`}
-              x1={a.x} y1={a.y} x2={p.x} y2={p.y}
-              stroke="rgb(var(--color-accent))" strokeWidth="1.2" strokeDasharray="3 5"
-              vectorEffect="non-scaling-stroke"
-              initial={{ pathLength: 0, opacity: 0 }}
-              animate={{ pathLength: 1, opacity: 0.15 + 0.2 * (i / Math.max(trail.length - 1, 1)) }}
-              transition={{ duration: 0.6 }}
-            />
-          );
-        })}
-      </svg>
-
-      {/* the virtual eye */}
-      {!reduce && (
-        <motion.div
-          className="absolute z-20 -ml-5 -mt-5"
-          animate={{ left: `${pos.x}%`, top: `${pos.y}%` }}
-          transition={{ type: "spring", stiffness: 60, damping: 14 }}
-        >
-          <span className="relative flex h-10 w-10 items-center justify-center rounded-full border-2 border-accent shadow-[0_0_24px_4px_rgb(var(--color-accent)/0.35)]">
-            <span className="absolute inset-0 animate-ping rounded-full border border-accent/40" />
-            <span className="h-2 w-2 rounded-full bg-accent" />
-          </span>
-        </motion.div>
-      )}
-
-      {/* 1: live tracking */}
-      <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.8, duration: 0.7 }} className="absolute left-0 top-[17%] w-[236px]">
-        <motion.div {...float(0)} className={card(stop === 1)}>
+      {/* top left: live tracking */}
+      <motion.div {...slot("left", "top-[19%]", 0.8)}>
+        <motion.div {...float(0)} className={card(lit === 0)}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-[13px] font-semibold text-text-primary">
               <span className="text-accent"><IrisMark size={20} wander /></span> Live tracking
@@ -106,17 +67,17 @@ export function HeroFloaters() {
             </span>
           </div>
           <div className="mt-2 text-[13px] text-text-secondary">Looking at: <span className="font-medium text-accent">Sign-up button</span></div>
-          <Sparkline />
+          <div className="mt-auto"><Sparkline /></div>
         </motion.div>
       </motion.div>
 
-      {/* 2: finding */}
-      <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.9, duration: 0.7 }} className="absolute right-0 top-[20%] w-[250px]">
-        <motion.div {...float(0.8)} className={card(stop === 2, "amber")}>
+      {/* top right: a finding */}
+      <motion.div {...slot("right", "top-[19%]", 0.9)}>
+        <motion.div {...float(0.8)} className={card(lit === 1, "amber")}>
           <div className="flex items-center gap-2 text-[12px] font-semibold text-amber"><span className="h-1.5 w-1.5 rounded-full bg-amber" /> Worth fixing</div>
-          <div className="mt-1 text-[14px] font-semibold leading-snug text-text-primary">“Add to cart” was noticed late</div>
+          <div className="mt-1.5 text-[14px] font-semibold leading-snug text-text-primary">“Add to cart” was noticed late</div>
           <div className="mt-1 text-[12px] text-text-secondary">First seen after 6.1 seconds</div>
-          <div className="mt-3 flex gap-1.5">
+          <div className="mt-auto flex gap-1.5">
             {[["Fix first", "coral"], ["Strong evidence", "accent"]].map(([t, c]) => (
               <span key={t} className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${TONE[c].soft} ${TONE[c].text}`}>{t}</span>
             ))}
@@ -124,26 +85,26 @@ export function HeroFloaters() {
         </motion.div>
       </motion.div>
 
-      {/* 3: heatmap */}
-      <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 1.0, duration: 0.7 }} className="absolute right-0 top-[56%] w-[262px]">
-        <motion.div {...float(1.6)} className={card(stop === 3, "coral")}>
+      {/* bottom right: heatmap */}
+      <motion.div {...slot("right", "top-[58%]", 1.0)}>
+        <motion.div {...float(1.6)} className={card(lit === 2, "coral")}>
           <div className="mb-2 flex items-center justify-between text-[12px]">
             <span className="font-semibold text-text-primary">Heatmap ready</span>
             <span className="text-text-secondary">32 s test</span>
           </div>
-          <MiniHeatmap label="" />
+          <div className="mt-auto"><MiniHeatmap label="" /></div>
         </motion.div>
       </motion.div>
 
-      {/* 4: accuracy check */}
-      <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 1.1, duration: 0.7 }} className="absolute left-[1%] top-[58%] w-[222px]">
-        <motion.div {...float(2.4)} className={card(stop === 4)}>
-          <div className="flex items-center gap-3">
+      {/* bottom left: accuracy check */}
+      <motion.div {...slot("left", "top-[58%]", 1.1)}>
+        <motion.div {...float(2.4)} className={card(lit === 3)}>
+          <div className="text-[12px] font-semibold text-text-primary">Accuracy check</div>
+          <div className="mt-auto flex items-center gap-4">
             <MiniRing pct={0.82} />
             <div>
-              <div className="text-[12px] text-text-secondary">Accuracy check</div>
-              <div className="text-[15px] font-semibold text-text-primary">Good <span className="text-[12px] font-normal text-text-secondary">· 55 px</span></div>
-              <div className="mt-0.5 text-[11px] text-accent">Ready to test</div>
+              <div className="text-[18px] font-semibold text-text-primary">Good <span className="text-[13px] font-normal text-text-secondary">· 55 px</span></div>
+              <div className="mt-0.5 text-[12px] text-accent">Ready to test</div>
             </div>
           </div>
         </motion.div>
@@ -167,7 +128,7 @@ function Sparkline() {
 function MiniRing({ pct }) {
   const R = 16, C = 2 * Math.PI * R;
   return (
-    <svg viewBox="0 0 40 40" className="h-11 w-11 -rotate-90" aria-hidden="true">
+    <svg viewBox="0 0 40 40" className="h-14 w-14 -rotate-90" aria-hidden="true">
       <circle cx="20" cy="20" r={R} fill="none" stroke="rgb(255 255 255 / 0.08)" strokeWidth="4" />
       <motion.circle cx="20" cy="20" r={R} fill="none" stroke="rgb(var(--color-accent))" strokeWidth="4" strokeLinecap="round"
         strokeDasharray={C} initial={{ strokeDashoffset: C }} animate={{ strokeDashoffset: C * (1 - pct) }}
@@ -404,11 +365,11 @@ export function HowItWorksJourney({ steps }) {
 
       {/* the steps */}
       <div className="relative">
-        <div aria-hidden="true" className="absolute bottom-10 left-[21px] top-10 hidden w-px bg-white/10 sm:block" />
+        <div aria-hidden="true" className="absolute left-[21px] top-[calc(12.5%)] hidden h-[75%] w-px bg-white/10 lg:block" />
         <motion.div
           aria-hidden="true"
-          className="absolute left-[21px] top-10 hidden w-[2px] -translate-x-[0.5px] origin-top rounded-full bg-gradient-to-b from-cool via-accent to-coral sm:block"
-          animate={{ height: `${(active / steps.length) * 100}%` }}
+          className="absolute left-[21px] top-[calc(12.5%)] hidden w-[2px] -translate-x-[0.5px] rounded-full bg-gradient-to-b from-cool via-accent to-coral lg:block"
+          animate={{ height: `${(active / (steps.length - 1)) * 75}%` }}
           transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
         />
         {steps.map((s, i) => {
@@ -418,16 +379,20 @@ export function HowItWorksJourney({ steps }) {
               key={s.title}
               ref={(el) => (refs.current[i] = el)}
               data-step={i}
-              className="relative flex gap-6 py-6 lg:min-h-[52vh] lg:py-10"
+              className="relative flex py-6 lg:h-[44vh] lg:min-h-[300px] lg:items-center lg:py-0"
             >
-              <span className={`relative z-10 mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[17px] font-bold ring-4 ring-bg transition-all duration-500 ${
-                on ? `${TONE[s.tone].bg} text-[#0A0E14] shadow-[0_0_30px_-4px_rgb(${TONE[s.tone].rgb}/0.8)]` : `bg-surface ${TONE[s.tone].text}`
-              }`}>{i + 1}</span>
-              <div className={`flex-1 pt-1.5 transition-opacity duration-500 ${on ? "opacity-100" : "lg:opacity-40"}`}>
-                <span className="rounded-full border border-border px-2.5 py-0.5 text-[12px] text-text-secondary">{s.tag}</span>
-                <h3 className="mt-3 text-[26px] font-semibold tracking-tight text-text-primary">{s.title}</h3>
-                <p className="mt-2 max-w-md text-[16px] leading-relaxed text-text-secondary">{s.body}</p>
-                <div className="mt-5 lg:hidden"><StepScreen step={i} tone={s.tone} /></div>
+              <div className="flex w-full gap-6 lg:items-center">
+                <span className={`relative z-10 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[17px] font-bold ring-4 ring-bg transition-all duration-500 ${
+                  on ? `${TONE[s.tone].bg} text-[#0A0E14] shadow-[0_0_30px_-4px_rgb(${TONE[s.tone].rgb}/0.8)]` : `bg-surface ${TONE[s.tone].text}`
+                }`}>{i + 1}</span>
+                <div className={`flex-1 transition-opacity duration-500 ${on ? "opacity-100" : "lg:opacity-40"}`}>
+                  <div className="flex min-h-11 items-center">
+                    <span className="rounded-full border border-border px-2.5 py-0.5 text-[12px] text-text-secondary">{s.tag}</span>
+                  </div>
+                  <h3 className="mt-2 text-[26px] font-semibold tracking-tight text-text-primary">{s.title}</h3>
+                  <p className="mt-2 max-w-md text-[16px] leading-relaxed text-text-secondary">{s.body}</p>
+                  <div className="mt-5 lg:hidden"><StepScreen step={i} tone={s.tone} /></div>
+                </div>
               </div>
             </div>
           );
@@ -445,7 +410,7 @@ function StepScreen({ step, tone }) {
         {["#FF6B5A", "#FFB547", "#2EE6C5"].map((c) => <span key={c} className="h-2.5 w-2.5 rounded-full" style={{ background: c, opacity: 0.7 }} />)}
         <span className="ml-3 text-[12px] text-text-secondary">GazeLens</span>
       </div>
-      <div className="relative aspect-[4/3]">
+      <div className="relative aspect-[16/11]">
         <AnimatePresence mode="wait">
           <motion.div key={step} initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.02 }} transition={{ duration: 0.4 }} className="absolute inset-0 p-5">
             {step === 0 && <CalibrationScreen />}
@@ -566,14 +531,19 @@ function BrowseScreen() {
 function ReportScreen() {
   const bars = [["Photo", 48, "accent"], ["Price", 27, "accent"], ["Description", 18, "accent"], ["Add to cart", 3, "coral"]];
   return (
-    <div className="flex h-full flex-col">
-      <div className="text-[13px] text-text-secondary">Your report</div>
-      <div className="text-[24px] font-bold leading-tight tracking-tight text-text-primary">
-        2 things <span className="font-serif font-normal italic text-coral">worth fixing</span>
+    <div className="flex h-full flex-col justify-between gap-4">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <div className="text-[13px] text-text-secondary">Your report</div>
+          <div className="text-[24px] font-bold leading-tight tracking-tight text-text-primary">
+            2 things <span className="font-serif font-normal italic text-coral">worth fixing</span>
+          </div>
+        </div>
+        <span className="rounded-full border border-white/10 px-3 py-1 text-[11px] text-text-primary">Download PDF</span>
       </div>
-      <div className="mt-3 grid flex-1 grid-cols-[1.1fr_0.9fr] gap-3">
-        <div className="flex flex-col justify-center"><MiniHeatmap label="" /></div>
-        <div className="flex flex-col justify-center gap-2.5">
+      <div className="grid grid-cols-2 items-center gap-4">
+        <MiniHeatmap label="" />
+        <div className="flex flex-col gap-3">
           {bars.map(([n, v, t], i) => (
             <div key={n}>
               <div className="flex justify-between text-[11px]"><span className={t === "coral" ? "text-coral" : "text-text-primary"}>{n}</span><span className="text-text-secondary">{v}%</span></div>
@@ -585,10 +555,15 @@ function ReportScreen() {
           ))}
         </div>
       </div>
-      <div className="mt-3 flex gap-2">
-        <span className="rounded-full bg-coral/15 px-2.5 py-1 text-[11px] font-semibold text-coral">1 fix first</span>
-        <span className="rounded-full bg-amber/15 px-2.5 py-1 text-[11px] font-semibold text-amber">1 worth fixing</span>
-        <span className="ml-auto rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-text-primary">Download PDF</span>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-[12px] border border-coral/30 bg-coral/10 px-3 py-2">
+          <div className="text-[11px] font-semibold text-coral">Fix first</div>
+          <div className="text-[12px] text-text-primary">“Add to cart” barely seen</div>
+        </div>
+        <div className="rounded-[12px] border border-amber/30 bg-amber/10 px-3 py-2">
+          <div className="text-[11px] font-semibold text-amber">Worth fixing</div>
+          <div className="text-[12px] text-text-primary">Price found after 4 s</div>
+        </div>
       </div>
     </div>
   );
