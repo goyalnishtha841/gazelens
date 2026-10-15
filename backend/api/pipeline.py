@@ -408,6 +408,32 @@ def element_labels(layout: dict, ui_page: str) -> Dict[str, str]:
     return labels
 
 
+def label_captured_layout(layout: dict, classification: Optional[dict]) -> dict:
+    """Give each auto-detected element a readable name from its visible text.
+
+    backend/render ids are slugs ("a_psf_news_board_inaugural_2"); the
+    report reads far better as "PSF News: Board & Inaugural...". Elements
+    with no text (images, icons) keep no label and fall back to a tidied id.
+    """
+    labelled = {}
+    for eid, spec in (layout or {}).items():
+        spec = dict(spec)
+        info = (classification or {}).get(eid) or {}
+        text = info.get("text") or ""
+        first = next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
+        first = first.strip("\"'“”>» ").strip()
+        tag = (info.get("tag") or "").lower()
+        if first and tag in ("nav", "ul", "ol", "menu"):
+            # a menu's first line is just its first link -- name the menu
+            first = f"Menu ({first}…)"
+        elif first and tag == "form":
+            first = f"Form ({first})"
+        if first and not spec.get("label"):
+            spec["label"] = first if len(first) <= 48 else first[:45].rstrip() + "…"
+        labelled[eid] = spec
+    return labelled
+
+
 def page_screenshot(ui_page: str, capture_meta: Optional[dict],
                     page_px: Optional[Tuple[int, int]], output_dir: Path,
                     session_id: str) -> Optional[str]:
@@ -415,7 +441,7 @@ def page_screenshot(ui_page: str, capture_meta: Optional[dict],
 
     URL sessions reuse the capture taken at session start, but only when it
     covers the same area as the layout: a document-scope layout spans the
-    whole scrollable page while that capture is one screen. Test pages are
+    whole scrollable page, so the capture must be the full-page one. Test pages are
     screenshotted now, at the size they were shown at. Never raises.
     """
     meta = capture_meta or {}
@@ -424,9 +450,16 @@ def page_screenshot(ui_page: str, capture_meta: Optional[dict],
         if not Path(shot).exists():
             return None
         if meta.get("scope") == "document":
-            vw, vh = (meta.get("viewport") or [0, 0])[:2]
+            # Document-scope captures are full-page screenshots; they line up
+            # with the layout only if the image has the document's shape.
             dw, dh = (meta.get("document_size") or [0, 0])[:2]
-            if not (vw and vh and dw and dh) or abs(vh / vw - dh / dw) > 0.03 * (dh / dw):
+            try:
+                from PIL import Image
+                with Image.open(shot) as img:
+                    iw, ih = img.size
+            except Exception:       # noqa: BLE001
+                return None
+            if not (dw and dh and iw and ih) or abs(ih / iw - dh / dw) > 0.03 * (dh / dw):
                 return None
         return shot
 

@@ -6,6 +6,7 @@ import { useCountUp } from "../components/Primitives.jsx";
 import { Reveal } from "../components/Motion.jsx";
 import IrisMark from "../components/IrisMark.jsx";
 import ReportImage from "../components/ReportImage.jsx";
+import { pageName as pageNameOf } from "../lib/sessionData.js";
 
 /*
  * The session report: the page people come back to and show others.
@@ -20,7 +21,7 @@ import ReportImage from "../components/ReportImage.jsx";
 const REPORT_POLL_MS = 2000;
 const DWELL_THRESHOLD_PCT = 5;     // agents/rules.py CTA_DWELL_POOR_VISIBILITY_PCT
 
-const SEVERITY = {
+export const SEVERITY = {
   High: { text: "text-coral", bg: "bg-coral", soft: "bg-coral/10", border: "border-coral/40", label: "Fix first" },
   Medium: { text: "text-amber", bg: "bg-amber", soft: "bg-amber/10", border: "border-amber/40", label: "Worth fixing" },
   Low: { text: "text-cool", bg: "bg-cool", soft: "bg-cool/10", border: "border-cool/40", label: "Minor" },
@@ -90,7 +91,7 @@ function ReportBody({ report, onBack, pdfState, onDownload }) {
   const issues = pr.issues || [];
   const recs = pr.recommendations_kept || [];
   const insufficient = quality?.level === "insufficient";
-  const pageName = (report.ui_page || "your page").replace(/_/g, " ");
+  const pageName = pageNameOf(report) || "your page";
   const created = report.created_at ? new Date(report.created_at) : null;
 
   const totalFixations = Object.values(m.fixation_count || {}).reduce((a, b) => a + b, 0);
@@ -153,7 +154,7 @@ function ReportBody({ report, onBack, pdfState, onDownload }) {
         <div className="relative grid grid-cols-1 items-center gap-10 p-7 sm:p-10 lg:grid-cols-[1fr_auto]">
           <div>
             <div className="flex flex-wrap items-center gap-2 text-[13px]">
-              <span className="rounded-full bg-white/[0.06] px-3 py-1 font-medium capitalize text-text-primary">{pageName}</span>
+              <span className="rounded-full bg-white/[0.06] px-3 py-1 font-medium text-text-primary">{pageName}</span>
               {created && <span className="text-text-secondary">{created.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</span>}
             </div>
             <h1 className="mt-5 text-[38px] font-bold leading-[1.05] tracking-[-0.025em] text-text-primary sm:text-[54px]">{headline}</h1>
@@ -237,7 +238,7 @@ function ReportBody({ report, onBack, pdfState, onDownload }) {
 /* ====================================================================== */
 /* pieces */
 
-function Serif({ children, className = "" }) {
+export function Serif({ children, className = "" }) {
   return <span className={`font-serif font-normal italic ${className}`}>{children}</span>;
 }
 function toneText(t) {
@@ -247,7 +248,7 @@ function toneGlow(t) {
   return `rgb(var(--color-${t === "accent" ? "accent" : t}) / 0.18)`;
 }
 
-function SectionTitle({ eyebrow, title }) {
+export function SectionTitle({ eyebrow, title }) {
   return (
     <div className="mb-6">
       <div className="text-[13px] font-semibold uppercase tracking-[0.14em] text-accent">{eyebrow}</div>
@@ -332,7 +333,7 @@ function StatTile({ icon, label, value, number, suffix = "" }) {
 }
 
 /** Heatmap / eye-path images in one framed viewer. */
-function VisualTabs({ sessionId }) {
+export function VisualTabs({ sessionId }) {
   const { token } = useAuth();
   const [tab, setTab] = useState("heatmap");
   const tabs = [
@@ -354,7 +355,7 @@ function VisualTabs({ sessionId }) {
           </div>
           <span className="text-[13px] text-text-secondary">{tabs.find((t) => t.id === tab).hint}</span>
         </div>
-        <div className="relative min-h-[280px] bg-bg/40">
+        <div className="relative max-h-[760px] min-h-[280px] overflow-y-auto bg-bg/40">
           <AnimatePresence mode="wait">
             <motion.div key={tab} initial={{ opacity: 0, scale: 0.985 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.35 }} className="p-3">
               <ReportImage natural token={token} sessionId={sessionId} kind={tab} alt={tab === "heatmap" ? "Gaze heatmap over the page" : "Eye path in the order people looked"} emptyLabel="Not available for this session." />
@@ -367,7 +368,7 @@ function VisualTabs({ sessionId }) {
 }
 
 /** Share of attention per element, animated in. */
-function AttentionBars({ metrics, nameOf }) {
+export function AttentionBars({ metrics, nameOf }) {
   const ref = useRef(null);
   const inView = useInView(ref, { once: true, margin: "-60px" });
   const reduce = useReducedMotion();
@@ -376,6 +377,10 @@ function AttentionBars({ metrics, nameOf }) {
   const rows = Object.entries(dwell)
     .map(([id, s]) => ({ id, pct: (100 * s) / total, important: metrics.element_importance?.[id] === "high" }))
     .sort((a, b) => b.pct - a.pct);
+  // a captured website can have dozens of parts; keep the top ones plus any
+  // important element that fell short, since those are the story
+  const shown = rows.filter((r, i) => i < 12 || (r.important && r.pct < DWELL_THRESHOLD_PCT)).slice(0, 16);
+  const hidden = rows.length - shown.length;
   const max = Math.max(DWELL_THRESHOLD_PCT * 2, ...rows.map((r) => r.pct));
   return (
     <div ref={ref} className="h-full rounded-[22px] border border-white/10 bg-surface/60 p-6 backdrop-blur">
@@ -385,7 +390,7 @@ function AttentionBars({ metrics, nameOf }) {
       </div>
       <div className="relative mt-5 space-y-3">
         <div aria-hidden="true" className="absolute bottom-0 top-0 border-l border-dashed border-text-secondary/40" style={{ left: `calc(9.5rem + (100% - 9.5rem - 3rem) * ${DWELL_THRESHOLD_PCT / max})` }} />
-        {rows.map((r, i) => {
+        {shown.map((r, i) => {
           const low = r.important && r.pct < DWELL_THRESHOLD_PCT;
           return (
             <div key={r.id} className="grid grid-cols-[9.5rem_1fr_3rem] items-center gap-0 text-[14px]">
@@ -405,22 +410,23 @@ function AttentionBars({ metrics, nameOf }) {
           );
         })}
       </div>
-      <p className="mt-5 text-[12px] text-text-secondary">★ important element · red = important but below the line</p>
+      <p className="mt-5 text-[12px] text-text-secondary">★ important element · red = important but below the line{hidden > 0 ? ` · ${hidden} smaller parts not shown` : ""}</p>
     </div>
   );
 }
 
 /** When each element was first looked at; never-seen ones at the end. */
-function FirstLookTimeline({ metrics, nameOf }) {
+export function FirstLookTimeline({ metrics, nameOf }) {
   const ttff = metrics.ttff || {};
   const seen = Object.entries(ttff).sort((a, b) => a[1] - b[1]);
-  const never = Object.keys(metrics.dwell_time || {}).filter((id) => !(id in ttff));
+  const neverAll = Object.keys(metrics.dwell_time || {}).filter((id) => !(id in ttff));
+  const never = neverAll.slice(0, 6);
   return (
     <div className="h-full rounded-[22px] border border-white/10 bg-surface/60 p-6 backdrop-blur">
       <h3 className="text-[19px] font-semibold text-text-primary">First look</h3>
       <p className="mt-1 text-[13px] text-text-secondary">How many seconds before each part was first noticed.</p>
       <ol className="relative mt-5 space-y-3 border-l border-white/10 pl-5">
-        {seen.map(([id, s], i) => (
+        {seen.slice(0, 12).map(([id, s], i) => (
           <motion.li key={id} initial={{ opacity: 0, x: -8 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.06 }} className="relative flex items-center justify-between gap-3 text-[14px]">
             <span className={`absolute -left-[26px] h-3 w-3 rounded-full ring-4 ring-surface ${s > 5 ? "bg-amber" : "bg-accent"}`} />
             <span className="truncate text-text-primary">{nameOf(id)}</span>
@@ -434,13 +440,16 @@ function FirstLookTimeline({ metrics, nameOf }) {
             <span className="shrink-0 text-[12px] text-coral">never looked at</span>
           </li>
         ))}
+        {neverAll.length > never.length && (
+          <li className="text-[13px] text-text-secondary">+ {neverAll.length - never.length} more never looked at</li>
+        )}
       </ol>
     </div>
   );
 }
 
 /** The order attention moved in, as numbered steps. */
-function EyePath({ scanpath, nameOf }) {
+export function EyePath({ scanpath, nameOf }) {
   const steps = scanpath.filter((id, i) => i === 0 || scanpath[i - 1] !== id).slice(0, 14);
   return (
     <div className="rounded-[22px] border border-white/10 bg-surface/60 p-6 backdrop-blur">
@@ -463,7 +472,7 @@ function EyePath({ scanpath, nameOf }) {
   );
 }
 
-function IssueCard({ issue, nameOf, index }) {
+export function IssueCard({ issue, nameOf, index }) {
   const s = SEVERITY[issue.severity] || SEVERITY.Low;
   return (
     <motion.article
@@ -489,7 +498,7 @@ function IssueCard({ issue, nameOf, index }) {
   );
 }
 
-function RecommendationCard({ rec, nameOf, index }) {
+export function RecommendationCard({ rec, nameOf, index }) {
   const reduce = useReducedMotion();
   const pct = Math.round((rec.confidence || 0) * 100);
   const R = 22;

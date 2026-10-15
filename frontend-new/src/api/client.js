@@ -166,13 +166,15 @@ export async function getSessionImage(token, sessionId, kind) {
  * Requires the session's calibration to be linked and its gaze model
  * trained (POST /api/sessions/{id}/calibration) first.
  */
-export async function estimateGazeFrame(token, sessionId, frameB64, timestamp, stage) {
+export async function estimateGazeFrame(token, sessionId, frameB64, timestamp, stage, scrollY = 0) {
   // stage: {x, y, w, h} as viewport fractions -- where the evaluated page is
   // drawn. The server remaps gaze into it (api/pipeline.py to_stage_space).
+  // scrollY: how far a long captured page is scrolled inside the stage, in
+  // the page's own CSS pixels (pipeline.to_document_space needs it).
   const res = await fetch(`${BASE}/${sessionId}/gaze/frame`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
-    body: JSON.stringify({ frame: frameB64, timestamp: timestamp ?? null, stage: stage ?? null }),
+    body: JSON.stringify({ frame: frameB64, timestamp: timestamp ?? null, stage: stage ?? null, scroll_y: Math.max(0, scrollY || 0) }),
   });
   return handleResponse(res);
 }
@@ -194,7 +196,7 @@ export async function downloadSessionPdf(token, sessionId) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `fixation-report-${sessionId}.pdf`;
+  a.download = `gazelens-report-${sessionId}.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();

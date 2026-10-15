@@ -108,7 +108,7 @@ function AuthenticatedApp() {
     );
   } else {
     const Active = VIEWS[view] ?? Dashboard;
-    body = <Active onNavigate={setView} />;
+    body = <Active onNavigate={setView} onOpenSession={setOpenSessionId} />;
   }
 
   return (

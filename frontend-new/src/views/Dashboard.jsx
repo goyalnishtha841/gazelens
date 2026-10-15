@@ -4,6 +4,7 @@ import { listSessions, deleteSession } from "../api/client.js";
 import { Card, useCountUp } from "../components/Primitives.jsx";
 import { Reveal, StaggerGroup, StaggerItem } from "../components/Motion.jsx";
 import IrisMark from "../components/IrisMark.jsx";
+import { pageName } from "../lib/sessionData.js";
 
 const STATUS = {
   created: { label: "Not started", tone: "text-text-secondary bg-white/[0.06]" },
@@ -13,22 +14,6 @@ const STATUS = {
   complete: { label: "Report ready", tone: "text-accent bg-accent/15" },
   failed: { label: "Failed", tone: "text-coral bg-coral/15" },
 };
-
-const PAGE_NAME = {
-  ecommerce_product_page: "Shop product page",
-  form_page: "Sign-up form",
-  dashboard_page: "Dashboard",
-  login_page: "Login page",
-  article_page: "News article",
-};
-
-function pageName(s) {
-  const key = s.ui_page || s.mode || "";
-  if (PAGE_NAME[key]) return PAGE_NAME[key];
-  if (/^https?:/.test(key)) return key.replace(/^https?:\/\//, "");
-  const t = key.replace(/_/g, " ");
-  return t.charAt(0).toUpperCase() + t.slice(1);
-}
 
 function when(iso) {
   if (!iso) return "";

@@ -79,6 +79,9 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
   const sessionStartRef = useRef(null);
   const gazeTimerRef = useRef(null);
   const stageRef = useRef(null);
+  const areaRef = useRef(null);
+  const scrollerRef = useRef(null);
+  const [boxSize, setBoxSize] = useState(null);
   const smootherRef = useRef(new OneEuroFilter2D());
 
   useEffect(() => {
@@ -133,6 +136,35 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
     };
   }, []);
 
+  // A captured page is one tall screenshot shown at the stage's width. The
+  // server needs the scroll in the page's own CSS pixels, so the on-screen
+  // offset is scaled by (captured width / shown width).
+  const pageScrollY = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el || !el.clientWidth) return 0;
+    const capturedWidth = renderedPage?.viewport?.[0] || el.clientWidth;
+    return el.scrollTop * (capturedWidth / el.clientWidth);
+  }, [renderedPage]);
+
+  // URL sessions: the stage keeps the captured window's shape (e.g. 1280x720)
+  // so one screen of the page on this monitor is one screen of it as captured
+  // -- that's what lets pipeline.to_document_space line gaze up with the boxes.
+  useEffect(() => {
+    if (!session || mode !== "url") return;
+    const area = areaRef.current;
+    if (!area) return;
+    const [vw, vh] = renderedPage?.viewport || [16, 9];
+    const fit = () => {
+      const { width, height } = area.getBoundingClientRect();
+      const w = Math.min(width, height * (vw / vh));
+      setBoxSize({ w, h: w * (vh / vw) });
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(area);
+    return () => ro.disconnect();
+  }, [session, mode, renderedPage]);
+
   useEffect(() => {
     if (!session) return;
     let stopped = false;
@@ -144,7 +176,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
       const frame = captureFrame();
       if (frame) {
         try {
-          const result = await estimateGazeFrame(token, session.id, frame, started / 1000, stageRect());
+          const result = await estimateGazeFrame(token, session.id, frame, started / 1000, stageRect(), pageScrollY());
           if (stopped) return;
           const g = result.gaze;
           if (g.valid) {
@@ -166,7 +198,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
       stopped = true;
       clearTimeout(gazeTimerRef.current);
     };
-  }, [session, token, captureFrame, stageRect]);
+  }, [session, token, captureFrame, stageRect, pageScrollY]);
 
   async function handlePreviewUrl() {
     if (!urlInput.trim()) return;
@@ -389,10 +421,8 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
                 <p className="mb-3 text-[14px] text-text-secondary">
                   Found <span className="font-semibold text-accent">{renderedPage.elements.length}</span> things people can click or read. Each one is outlined below.
                 </p>
-                <div
-                  className="relative overflow-hidden rounded-[18px] border border-white/10 bg-bg"
-                  style={{ aspectRatio: `${renderedPage.viewport?.[0] || 16} / ${renderedPage.viewport?.[1] || 9}` }}
-                >
+                <div className="max-h-[520px] overflow-y-auto rounded-[18px] border border-white/10 bg-bg">
+                <div className="relative">
                   {renderedPage.screenshot_base64 && (
                     <img src={`data:image/png;base64,${renderedPage.screenshot_base64}`} alt="Your page" className="block w-full" />
                   )}
@@ -411,6 +441,14 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
                     />
                   ))}
                 </div>
+                </div>
+                {renderedPage.warnings?.length > 0 && (
+                  <p className="mt-3 text-[13px] text-text-secondary">
+                    Note: {renderedPage.kept < renderedPage.detected
+                      ? `this page is busy, so we kept the ${renderedPage.kept} biggest things to track.`
+                      : "parts of this page loaded slowly and may be missing."}
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -468,16 +506,27 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
       </div>
 
       <div className="flex flex-1 gap-3 overflow-hidden">
-        <section className="relative flex-1 overflow-hidden">
-          <div ref={stageRef} className="relative h-full overflow-hidden rounded-[20px] border border-white/10 bg-surface">
+        <section ref={areaRef} className="relative flex flex-1 items-center justify-center overflow-hidden">
+          <div
+            ref={stageRef}
+            className={`relative overflow-hidden rounded-[20px] border border-white/10 bg-surface ${mode === "url" ? "" : "h-full w-full"}`}
+            style={mode === "url" && boxSize ? { width: boxSize.w, height: boxSize.h } : undefined}
+          >
             {mode === "url" && renderedPage?.screenshot_base64 ? (
-              <img src={`data:image/png;base64,${renderedPage.screenshot_base64}`} alt="Page being tested" className="h-full w-full object-cover object-top" />
+              <div ref={scrollerRef} className="h-full w-full overflow-y-auto overflow-x-hidden" style={{ scrollbarWidth: "none" }}>
+                <img src={`data:image/png;base64,${renderedPage.screenshot_base64}`} alt="Page being tested" className="block h-auto w-full" draggable={false} />
+              </div>
             ) : mode === "url" && renderedPage ? (
               <div className="flex h-full w-full items-center justify-center p-8 text-center">
                 <p className="text-[15px] text-text-secondary">We couldn't get a picture of {renderedPage.url}.</p>
               </div>
             ) : (
               <iframe key={selectedPage} src={`/test-uis/${selectedPage}/index.html`} title={`Test page: ${pageLabel}`} className="h-full w-full border-0" />
+            )}
+            {mode === "url" && renderedPage?.screenshot_base64 && (
+              <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-bg/75 px-3 py-1 text-[12px] text-text-secondary backdrop-blur">
+                Scroll to see the rest of the page
+              </div>
             )}
 
             {gazePoint && (

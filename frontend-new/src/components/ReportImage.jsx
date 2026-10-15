@@ -6,7 +6,7 @@ import { getSessionImage } from "../api/client.js";
  * authenticated blob and renders it -- an <img src> can't carry a bearer
  * token, so this bridges that gap. Ported from frontend/src/views/Dashboard.jsx.
  */
-export default function ReportImage({ token, sessionId, kind, alt, emptyLabel, natural = false }) {
+export default function ReportImage({ token, sessionId, kind, alt, emptyLabel, natural = false, cover = false }) {
   const [url, setUrl] = useState(null);
   const [status, setStatus] = useState("loading"); // loading | ready | error
 
@@ -49,5 +49,5 @@ export default function ReportImage({ token, sessionId, kind, alt, emptyLabel, n
   }
   // natural: take the image's own height (the report viewer), instead of
   // fitting into a fixed box
-  return <img src={url} alt={alt} className={natural ? "block h-auto w-full rounded-[14px]" : "h-full w-full object-contain"} />;
+  return <img src={url} alt={alt} className={natural ? "block h-auto w-full rounded-[14px]" : cover ? "h-full w-full object-cover object-top" : "h-full w-full object-contain"} />;
 }
