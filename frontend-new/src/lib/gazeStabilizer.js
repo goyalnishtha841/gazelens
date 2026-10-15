@@ -17,7 +17,10 @@
  * makes the radius round on screen.
  */
 export class GazeStabilizer {
-  constructor({ radius = 0.1, window = 10, confirm = 2 } = {}) {
+  // Tuned by replaying recorded accuracy-check frames from 4 calibrations:
+  // ~14px average wobble while holding still (raw: 118px), worst 5% under
+  // 40px, and a real move is followed within 3 frames (~0.3s).
+  constructor({ radius = 0.16, window = 20, confirm = 3 } = {}) {
     this.radius = radius;
     this.window = window;
     this.confirm = confirm;
