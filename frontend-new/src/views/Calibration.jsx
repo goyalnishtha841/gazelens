@@ -275,9 +275,22 @@ export default function Calibration({ onComplete, onExit }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progress]);
 
+  // The capture <video> moves between screens (intro -> dots -> check). If
+  // React ever mounts a fresh element, hand it the live stream again --
+  // otherwise frames come back empty and the whole calibration fails with
+  // "face seen in 0% of frames".
+  const attachVideo = useCallback((el) => {
+    videoRef.current = el;
+    const stream = streamRef.current;
+    if (el && stream && el.srcObject !== stream) {
+      el.srcObject = stream;
+      el.play().catch(() => {});
+    }
+  }, []);
+
   const captureRig = (
     <>
-      <video ref={videoRef} muted playsInline style={{ position: "fixed", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
+      <video ref={attachVideo} muted playsInline style={{ position: "fixed", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
       <canvas ref={canvasRef} style={{ display: "none" }} />
     </>
   );
@@ -311,9 +324,9 @@ export default function Calibration({ onComplete, onExit }) {
   const btn = "rounded-full bg-accent font-semibold text-[#0A0E14] transition-shadow hover:shadow-[0_0_30px_-6px_rgb(var(--color-accent)/0.7)]";
   const shell = (children, glow = "var(--color-accent)") => (
     <div className="relative isolate flex min-h-screen items-center justify-center px-4 py-20">
+      {captureRig}
       <GazeField className="-z-10" />
       <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[560px]" style={{ background: `radial-gradient(50% 60% at 50% 0%, rgb(${glow} / 0.13), transparent 70%)` }} />
-      {captureRig}
       {exitLink}
       {signOutLink}
       <motion.div
