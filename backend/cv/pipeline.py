@@ -16,20 +16,29 @@ second or two and holding a FaceMesh open keeps tracking state warm. Doing
 that per request would make the calibration loop unusable.
 """
 
+import threading
 import time
 import uuid
 from typing import Optional
 
 from .schemas import FrameResult, empty_result
 from .frame_source import FrameDecodeError, decode_base64_frame
-from .pupil_detector import PupilDetector
+from .pupil_detector import PupilDetector, live_pupil_source
 
 
 class PupilPipeline:
     """Frames (array or base64) -> FrameResult."""
 
     def __init__(self, detector: Optional[PupilDetector] = None):
-        self.detector = detector if detector is not None else PupilDetector()
+        self.detector = (
+            detector if detector is not None
+            else PupilDetector(pupil_source=live_pupil_source())
+        )
+        # The frame endpoints run in FastAPI's threadpool so they don't
+        # block the event loop, which means two frames can arrive at once.
+        # MediaPipe's landmarker and YOLO are not documented as thread-safe,
+        # so detection is serialised here; decoding still runs in parallel.
+        self._lock = threading.Lock()
 
     @property
     def available(self) -> bool:
@@ -41,7 +50,8 @@ class PupilPipeline:
         frame_id: Optional[str] = None,
         timestamp: Optional[float] = None,
     ) -> FrameResult:
-        return self.detector.detect(frame_bgr, frame_id=frame_id, timestamp=timestamp)
+        with self._lock:
+            return self.detector.detect(frame_bgr, frame_id=frame_id, timestamp=timestamp)
 
     def process_encoded(
         self,

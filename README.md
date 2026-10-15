@@ -182,6 +182,17 @@ Without them the API still starts and every test suite still passes (all are
 loaded lazily); only live capture is unavailable. `GET /health` reports
 `cv_available` so you can tell which state you're in.
 
+**Live gaze does not use the pupil detector.** The live pipeline takes the
+pupil point from MediaPipe's iris landmarks and regresses gaze from
+landmark features: iris position relative to the eye corners, MediaPipe's
+`eyeLook*` blendshapes and head pose. It needs only `face_landmarker.task`.
+YOLO on a ~30 px webcam eye crop is out of domain for an LPW-trained model,
+and with it in the loop the first real calibration had no usable gaze
+signal (437 px median error). To run the detector live for the iris-vs-YOLO
+ablation, set `FIXATION_PUPIL_SOURCE=fused` (blend) or `yolo` (detector
+only). Calibration now ends with a 5-dot accuracy check, and a session
+refuses a calibration whose check error exceeds 15% of the screen diagonal.
+
 **If you don't have Drive access**, `scripts/make_smoketest_detector.py` trains a
 small pupil detector on synthetic drawn eyes in about a minute on CPU, so the
 live pipeline can be run and tested end to end. `backend/cv` picks weights in

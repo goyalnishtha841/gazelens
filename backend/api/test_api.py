@@ -74,8 +74,10 @@ def check(label, condition):
         failed += 1
 
 
-def run(coro):
-    return asyncio.run(coro)
+def run(result):
+    # Handlers doing blocking CPU work are plain `def` (FastAPI threadpool),
+    # the rest are coroutines -- accept both.
+    return asyncio.run(result) if asyncio.iscoroutine(result) else result
 
 
 def expect_http(label, target, status_code):
@@ -634,6 +636,21 @@ finally:
     warnings.filterwarnings("ignore")
     shutil.rmtree(_TMP, ignore_errors=True)
 
+
+print("\nlive gaze -- viewport -> stage remap")
+# The page is drawn in a stage covering x 0.1-0.7, y 0.2-0.9 of the viewport.
+stage = {"x": 0.1, "y": 0.2, "w": 0.6, "h": 0.7}
+base = {"timestamp": 1.0, "x": 0.4, "y": 0.55, "x_px": 400.0, "y_px": 440.0,
+        "valid": True, "in_bounds": True, "confidence": 1.0, "note": ""}
+pt = pipeline.to_stage_space(base, stage, 1000, 800)
+check("stage centre maps to page centre", abs(pt["x"] - 0.5) < 1e-9 and abs(pt["y"] - 0.5) < 1e-9)
+check("viewport position kept alongside", pt["viewport_x"] == 0.4 and pt["viewport_y"] == 0.55)
+check("pixels are stage pixels", abs(pt["x_px"] - 300.0) < 1e-9 and abs(pt["y_px"] - 280.0) < 1e-9)
+pt = pipeline.to_stage_space({**base, "x": 0.85}, stage, 1000, 800)
+check("a look at the sidebar is off the page, clamped, flagged",
+      pt["x"] == 1.0 and pt["in_bounds"] is False and pt["note"] == "off_page")
+pt = pipeline.to_stage_space({**base, "valid": False, "x": 0.0, "y": 0.0}, stage, 1000, 800)
+check("invalid points pass through untouched", pt["x"] == 0.0 and "viewport_x" not in pt)
 
 print(f"\n{'=' * 40}\n{passed} passed, {failed} failed\n{'=' * 40}")
 

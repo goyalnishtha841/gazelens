@@ -393,6 +393,95 @@ else:
             check("stand-in actually detects the synthetic pupils it was "
                   "trained on", eye_result.has_any_pupil)
 
+print("\npupil detector -- iris-only source (the live default)")
+# pupil_source="iris" must never touch YOLO: no weights, no model.
+iris_only = PupilDetector(
+    weights_path="unused.pt", landmarker=_IrisLandmarker(iris_x_px, iris_y_px),
+    pupil_source="iris",
+)
+check("iris source is available without any weights", iris_only.available)
+res = iris_only.detect(np.zeros((480, 640, 3), dtype=np.uint8))
+check("iris source returns the iris centre", res.pupils["left"].x_px == iris_x_px
+      and res.pupils["left"].y_px == iris_y_px and res.pupils["left"].source == "iris")
+check("iris source never loaded a model", iris_only._model is None)
+
+
+class _BlinkLandmarker(_IrisLandmarker):
+    def eye_regions(self, frame):
+        return self.regions, {"blink": 0.9}
+
+
+blinking = PupilDetector(
+    weights_path="unused.pt", landmarker=_BlinkLandmarker(iris_x_px, iris_y_px),
+    pupil_source="iris",
+)
+res = blinking.detect(np.zeros((480, 640, 3), dtype=np.uint8))
+check("a blinking frame reports no pupil", not res.has_any_pupil
+      and res.note == "no_pupil_detected")
+check("explicit pupil_source='yolo' turns fusion off",
+      not PupilDetector(weights_path="unused.pt", landmarker=_IrisLandmarker(1, 1),
+                        pupil_source="yolo").fuse_iris)
+
+
+print("\nlandmarks -- gaze features from the face mesh")
+from cv.landmarks import EyeLandmarker   # noqa: E402
+
+
+class _P:
+    def __init__(self, x, y):
+        self.x, self.y = x, y
+
+
+class _Cat:
+    def __init__(self, name, score):
+        self.category_name, self.score = name, score
+
+
+def _mesh(iris_l, iris_r):
+    lm = [_P(0.5, 0.5) for _ in range(478)]
+    # 640x480 frame; each eye 64px wide, level
+    lm[33], lm[133], lm[468] = _P(0.20, 0.40), _P(0.30, 0.40), _P(*iris_l)
+    lm[362], lm[263], lm[473] = _P(0.60, 0.40), _P(0.70, 0.40), _P(*iris_r)
+    return lm
+
+
+class _Result:
+    def __init__(self, blend=None, matrix=None):
+        self.face_blendshapes = [blend] if blend is not None else []
+        self.facial_transformation_matrixes = [matrix] if matrix is not None else []
+
+
+feats = EyeLandmarker._gaze_features(_mesh((0.25, 0.40), (0.65, 0.40)), 640, 480, _Result())
+check("iris at the corner midpoint -> iris_h 0.5",
+      abs(feats["iris_h_l"] - 0.5) < 1e-9 and abs(feats["iris_h_r"] - 0.5) < 1e-9)
+check("iris on the corner line -> iris_v 0", abs(feats["iris_v_l"]) < 1e-9)
+feats = EyeLandmarker._gaze_features(_mesh((0.275, 0.41), (0.675, 0.41)), 640, 480, _Result())
+check("iris moved right -> iris_h grows", feats["iris_h_l"] > 0.5)
+check("iris moved down -> iris_v positive, in eye widths",
+      abs(feats["iris_v_l"] - (0.01 * 480) / (0.10 * 640)) < 1e-9)
+lidded = _mesh((0.25, 0.40), (0.65, 0.40))
+lidded[159], lidded[145] = _P(0.25, 0.39), _P(0.25, 0.42)   # 14.4px apart, eye 64px wide
+check("eyelid opening in eye widths",
+      abs(EyeLandmarker._gaze_features(lidded, 640, 480, _Result())["lid_l"]
+          - (0.03 * 480) / (0.10 * 640)) < 1e-9)
+check("no blendshapes/matrix -> those keys absent, not zero",
+      "bs_h" not in feats and "head_yaw" not in feats)
+
+blend = [_Cat(n, 0.0) for n in ("eyeLookInLeft", "eyeLookInRight", "eyeLookUpLeft",
+                                 "eyeLookUpRight", "eyeLookDownLeft", "eyeLookDownRight",
+                                 "eyeBlinkLeft", "eyeBlinkRight")]
+blend += [_Cat("eyeLookOutLeft", 0.6), _Cat("eyeLookOutRight", 0.0)]
+yaw = np.radians(10.0)
+matrix = np.eye(4)
+matrix[:3, :3] = [[np.cos(yaw), 0, np.sin(yaw)], [0, 1, 0], [-np.sin(yaw), 0, np.cos(yaw)]]
+matrix[2, 3] = -50.0
+feats = EyeLandmarker._gaze_features(_mesh((0.25, 0.40), (0.65, 0.40)), 640, 480,
+                                     _Result(blend, matrix))
+check("one eye looking out -> bs_h 0.3", abs(feats["bs_h"] - 0.3) < 1e-9)
+check("head yaw read from the transformation matrix",
+      abs(feats["head_yaw"] - 10.0) < 1e-6 and abs(feats["head_pitch"]) < 1e-6)
+check("head distance read from the matrix", feats["head_tz"] == -50.0)
+
 print(f"\n{'=' * 40}\n{passed} passed, {failed} failed, {skipped} skipped\n{'=' * 40}")
 
 if failed:

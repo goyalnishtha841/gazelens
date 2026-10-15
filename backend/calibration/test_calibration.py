@@ -61,16 +61,22 @@ def check(label, condition):
         failed += 1
 
 
-def run(coro):
-    return asyncio.run(coro)
+def run(result):
+    # Handlers doing blocking CPU work are plain `def` (FastAPI threadpool),
+    # the rest are coroutines -- accept both.
+    return asyncio.run(result) if asyncio.iscoroutine(result) else result
 
 
 def expect_http(label, coro, status_code):
-    """Assert a route raises HTTPException with a given status."""
+    """Assert a route raises HTTPException with a given status.
+
+    `coro` is a coroutine (async handler) or a zero-arg callable (sync
+    handler -- calling it eagerly would raise before we could catch it).
+    """
     from fastapi import HTTPException
 
     try:
-        run(coro)
+        run(coro() if callable(coro) else coro)
     except HTTPException as exc:
         check(f"{label} -> {status_code}", exc.status_code == status_code)
         return
@@ -177,13 +183,13 @@ try:
 
     print("\nPOST /samples -- bad input is rejected")
     expect_http("point_index past the grid",
-                routes.submit_samples(session_id, SubmitSamplesRequest(
+                lambda: routes.submit_samples(session_id, SubmitSamplesRequest(
                     point_index=99, frames=[FRAME])), 422)
     expect_http("half a target override",
-                routes.submit_samples(session_id, SubmitSamplesRequest(
+                lambda: routes.submit_samples(session_id, SubmitSamplesRequest(
                     point_index=3, frames=[FRAME], target_x=0.5)), 422)
     expect_http("unknown session",
-                routes.submit_samples("cal_doesnotexist", SubmitSamplesRequest(
+                lambda: routes.submit_samples("cal_doesnotexist", SubmitSamplesRequest(
                     point_index=0, frames=[FRAME])), 404)
     expect_http("path traversal in session id",
                 routes.get_session("../../etc/passwd"), 404)
@@ -228,7 +234,7 @@ try:
 
     print("\ncompleted session is closed for writes")
     expect_http("submitting to a complete session",
-                routes.submit_samples(full_id, SubmitSamplesRequest(
+                lambda: routes.submit_samples(full_id, SubmitSamplesRequest(
                     point_index=0, frames=[FRAME])), 409)
 
     # ------------------------------------------------------------------

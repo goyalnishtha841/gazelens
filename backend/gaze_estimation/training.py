@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
+import numpy as np
+
 from calibration import get_store as get_calibration_store
 from calibration.storage import SessionNotFound
 
@@ -101,6 +103,27 @@ def _build_datasets(rows: Sequence[Dict], min_confidence: float) -> Dict[str, Da
     return datasets
 
 
+POSE_REF_COLUMNS = ("head_yaw", "head_pitch", "head_tz")
+
+
+def pose_reference(rows: Sequence[Dict]) -> Dict[str, float]:
+    """Median calibration head pose -- see GazeModel.pose_ref."""
+    ref: Dict[str, float] = {}
+    for col in POSE_REF_COLUMNS:
+        vals = []
+        for row in rows:
+            v = row.get(col)
+            if v is None or v == "":
+                continue
+            try:
+                vals.append(float(v))
+            except (TypeError, ValueError):
+                continue
+        if vals:
+            ref[col] = float(np.median(vals))
+    return ref
+
+
 def train_from_rows(
     rows: Sequence[Dict],
     session_id: str = "",
@@ -168,6 +191,7 @@ def train_from_rows(
     fit_metrics = training_error(model, dataset, viewing_distance_cm, screen_diagonal_in)
     model.metrics = metrics
     model.selection = selection
+    model.pose_ref = pose_reference(rows)
 
     # ---- warnings: things a caller should see before trusting this ----
     diagonal = (dataset.screen_width ** 2 + dataset.screen_height ** 2) ** 0.5
@@ -247,6 +271,17 @@ def model_path_for(session_id: str, model_dir: Optional[Path] = None) -> Path:
     return _model_dir(model_dir) / f"{session_id}.json"
 
 
+def validation_frames_path_for(session_id: str, model_dir: Optional[Path] = None) -> Path:
+    """Per-frame features captured during the accuracy check (JSON lines).
+
+    Calibration rows are stored by backend/calibration; these are their
+    counterpart for the validation dots, so a new feature set or model can be
+    scored offline on real check data instead of only on held-out
+    calibration points.
+    """
+    return model_path_for(session_id, model_dir).with_suffix(".validation.jsonl")
+
+
 def save_model(model: GazeModel, model_dir: Optional[Path] = None) -> Path:
     return model.save(model_path_for(model.session_id, model_dir))
 
@@ -295,12 +330,14 @@ def delete_model(session_id: str, model_dir: Optional[Path] = None) -> bool:
     path = model_path_for(session_id, model_dir)
     existed = path.exists()
     path.unlink(missing_ok=True)
+    validation_frames_path_for(session_id, model_dir).unlink(missing_ok=True)
     return existed
 
 
 __all__ = [
     "TrainingResult",
     "MODEL_DIR",
+    "validation_frames_path_for",
     "POOR_FIT_PX_FRACTION",
     "train_from_rows",
     "train_session",

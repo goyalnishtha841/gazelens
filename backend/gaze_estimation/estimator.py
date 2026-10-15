@@ -67,6 +67,25 @@ def invalid_point(timestamp: float, note: str, confidence: float = 0.0) -> GazeP
     )
 
 
+# How far the head may move from its calibration pose before gaze points
+# carry note="head_moved". Past this the iris-to-screen mapping was learned
+# for a different geometry; the client prompts a recalibration.
+HEAD_DRIFT_DEG = 8.0          # yaw or pitch
+HEAD_DRIFT_DEPTH_FRAC = 0.15  # relative change in distance from camera
+
+
+def head_moved(head_proxy: Optional[Dict[str, float]], pose_ref: Dict[str, float]) -> bool:
+    if not head_proxy or not pose_ref:
+        return False
+    for col in ("head_yaw", "head_pitch"):
+        if (col in pose_ref and head_proxy.get(col) is not None
+                and abs(head_proxy[col] - pose_ref[col]) > HEAD_DRIFT_DEG):
+            return True
+    ref_z, z = pose_ref.get("head_tz"), head_proxy.get("head_tz")
+    return bool(ref_z and z is not None
+                and abs(z - ref_z) / abs(ref_z) > HEAD_DRIFT_DEPTH_FRAC)
+
+
 class LiveGazeEstimator:
     """A loaded per-session model, ready to call per frame."""
 
@@ -147,7 +166,9 @@ class LiveGazeEstimator:
             valid=True,
             in_bounds=in_bounds,
             confidence=confidence,
-            note="" if in_bounds else "off_screen",
+            note=("off_screen" if not in_bounds
+                  else "head_moved" if head_moved(head_proxy, self.model.pose_ref)
+                  else ""),
         )
 
     def estimate_frame_result(self, result) -> GazePoint:

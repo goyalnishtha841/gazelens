@@ -2,12 +2,22 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 import { startSession, linkCalibration, estimateGazeFrame, finalizeSession, listTestUis } from "../api/client.js";
 import { renderUrl } from "../api/render.js";
+import { CAMERA_CONSTRAINTS } from "../api/calibration.js";
+import { OneEuroFilter2D } from "../lib/oneEuroFilter.js";
 import { Label } from "../components/Primitives.jsx";
 
-// MUST stay under backend/attribution/fixations.py's MAX_GAP (150ms) -- see
-// frontend/src/views/LiveSession.jsx's original note on why. Ported as-is.
+// Target spacing between frames. MUST stay under backend/attribution/
+// fixations.py's MAX_GAP (150ms) -- see frontend/src/views/LiveSession.jsx's
+// original note on why. Only one frame is ever in flight: the next is
+// captured when the previous answer arrives (or after this interval,
+// whichever is later), so a slow server drops frames instead of building
+// a queue of stale ones that make the cursor lag further and further.
 const GAZE_CAPTURE_INTERVAL_MS = 100;
-const FRAME_QUALITY = 0.7;
+const FRAME_QUALITY = 0.8;
+
+const NOTE_WARNINGS = {
+  head_moved: "You've moved since calibrating. Return to where you sat, or recalibrate.",
+};
 
 const TYPE_COLORS = { CTA: "rgb(var(--color-accent))", nav: "rgb(var(--color-text-secondary))", form_field: "rgb(var(--color-accent))" };
 
@@ -51,6 +61,8 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
   const streamRef = useRef(null);
   const sessionStartRef = useRef(null);
   const gazeTimerRef = useRef(null);
+  const stageRef = useRef(null);
+  const smootherRef = useRef(new OneEuroFilter2D());
 
   useEffect(() => {
     listTestUis(token)
@@ -63,7 +75,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
 
   useEffect(() => () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
-    clearInterval(gazeTimerRef.current);
+    clearTimeout(gazeTimerRef.current);
   }, []);
 
   useEffect(() => {
@@ -90,23 +102,54 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
     return canvas.toDataURL("image/jpeg", FRAME_QUALITY);
   }, []);
 
+  // Where the evaluated page is drawn, as a fraction of the viewport. The
+  // gaze model maps to the whole viewport (calibration dots were measured
+  // there); the server remaps each point into this stage, so the cursor and
+  // element attribution both work in the page's own coordinates.
+  const stageRect = useCallback(() => {
+    const el = stageRef.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return {
+      x: r.left / window.innerWidth, y: r.top / window.innerHeight,
+      w: r.width / window.innerWidth, h: r.height / window.innerHeight,
+    };
+  }, []);
+
   useEffect(() => {
     if (!session) return;
-    gazeTimerRef.current = setInterval(async () => {
+    let stopped = false;
+    smootherRef.current.reset();
+
+    async function tick() {
+      if (stopped) return;
+      const started = performance.now();
       const frame = captureFrame();
-      if (!frame) return;
-      try {
-        const result = await estimateGazeFrame(token, session.id, frame, performance.now() / 1000);
-        if (result.gaze.valid) {
-          setGazePoint({ x: result.gaze.x, y: result.gaze.y });
-          setGazeWarning(null);
+      if (frame) {
+        try {
+          const result = await estimateGazeFrame(token, session.id, frame, started / 1000, stageRect());
+          if (stopped) return;
+          const g = result.gaze;
+          if (g.valid) {
+            const p = smootherRef.current.filter(g.x, g.y, started / 1000);
+            setGazePoint({ x: p.x, y: p.y, onPage: g.in_bounds });
+          }
+          setGazeWarning(NOTE_WARNINGS[g.note] ?? null);
+        } catch (err) {
+          if (stopped) return;
+          setGazeWarning((prev) => prev ?? (err.message || "Gaze estimation stalled"));
         }
-      } catch (err) {
-        setGazeWarning((prev) => prev ?? (err.message || "Gaze estimation stalled"));
       }
-    }, GAZE_CAPTURE_INTERVAL_MS);
-    return () => clearInterval(gazeTimerRef.current);
-  }, [session, token, captureFrame]);
+      const wait = Math.max(0, GAZE_CAPTURE_INTERVAL_MS - (performance.now() - started));
+      gazeTimerRef.current = setTimeout(tick, wait);
+    }
+
+    tick();
+    return () => {
+      stopped = true;
+      clearTimeout(gazeTimerRef.current);
+    };
+  }, [session, token, captureFrame, stageRect]);
 
   async function handlePreviewUrl() {
     if (!urlInput.trim()) return;
@@ -135,7 +178,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
     setStartErrorDetail(null);
     setNeedsRecalibration(false);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const stream = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS);
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -184,7 +227,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
 
   async function handleEnd() {
     streamRef.current?.getTracks().forEach((t) => t.stop());
-    clearInterval(gazeTimerRef.current);
+    clearTimeout(gazeTimerRef.current);
     const finishedSession = session;
     setSession(null);
     if (!finishedSession) return;
@@ -391,7 +434,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
 
       <div className="flex flex-1 overflow-hidden">
         <section className="relative flex-1 overflow-hidden bg-bg p-4">
-          <div className="relative h-full overflow-hidden rounded-card border border-border bg-surface">
+          <div ref={stageRef} className="relative h-full overflow-hidden rounded-card border border-border bg-surface">
             {mode === "url" && renderedPage?.screenshot_base64 ? (
               <img src={`data:image/png;base64,${renderedPage.screenshot_base64}`} alt="Evaluated page" className="h-full w-full object-cover object-top" />
             ) : mode === "url" && renderedPage ? (
@@ -409,7 +452,11 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
             {gazePoint && (
               <div
                 className="pointer-events-none absolute z-20 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-accent transition-all ease-out"
-                style={{ left: `${gazePoint.x * 100}%`, top: `${gazePoint.y * 100}%`, transitionDuration: "250ms", boxShadow: "0 0 16px 2px rgb(var(--color-accent) / 0.4)" }}
+                style={{
+                  left: `${gazePoint.x * 100}%`, top: `${gazePoint.y * 100}%`, transitionDuration: "60ms",
+                  opacity: gazePoint.onPage ? 1 : 0.35,
+                  boxShadow: "0 0 16px 2px rgb(var(--color-accent) / 0.4)",
+                }}
               >
                 <div className="h-1.5 w-1.5 rounded-full bg-accent" />
               </div>

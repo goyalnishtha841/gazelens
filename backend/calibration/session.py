@@ -38,6 +38,16 @@ STATUS_COMPLETE = "complete"
 STATUS_ABANDONED = "abandoned"
 
 
+# Gaze features the landmarker adds to head_proxy (cv/landmarks.py
+# _gaze_features). Absent keys export as None, so sessions recorded before
+# these existed still load and simply can't train the iris feature sets.
+LANDMARK_GAZE_COLUMNS = (
+    "iris_h_l", "iris_v_l", "iris_h_r", "iris_v_r", "lid_l", "lid_r",
+    "bs_h", "bs_v", "blink",
+    "head_yaw", "head_pitch", "head_roll", "head_tx", "head_ty", "head_tz",
+)
+
+
 @dataclass
 class CalibrationSample:
     """One frame's worth of pupil data, paired with the target being shown.
@@ -120,6 +130,8 @@ class CalibrationSample:
             "eye_mid_x": head.get("eye_mid_x"),
             "eye_mid_y": head.get("eye_mid_y"),
             "roll_norm": head.get("roll_norm"),
+            # landmark gaze features -- see cv/landmarks.py _gaze_features
+            **{k: head.get(k) for k in LANDMARK_GAZE_COLUMNS},
             # --- target (what we're regressing onto) ---
             "target_x": self.target_x,
             "target_y": self.target_y,
@@ -142,6 +154,7 @@ TRAINING_ROW_COLUMNS = [
     "left_x_eye", "left_y_eye", "right_x_eye", "right_y_eye",
     "left_x_frame", "left_y_frame", "right_x_frame", "right_y_frame",
     "interocular_norm", "eye_mid_x", "eye_mid_y", "roll_norm",
+    *LANDMARK_GAZE_COLUMNS,
     "target_x", "target_y",
     "session_id", "participant_id", "point_index", "confidence",
     "eyes_detected", "screen_width", "screen_height",

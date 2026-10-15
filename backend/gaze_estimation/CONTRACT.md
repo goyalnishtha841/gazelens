@@ -142,7 +142,16 @@ point = est.estimate_frame_result(frame_result)   # a cv.FrameResult
 | `valid` | `False` when no pupil was available this frame. |
 | `in_bounds` | `False` when the raw prediction fell off-screen before clamping. |
 | `confidence` | Carried through from the detector. |
-| `note` | `""`, `"no_pupil"`, `"off_screen"`, `"insufficient_pupils_for_feature_set"`. |
+| `note` | `""`, `"no_pupil"`, `"off_screen"`, `"insufficient_pupils_for_feature_set"`, `"head_moved"` (head yaw/pitch moved > 8° or distance changed > 15% from the calibration pose; the point is still valid), and from the live session API `"off_page"` (outside the stage the page is drawn in). |
+| `viewport_x`, `viewport_y` | Live session only: the viewport-space prediction, when `x`/`y` were remapped into the page's stage. |
+
+### Landmark feature sets and validation
+
+The live pipeline (`cv.get_pipeline()`) takes pupil points from MediaPipe's iris landmarks (`$FIXATION_PUPIL_SOURCE=iris`, the default; `fused`/`yolo` restore the detector for the ablation). Each frame also carries landmark gaze features in `head_proxy` (`cv/landmarks.py` `_gaze_features`): iris position relative to the eye corners, MediaPipe's `eyeLook*` blendshapes, and head pose. These, plus eyelid opening (`lid_l`/`lid_r`, a vertical-gaze cue), feed six more candidate feature sets (`iris`, `iris_both`, `iris_blend`, `iris_pose`, `iris_lid`, `iris_lid_pose`). Model selection picks among all nine by leave-one-point-out error, exactly as before. Rows with `blink > 0.5` are dropped.
+
+The calibration UI shows dots in a random order. In row order, slow head drift lines up with screen height and gets learned as vertical gaze. Leave-one-point-out cannot catch this, because every fold shares the confound. The accuracy check, taken later, does.
+
+After calibration, `POST /api/gaze/models/{session_id}/validate` scores the model on fresh dots placed between the calibration points. Results are stored in the model's `metrics["validation_pass"]`. Every check frame's features and prediction are also appended to `gaze_models/<session_id>.validation.jsonl`, for scoring new models offline on real check data. A live session refuses a model whose validation median error exceeds 15% of the screen diagonal (`validation.py`).
 
 ### Three things attribution should know
 

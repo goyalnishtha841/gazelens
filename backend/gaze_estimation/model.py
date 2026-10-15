@@ -113,6 +113,12 @@ class GazeModel:
     metrics: Dict = field(default_factory=dict)
     selection: Dict = field(default_factory=dict)
 
+    # Median head pose during calibration ({head_yaw, head_pitch, head_tz}),
+    # so the live estimator can say when the participant has moved too far
+    # from where the mapping was learned. Empty for sessions recorded before
+    # pose was captured. Validation results land in metrics["validation_pass"].
+    pose_ref: Dict = field(default_factory=dict)
+
     trained_at: float = field(default_factory=time.time)
     format_version: int = MODEL_FORMAT_VERSION
 
@@ -238,6 +244,7 @@ class GazeModel:
             "n_samples": self.n_samples,
             "metrics": self.metrics,
             "selection": self.selection,
+            "pose_ref": self.pose_ref,
             "trained_at": self.trained_at,
         }
 
@@ -264,6 +271,7 @@ class GazeModel:
             n_samples=d.get("n_samples", 0),
             metrics=d.get("metrics", {}),
             selection=d.get("selection", {}),
+            pose_ref=d.get("pose_ref", {}),
             trained_at=d.get("trained_at", 0.0),
             format_version=version,
         )

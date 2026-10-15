@@ -137,13 +137,121 @@ def _both_eyes_head(row: Dict) -> Optional[List[float]]:
     return out
 
 
+# --- landmark feature sets ---------------------------------------------
+# Built from cv/landmarks.py _gaze_features rather than from a detected
+# pupil. These are what make webcam gaze work at all: on the first real
+# calibration the pupil-in-eye-box sets above had no correlation with the
+# target, because the eye box follows the eyelids and the detector was out
+# of domain. Iris-relative-to-eye-corners, MediaPipe's eyeLook* blendshapes
+# and real head pose are the standard webcam-gaze inputs.
+
+COL_IRIS = ("iris_h_l", "iris_v_l", "iris_h_r", "iris_v_r")
+COL_BLEND = ("bs_h", "bs_v")
+COL_POSE = ("head_yaw", "head_pitch", "head_tx", "head_ty")
+COL_BLINK = "blink"
+
+
+def _cols(row: Dict, cols: Sequence[str]) -> Optional[List[float]]:
+    out: List[float] = []
+    for c in cols:
+        v = _num(row, c)
+        if v is None:
+            return None
+        out.append(v)
+    return out
+
+
+def _iris_mean(row: Dict) -> Optional[List[float]]:
+    """Iris position averaged over both eyes. 2 features.
+
+    Both eyes are measured along the same image-left-to-right corner axis,
+    so averaging is meaningful and halves landmark jitter. Falls back to
+    one eye, like _mean_eye.
+    """
+    hs, vs = [], []
+    for side in ("l", "r"):
+        h, v = _num(row, f"iris_h_{side}"), _num(row, f"iris_v_{side}")
+        if h is not None and v is not None:
+            hs.append(h)
+            vs.append(v)
+    if not hs:
+        return None
+    return [sum(hs) / len(hs), sum(vs) / len(vs)]
+
+
+def _iris_both(row: Dict) -> Optional[List[float]]:
+    """Both eyes' iris positions kept separate. 4 features."""
+    return _cols(row, COL_IRIS)
+
+
+def _iris_blend(row: Dict) -> Optional[List[float]]:
+    """Mean iris position + MediaPipe's own eyeLook estimate. 4 features."""
+    iris, blend = _iris_mean(row), _cols(row, COL_BLEND)
+    if iris is None or blend is None:
+        return None
+    return iris + blend
+
+
+def _iris_pose(row: Dict) -> Optional[List[float]]:
+    """iris_blend + head yaw/pitch/x/y. 8 features.
+
+    Lets the regression learn that turning the head moves the gaze point
+    even when the eyes stay put. Only offered when the head actually moved
+    during calibration (see MIN_POSE_STD in build_dataset) -- otherwise
+    there is nothing to learn that relationship from.
+    """
+    base, pose = _iris_blend(row), _cols(row, COL_POSE)
+    if base is None or pose is None:
+        return None
+    return base + pose
+
+
+def _lid_mean(row: Dict) -> Optional[List[float]]:
+    """Eyelid opening averaged over whichever eyes were measured. 1 feature."""
+    vals = [v for v in (_num(row, "lid_l"), _num(row, "lid_r")) if v is not None]
+    return [sum(vals) / len(vals)] if vals else None
+
+
+def _iris_lid(row: Dict) -> Optional[List[float]]:
+    """iris_blend + eyelid opening. 5 features.
+
+    Added for the vertical axis, which was the weak one on real data: iris
+    vertical position varied between calibration rows by about as much as
+    it jittered within one, while the lids track vertical gaze more
+    visibly at webcam resolution.
+    """
+    base, lid = _iris_blend(row), _lid_mean(row)
+    if base is None or lid is None:
+        return None
+    return base + lid
+
+
+def _iris_lid_pose(row: Dict) -> Optional[List[float]]:
+    """iris_pose + eyelid opening. 9 features (pose stays at columns 4-7,
+    where build_dataset's head-movement check reads it)."""
+    base, lid = _iris_pose(row), _lid_mean(row)
+    if base is None or lid is None:
+        return None
+    return base + lid
+
+
 FEATURE_SETS = {
     "mean_eye": _mean_eye,
     "both_eyes": _both_eyes,
     "both_eyes_head": _both_eyes_head,
+    "iris": _iris_mean,
+    "iris_both": _iris_both,
+    "iris_blend": _iris_blend,
+    "iris_pose": _iris_pose,
+    "iris_lid": _iris_lid,
+    "iris_lid_pose": _iris_lid_pose,
 }
 
-FEATURE_DIMS = {"mean_eye": 2, "both_eyes": 4, "both_eyes_head": 8}
+FEATURE_DIMS = {
+    "mean_eye": 2, "both_eyes": 4, "both_eyes_head": 8,
+    "iris": 2, "iris_both": 4, "iris_blend": 4, "iris_pose": 8,
+    "iris_lid": 5, "iris_lid_pose": 9,
+}
 
 DEFAULT_FEATURE_SET = "mean_eye"
 
@@ -206,6 +314,15 @@ MIN_POINTS_TO_FIT = 4
 # signal to mean something -- which is also exactly when it's worth having.
 MIN_HEAD_FEATURE_STD = 0.01
 
+# Same idea for iris_pose's real head pose: (yaw deg, pitch deg, tx cm,
+# ty cm). Below these the pose columns are near-constant across the
+# calibration and a coefficient on them would fit landmark jitter.
+MIN_POSE_STD = (1.0, 1.0, 0.3, 0.3)
+
+# Mean eyeBlink score above which a row is a (half-)closed eye: the iris
+# landmark is then a guess on the lid, not a measurement.
+BLINK_DROP_SCORE = 0.5
+
 
 def build_dataset(
     rows: Sequence[Dict],
@@ -230,6 +347,11 @@ def build_dataset(
     for row in rows:
         tx, ty = _num(row, COL_TARGET[0]), _num(row, COL_TARGET[1])
         if tx is None or ty is None:
+            dropped += 1
+            continue
+
+        blink = _num(row, COL_BLINK)
+        if blink is not None and blink > BLINK_DROP_SCORE:
             dropped += 1
             continue
 
@@ -302,6 +424,14 @@ def build_dataset(
                 f"need >= {MIN_HEAD_FEATURE_STD} on every axis) -- both_eyes_head would be "
                 f"fitting detector noise on a near-constant column, not a real signal"
             )
+    if feature_set in ("iris_pose", "iris_lid_pose"):
+        pose_std = dataset.X[:, 4:8].std(axis=0)
+        if np.any(pose_std < np.asarray(MIN_POSE_STD)):
+            raise InsufficientCalibrationData(
+                f"head pose barely moved during calibration "
+                f"(yaw/pitch/tx/ty std={pose_std.round(2).tolist()}, need >= "
+                f"{list(MIN_POSE_STD)}) -- nothing to learn head compensation from"
+            )
     return dataset
 
 
@@ -329,9 +459,11 @@ def features_from_pupils(
     if right is not None:
         row[COL_RIGHT_EYE[0]], row[COL_RIGHT_EYE[1]] = float(right[0]), float(right[1])
     if head_proxy:
-        for col in COL_HEAD:
-            if col in head_proxy:
-                row[col] = float(head_proxy[col])
+        # Every landmark-derived key (head proxy + cv/landmarks.py
+        # _gaze_features) -- the extractors pick what they need.
+        for col, value in head_proxy.items():
+            if value is not None:
+                row[col] = float(value)
     return FEATURE_SETS[feature_set](row)
 
 
@@ -341,6 +473,7 @@ __all__ = [
     "FEATURE_DIMS",
     "DEFAULT_FEATURE_SET",
     "MIN_POINTS_TO_FIT",
+    "COL_POSE",
     "InsufficientCalibrationData",
     "build_dataset",
     "features_from_pupils",

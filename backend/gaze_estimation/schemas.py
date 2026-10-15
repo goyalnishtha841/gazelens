@@ -247,3 +247,20 @@ __all__ = [
     "GazePointModel",
     "DEFAULT_FEATURE_SET",
 ]
+
+
+class ValidateRequest(BaseModel):
+    """One validation dot: the frames captured while it was on screen."""
+
+    point_index: int = Field(..., ge=0)
+    target_x: float = Field(..., ge=0.0, le=1.0, description="dot centre, viewport-normalised")
+    target_y: float = Field(..., ge=0.0, le=1.0)
+    frames: List[str] = Field(..., min_length=1, max_length=120,
+                              description="base64 JPEGs, raw or data: URLs")
+
+
+class ValidateResponse(BaseModel):
+    session_id: str
+    point_index: int
+    point: Dict           # validation.score_point output
+    summary: Dict         # validation.summarise output, over all points so far

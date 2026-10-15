@@ -154,7 +154,8 @@ def calibration_summary(calibration_session_id: Optional[str]) -> Optional[dict]
 
 
 def estimate_gaze_frame(calibration_session_id: str, frame_b64: str,
-                         timestamp: Optional[float] = None) -> dict:
+                         timestamp: Optional[float] = None,
+                         stage: Optional[dict] = None) -> dict:
     """One webcam frame -> one on-screen GazePoint, for the live session loop.
 
     ADDED DURING FRONTEND INTEGRATION -- this composition didn't exist as a
@@ -178,21 +179,78 @@ def estimate_gaze_frame(calibration_session_id: str, frame_b64: str,
 
     frame_result = cv.get_pipeline().process_encoded(frame_b64, timestamp=timestamp)
     estimator = get_estimator(calibration_session_id)
-    point = estimator.estimate_frame_result(frame_result)
-    return point.to_dict()
+    point = estimator.estimate_frame_result(frame_result).to_dict()
+    if not stage:
+        return point
+    return to_stage_space(point, stage, *estimator.screen)
+
+
+def to_stage_space(point: dict, stage: dict, screen_w: int, screen_h: int) -> dict:
+    """Re-express a viewport-normalised GazePoint relative to the stage.
+
+    Calibration targets are measured against the whole browser viewport, so
+    that is what the model predicts. The live UI draws the evaluated page in
+    an inset stage (header, padding, sidebar), and both the on-screen cursor
+    and element attribution work in that page's own [0,1] space. Without
+    this, a look at the sidebar would land 90% of the way across the page.
+
+    The viewport position is kept as viewport_x/viewport_y. A point outside
+    the stage is clamped to its edge with in_bounds=False and note
+    "off_page", the same treatment the model gives off-screen predictions.
+    """
+    out = dict(point)
+    if not point.get("valid"):
+        return out
+    sx = (point["x"] - stage["x"]) / stage["w"]
+    sy = (point["y"] - stage["y"]) / stage["h"]
+    inside = 0.0 <= sx <= 1.0 and 0.0 <= sy <= 1.0
+    sx, sy = min(1.0, max(0.0, sx)), min(1.0, max(0.0, sy))
+    out.update(
+        viewport_x=point["x"], viewport_y=point["y"],
+        x=sx, y=sy,
+        # pixels of the stage itself, matching x/y the way the
+        # viewport-space x_px matched the viewport
+        x_px=sx * stage["w"] * screen_w, y_px=sy * stage["h"] * screen_h,
+        in_bounds=bool(point.get("in_bounds")) and inside,
+    )
+    if not inside and not out.get("note"):
+        out["note"] = "off_page"
+    return out
 
 
 def train_gaze_model(calibration_session_id: str) -> Tuple[bool, Optional[dict], str]:
     """Fit this session's gaze model. Returns (ok, metrics, message)."""
     try:
         from gaze_estimation import train_session
+        from gaze_estimation.estimator import clear_estimator
+        from gaze_estimation.training import has_model, load_model
+        from gaze_estimation.validation import validation_gate
     except ImportError as exc:      # pragma: no cover
         return False, None, f"gaze_estimation unavailable: {exc}"
+
+    # A completed calibration never changes, so a model already trained on
+    # it (typically during the calibration screen's validation pass) is
+    # reused. Retraining would produce the same fit and throw away the
+    # validation results stored on it.
+    if has_model(calibration_session_id):
+        try:
+            model = load_model(calibration_session_id)
+        except ValueError:
+            model = None            # older model format -- retrain below
+        if model is not None:
+            ok, why = validation_gate(model)
+            if ok is False:
+                return False, model.metrics, why
+            return True, model.metrics, (
+                f"reused ({model.feature_set} deg{model.degree}), held-out median "
+                f"{model.metrics['median_error_px']:.0f}px, {why}"
+            )
 
     try:
         result = train_session(calibration_session_id)
     except Exception as exc:        # noqa: BLE001 -- surfaced to the caller
         return False, None, f"{type(exc).__name__}: {exc}"
+    clear_estimator(calibration_session_id)
 
     return True, result.metrics, (
         f"trained ({result.selection['chosen']['feature_set']} "

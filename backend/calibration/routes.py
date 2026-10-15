@@ -125,8 +125,12 @@ async def start_calibration(payload: StartCalibrationRequest) -> StartCalibratio
 
 
 @router.post("/sessions/{session_id}/samples", response_model=SubmitSamplesResponse)
-async def submit_samples(session_id: str, payload: SubmitSamplesRequest) -> SubmitSamplesResponse:
-    """Run a burst of frames through the pupil detector and store the hits."""
+def submit_samples(session_id: str, payload: SubmitSamplesRequest) -> SubmitSamplesResponse:
+    """Run a burst of frames through the pupil detector and store the hits.
+
+    Sync on purpose so FastAPI runs it in the threadpool -- see
+    session_routes.estimate_gaze_frame.
+    """
     session = _load(session_id)
 
     if session.status == STATUS_COMPLETE:
