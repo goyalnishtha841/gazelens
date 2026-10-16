@@ -1,106 +1,126 @@
-# Deploying GazeLens
+# Deploying GazeLens (free, no card)
 
-Frontend on **Vercel**, API on **Render**. Neither needs Docker on your machine.
+Frontend on **Vercel**, API on a **Hugging Face Docker Space**. Both are free and
+need no payment details, and neither needs Docker on your machine.
 
 ```
-browser ──HTTPS──► Vercel (frontend-new, static)
-                      │  /api, /health, /test-uis  (rewrites in frontend-new/vercel.json)
-                      ▼
-                   Render (backend/Dockerfile, built by Render)  ──► /data persistent disk
+browser ──HTTPS──► Vercel  (frontend-new, static)
+   │
+   └─────HTTPS──► Hugging Face Space  (backend/Dockerfile, built by Hugging Face)
+                     ▲
+                     └── pushed automatically by .github/workflows/deploy-hf.yml
 ```
 
-The browser only ever talks to the Vercel domain, so it is one HTTPS origin. That
-matters because browsers only allow webcam access on HTTPS (or `localhost`), and it
-means no CORS setup.
+Both halves are HTTPS, which browsers require for webcam access. The frontend
+calls the API directly: its URL is a Vercel setting (`VITE_API_BASE_URL`) and the
+API allows the frontend's origin (`GAZELENS_CORS_ORIGINS`).
 
-## Why the API isn't on Vercel too
+**Why a Space for the API:** the free CPU tier gives 2 vCPU and 16 GB RAM, which is
+enough for MediaPipe plus headless Chromium. Vercel functions are too small for
+them (250 MB limit), and Render's free tier has 512 MB of RAM and no disk.
 
-Vercel's Python functions can't run this backend:
-- MediaPipe + OpenCV + Chromium are well over the 250 MB function size limit.
-- There's no persistent disk for the SQLite database, calibrations, trained gaze
-  models and reports.
-- `/finalize` keeps working after it responds, and the live session keeps a trained
-  model in memory. Both need a long-running process.
+## The catch: free storage is temporary
 
-Render builds `backend/Dockerfile` on its own servers. The Dockerfile is only how
-Render installs the Linux libraries MediaPipe and Chromium need. You never run
-Docker yourself.
+A free Space has no persistent disk. Accounts, calibrations, sessions and reports
+are kept until the Space restarts, which happens:
+- on every deploy, meaning every push to `main` that touches the backend;
+- after about 48 hours with no visitors, when the Space sleeps.
 
-## 1. API on Render
+For a demo, run the whole flow in one sitting: sign up, calibrate, test, then
+download the PDF. After a restart, sign up again. Paid persistent storage
+mounts at `/data`, where the app already keeps everything, so upgrading needs no
+code change.
 
-1. Push this branch to GitHub.
-2. Render dashboard → **New → Blueprint**, then pick the repo. It reads
-   [`render.yaml`](render.yaml), which sets up:
-   - the `gazelens-api` web service, built from `backend/Dockerfile`;
-   - a 2 GB persistent disk at `/data`, holding all participant data;
-   - a generated `GAZELENS_SECRET_KEY`;
-   - health checks on `/health`.
-3. Optional: set `GROQ_API_KEY` or `ANTHROPIC_API_KEY` for LLM-written reports.
-4. Wait for the deploy, then open `https://<service>.onrender.com/health`.
-   `cv_available` should be `true`.
+## 1. API on Hugging Face (one-time setup, ~10 min)
 
-**Plan:** `standard` (2 GB RAM). MediaPipe and Chromium together get OOM-killed on
-512 MB instances, and a persistent disk needs a paid instance anyway.
+1. Sign up at **huggingface.co**. It's free and no card is needed.
+2. Click **New → Space**:
+   - Space name: `gazelens-api`
+   - SDK: **Docker** → *Blank*
+   - Hardware: **CPU basic · free**
+   - Visibility: **Public**. A private Space needs a login to reach, so the
+     website couldn't call it.
+3. In the Space, open **Settings → Variables and secrets** and add:
+   - **Secret** `GAZELENS_SECRET_KEY`: the output of
+     `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`.
+     The API refuses to start without it.
+   - **Secret** `GROQ_API_KEY` (optional): turns on LLM-written report text.
+   - **Variable** `GAZELENS_CORS_ORIGINS`: fill this in after step 2 below.
+4. Create a token: your avatar → **Settings → Access Tokens → Create new token**,
+   type **Write**. Copy it.
+5. In GitHub, open the repo's **Settings → Secrets and variables → Actions**:
+   - **Secrets** tab → `HF_TOKEN` = the token from step 4.
+   - **Variables** tab → `HF_SPACE` = `<your-hf-username>/gazelens-api`.
+6. Open GitHub's **Actions** tab → *Deploy API to Hugging Face* → **Run workflow**.
+   It pushes the backend to the Space, and Hugging Face builds it (~10 min the
+   first time; watch the Space's **Logs** tab).
+7. Open `https://<your-hf-username>-gazelens-api.hf.space/health` and check that
+   `"cv_available": true`.
 
-If Render gives the service a different URL than `gazelens-api.onrender.com`
-(names are global), update the three rewrite destinations in
-`frontend-new/vercel.json`.
+After this, every push to `main` that changes the backend redeploys it
+automatically.
 
 ## 2. Frontend on Vercel
 
 1. Vercel → **Add New → Project**, then import the repo.
-2. **Root Directory: `frontend-new`**. Vercel detects Vite. `vercel.json` already
-   sets the build command, the output directory and the rewrites.
-3. Deploy. No environment variables are needed.
+2. **Root Directory: `frontend-new`**. Vercel detects Vite.
+3. **Environment Variables:** `VITE_API_BASE_URL` =
+   `https://<your-hf-username>-gazelens-api.hf.space` (no trailing slash).
+4. **Deploy.** Note the URL, for example `https://gazelens.vercel.app`.
+5. Back in the Space's **Settings → Variables and secrets**:
+   - `GAZELENS_CORS_ORIGINS` = that URL (comma-separate several).
+   - Optional, so Vercel preview deployments work too: `GAZELENS_CORS_ORIGIN_REGEX` =
+     `^https://gazelens(-[a-z0-9-]+)?\.vercel\.app$`.
 
-### Alternative: call the API directly instead of through rewrites
+   Saving the settings restarts the Space.
 
-Every webcam frame passes through Vercel's proxy on its way to Render. If that adds
-too much latency, or a long request (URL capture of a heavy page) hits the proxy's
-timeout, skip the rewrites:
+## 3. Check it
 
-1. In Vercel, set `VITE_API_BASE_URL=https://<service>.onrender.com`, then redeploy.
-2. In Render, set `GAZELENS_CORS_ORIGINS=https://<your-app>.vercel.app`, plus any
-   preview domains you use.
-3. Delete the `/api`, `/health` and `/test-uis` rewrites from `vercel.json` (keep the
-   last one, the single-page-app fallback).
+Open the Vercel URL, then:
+1. Sign up.
+2. Calibrate and pass the accuracy check.
+3. Run a session on a test page and on a URL.
+4. Open the report and download the PDF.
+
+If something fails, the Space's **Logs** tab shows the API's errors.
 
 ## Configuration reference
 
 All configuration is environment variables. See [`.env.example`](.env.example).
 
-| Variable | Service | Default | Purpose |
+| Variable | Where | Default | Purpose |
 |---|---|---|---|
-| `GAZELENS_SECRET_KEY` | API | generated file (dev only) | JWT signing key. **Required in production.** (`FIXATION_SECRET_KEY` still works.) |
-| `GAZELENS_ENV` | API | `production` in the image | Refuses to start without a secret key |
-| `GAZELENS_CORS_ORIGINS` | API | `http://localhost:5180` | Comma-separated origins allowed cross-origin |
-| `GAZELENS_LOGIN_MAX_FAILURES` | API | `10` | Failed logins per client IP per window before `429` |
-| `GAZELENS_LOGIN_WINDOW_SECONDS` | API | `900` | That window |
-| `FIXATION_DATABASE_URL` | API | `sqlite:////data/gazelens.db` in the image | SQLAlchemy URL |
-| `FIXATION_DATA_DIR` | API | `/data/sessions` in the image | Gaze streams, captures, reports |
-| `GAZELENS_CALIBRATION_DIR` | API | `/data/calibration` in the image | Calibration recordings |
-| `GAZELENS_GAZE_MODEL_DIR` | API | `/data/gaze_models` in the image | Trained per-session gaze models |
-| `VITE_API_BASE_URL` | Vercel (build time) | empty, same origin | API URL for direct mode |
+| `GAZELENS_SECRET_KEY` | Space secret | none | JWT signing key. **Required in production.** (`FIXATION_SECRET_KEY` still works.) |
+| `GAZELENS_CORS_ORIGINS` | Space variable | `http://localhost:5180` | Comma-separated frontend origins |
+| `GAZELENS_CORS_ORIGIN_REGEX` | Space variable | none | Extra origins by regex, e.g. Vercel previews |
+| `GAZELENS_LOGIN_MAX_FAILURES` | Space variable | `10` | Failed logins per client IP per window before `429` |
+| `GAZELENS_LOGIN_WINDOW_SECONDS` | Space variable | `900` | That window |
+| `GROQ_API_KEY` / `ANTHROPIC_API_KEY` | Space secret | none | Optional LLM writing for the report agents |
+| `GAZELENS_ENV` | set in the image | `production` | Refuses to start without a secret key |
+| `FIXATION_DATABASE_URL`, `FIXATION_DATA_DIR`, `GAZELENS_CALIBRATION_DIR`, `GAZELENS_GAZE_MODEL_DIR` | set in the image | everything under `/data` | Storage locations |
+| `VITE_API_BASE_URL` | Vercel, build time | empty, same origin | The API's URL |
 | `VITE_PROXY_TARGET` | local `npm run dev` only | `http://localhost:8000` | Where the dev server proxies `/api` |
 
-## Operational notes
+## Notes
 
-- **One process.** The API runs a single uvicorn worker on purpose. SQLite, the
-  in-memory login rate limiter and the gaze-model cache all assume one process.
-  Scale the instance up, not out, or move those to Postgres and Redis first.
-- **Participant data.** `/data` holds recordings of real people's eye positions.
-  Keep the service private to your study, and check that your consent forms cover
-  hosted storage.
-- **Backups.** Render snapshots disks daily. For a manual copy, from the Render
-  shell: `python -c "import sqlite3; sqlite3.connect('/data/gazelens.db').backup(sqlite3.connect('/data/backup.db'))"`.
-- **Region.** Every webcam frame is a round trip, so set `region` in `render.yaml`
-  close to your participants.
+- **One process.** The API runs one uvicorn worker on purpose. SQLite, the
+  in-memory login rate limiter and the gaze-model cache all assume a single process.
+- **Participant data.** Calibrations and gaze streams are recordings of real
+  people's eyes. Use the hosted demo with test participants, or check that your
+  consent forms cover hosted storage.
+- **Latency.** Every webcam frame is a round trip to the Space. If the live cursor
+  feels slow, run the API locally for real study sessions.
+- **Paid alternative with a persistent disk:** [`render.yaml`](render.yaml) deploys
+  the same image to Render with a `/data` disk. That needs a paid Render instance.
 
 ## CI
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to `main`
 and on every PR:
-- all seven backend test suites, each run from inside its own folder;
+- all backend test suites, each run from inside its own folder;
 - `ruff`;
 - the frontend build;
-- a build of the API image, so a broken Dockerfile fails in CI rather than on Render.
+- a build of the API image.
+
+[`deploy-hf.yml`](.github/workflows/deploy-hf.yml) does the deploy, and skips itself
+until `HF_SPACE` is set.

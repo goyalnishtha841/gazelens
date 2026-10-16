@@ -1,6 +1,7 @@
-# Render Blueprint for the GazeLens API.
+# Render Blueprint for the GazeLens API -- the PAID alternative to the free
+# Hugging Face Space in DEPLOY.md, for when data must survive restarts.
 #   Render dashboard -> New -> Blueprint -> pick this repo.
-# The frontend goes on Vercel (frontend-new/vercel.json); see DEPLOY.md.
+# The frontend goes on Vercel either way; see DEPLOY.md.
 
 services:
   - type: web
@@ -26,8 +27,7 @@ services:
     envVars:
       - key: GAZELENS_SECRET_KEY
         generateValue: true
-      # Only needed if the frontend calls the API directly (VITE_API_BASE_URL)
-      # instead of through the Vercel rewrites. e.g. https://gazelens.vercel.app
+      # The frontend's URL, e.g. https://gazelens.vercel.app
       - key: GAZELENS_CORS_ORIGINS
         sync: false
       # Optional LLM writing for the report agents.
