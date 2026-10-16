@@ -33,8 +33,6 @@ wkhtmltopdf is still not in the chain -- it remains unmaintained upstream,
 which was the original reason for dropping it.
 """
 
-import contextlib
-import io
 from pathlib import Path
 from typing import Callable, List, Tuple
 
@@ -43,33 +41,44 @@ class PDFBackendUnavailable(RuntimeError):
     """No usable HTML -> PDF backend on this machine."""
 
 
-@contextlib.contextmanager
-def _quiet_import():
-    """Swallow a failing backend's import chatter.
+# WeasyPrint runs in a CHILD PROCESS, never in the API's own process.
+#
+# It binds GTK (glib/gobject/pango) with dlopen. If a second copy of glib is
+# already loaded -- mediapipe/opencv wheels bundle one, and with Anaconda's
+# base env active WeasyPrint finds Anaconda's gobject, linked to yet another
+# glib -- gobject's initialiser segfaults. A segfault is not an exception: it
+# killed the whole uvicorn worker mid-report and left the session stuck on
+# "processing" forever. In a child, the same crash is just a non-zero exit
+# code and the chain falls through to Chromium.
+_WEASYPRINT_SCRIPT = (
+    "import sys, contextlib, io\n"
+    "with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):\n"
+    "    from weasyprint import HTML\n"
+    "if len(sys.argv) > 2:\n"
+    "    HTML(filename=sys.argv[1]).write_pdf(sys.argv[2])\n"
+)
+_WEASYPRINT_TIMEOUT_S = 120
 
-    WeasyPrint prints a multi-line "could not import some external libraries"
-    banner when its GTK bind fails. On a machine using the Chromium fallback
-    that appears on every successful run and reads like a failure. A fallback
-    that worked should be quiet; the error path below still reports
-    everything it tried.
 
-    Both streams are captured because WeasyPrint writes that banner to
-    STDOUT, not stderr -- redirecting stderr alone silences nothing, and
-    shell `2>/dev/null` doesn't touch it either.
-    """
-    out, err = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        yield out, err
+def _run_weasyprint_child(*args: str, timeout: float) -> None:
+    import subprocess
+    import sys
+
+    proc = subprocess.run(
+        [sys.executable, "-c", _WEASYPRINT_SCRIPT, *args],
+        capture_output=True, text=True, timeout=timeout,
+    )
+    if proc.returncode != 0:
+        if proc.returncode < 0:
+            raise RuntimeError(f"weasyprint process crashed (signal {-proc.returncode})")
+        last = (proc.stderr.strip().splitlines() or ["no output"])[-1]
+        raise RuntimeError(f"weasyprint process failed: {last}")
 
 
 def _weasyprint(html_path: Path, pdf_path: Path) -> None:
     # filename= (not string=) makes WeasyPrint resolve the HTML file's own
     # relative asset paths -- the embedded heatmap PNG in particular.
-    with _quiet_import():
-        from weasyprint import HTML
-
-    HTML(filename=str(html_path)).write_pdf(str(pdf_path))
-
+    _run_weasyprint_child(str(html_path), str(pdf_path), timeout=_WEASYPRINT_TIMEOUT_S)
 
 
 def _chromium_render(html_path: Path, pdf_path: Path) -> None:
@@ -145,11 +154,11 @@ def available_backends() -> List[str]:
     written wastes everything before it.
     """
     found: List[str] = []
+    # Import-only check, in a child for the same reason _weasyprint is.
     try:
-        with _quiet_import():
-            import weasyprint  # noqa: F401
+        _run_weasyprint_child(timeout=60)
         found.append("weasyprint")
-    except Exception:       # noqa: BLE001 -- OSError from the GTK bind, not just ImportError
+    except Exception:       # noqa: BLE001 -- crash, OSError from the GTK bind, or ImportError
         pass
     try:
         import playwright  # noqa: F401
