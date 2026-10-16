@@ -43,20 +43,23 @@ export function HeroFloaters() {
   });
   // small cards of one width, sized to their content, floating at the sides
   const card = (active, tone = "accent") =>
-    `flex w-[216px] flex-col rounded-[16px] border bg-surface/85 px-3.5 py-3 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] backdrop-blur transition-all duration-700 ${
+    `flex h-[124px] w-[196px] flex-col justify-between rounded-[16px] border bg-surface/85 px-3.5 py-3 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] backdrop-blur transition-all duration-700 ${
       active ? `border-transparent ring-1 ${TONE[tone].ring} shadow-[0_0_50px_-14px_rgb(${TONE[tone].rgb}/0.55)]` : "border-border"
     }`;
   const slot = (side, top, delay) => ({
     initial: { opacity: 0, x: side === "left" ? -20 : 20 },
     animate: { opacity: 1, x: 0 },
     transition: { delay, duration: 0.7 },
-    className: `absolute ${side === "left" ? "left-[2%]" : "right-[2%]"} ${top}`,
+    className: `absolute ${top}`,
+    // push towards the screen edge (up to 60px past the content column),
+    // but always keep at least 24px from the window edge
+    style: { [side]: "max(-60px, calc((1240px - 100vw) / 2 + 24px))" },
   });
 
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 hidden xl:block">
       {/* top left: live tracking */}
-      <motion.div {...slot("left", "top-[22%]", 0.8)}>
+      <motion.div {...slot("left", "top-[24%]", 0.8)}>
         <motion.div {...float(0)} className={card(lit === 0)}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-[13px] font-semibold text-text-primary">
@@ -66,18 +69,18 @@ export function HeroFloaters() {
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-coral" /> REC
             </span>
           </div>
-          <div className="mt-1.5 text-[13px] text-text-secondary">Looking at: <span className="font-medium text-accent">Sign-up button</span></div>
+          <div className="text-[13px] text-text-secondary">Looking at: <span className="font-medium text-accent">Sign-up</span></div>
           <Sparkline />
         </motion.div>
       </motion.div>
 
       {/* top right: a finding */}
-      <motion.div {...slot("right", "top-[26%]", 0.9)}>
+      <motion.div {...slot("right", "top-[24%]", 0.9)}>
         <motion.div {...float(0.8)} className={card(lit === 1, "amber")}>
           <div className="flex items-center gap-2 text-[12px] font-semibold text-amber"><span className="h-1.5 w-1.5 rounded-full bg-amber" /> Worth fixing</div>
-          <div className="mt-1 text-[14px] font-semibold leading-snug text-text-primary">“Add to cart” seen late</div>
-          <div className="mt-1 text-[12px] text-text-secondary">First seen after 6.1 seconds</div>
-          <div className="mt-2.5 flex gap-1.5">
+          <div className="text-[14px] font-semibold leading-snug text-text-primary">“Add to cart” seen late</div>
+          <div className="text-[12px] text-text-secondary">First seen after 6.1 s</div>
+          <div className="flex gap-1.5">
             {[["Fix first", "coral"], ["Strong evidence", "accent"]].map(([t, c]) => (
               <span key={t} className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${TONE[c].soft} ${TONE[c].text}`}>{t}</span>
             ))}
@@ -88,7 +91,7 @@ export function HeroFloaters() {
       {/* bottom right: heatmap */}
       <motion.div {...slot("right", "top-[60%]", 1.0)}>
         <motion.div {...float(1.6)} className={card(lit === 2, "coral")}>
-          <div className="mb-2 flex items-center justify-between text-[12px]">
+          <div className="flex items-center justify-between text-[12px]">
             <span className="font-semibold text-text-primary">Heatmap ready</span>
             <span className="text-text-secondary">32 s test</span>
           </div>
@@ -97,13 +100,16 @@ export function HeroFloaters() {
       </motion.div>
 
       {/* bottom left: accuracy check */}
-      <motion.div {...slot("left", "top-[62%]", 1.1)}>
+      <motion.div {...slot("left", "top-[60%]", 1.1)}>
         <motion.div {...float(2.4)} className={card(lit === 3)}>
+          <div className="flex items-center justify-between text-[12px]">
+            <span className="font-semibold text-text-primary">Accuracy check</span>
+            <span className="text-text-secondary">5 dots</span>
+          </div>
           <div className="flex items-center gap-3">
             <MiniRing pct={0.82} />
             <div>
-              <div className="text-[12px] text-text-secondary">Accuracy check</div>
-              <div className="text-[15px] font-semibold text-text-primary">Good <span className="text-[12px] font-normal text-text-secondary">· 55 px</span></div>
+              <div className="text-[16px] font-semibold text-text-primary">Good <span className="text-[12px] font-normal text-text-secondary">· 55 px</span></div>
               <div className="text-[11px] text-accent">Ready to test</div>
             </div>
           </div>
@@ -222,7 +228,7 @@ export function AudienceSwitcher() {
   const pick = (i) => { setActive(i); setCycle((c) => c + 1); };
 
   return (
-    <div className="mt-14 grid grid-cols-1 gap-6 lg:grid-cols-[0.9fr_1.1fr]" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
+    <div className="mt-14 grid grid-cols-1 gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-stretch" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
       <div className="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0 lg:flex-col lg:gap-3 lg:overflow-visible" role="tablist" aria-label="Who it's for">
         {PERSONAS.map((x, i) => {
           const on = i === active;
@@ -232,11 +238,11 @@ export function AudienceSwitcher() {
               role="tab"
               aria-selected={on}
               onClick={() => pick(i)}
-              className={`group relative shrink-0 overflow-hidden rounded-[20px] border p-3 text-left transition-all duration-300 lg:shrink lg:p-5 ${
+              className={`group relative flex shrink-0 items-center overflow-hidden rounded-[20px] border p-3 text-left transition-all duration-300 lg:flex-1 lg:shrink lg:p-5 ${
                 on ? "border-white/15 bg-surface" : "border-border bg-surface/40 hover:bg-surface/70"
               }`}
             >
-              <div className="flex items-center gap-4">
+              <div className="flex w-full items-center gap-4">
                 <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] text-[20px] lg:h-12 lg:w-12 lg:rounded-[14px] lg:text-[24px] ${TONE[x.tone].soft}`}>{x.emoji}</span>
                 <div className="min-w-0">
                   <div className={`whitespace-nowrap text-[16px] font-semibold tracking-tight lg:text-[18px] ${on ? "text-text-primary" : "text-text-secondary group-hover:text-text-primary"}`}>{x.title}</div>

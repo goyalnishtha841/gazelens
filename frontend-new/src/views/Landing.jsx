@@ -181,9 +181,10 @@ export default function Landing({ onNavigate }) {
       {/* ------------------------------------------------------------ who */}
       <section id="who" className="mx-auto max-w-[1100px] scroll-mt-24 px-5 pt-28 sm:px-8 lg:pt-36">
         <SectionHeading
+          wide
           eyebrow="Who it's for"
           title="Made for anyone who builds for the web"
-          text="Pick who you are and see the kind of thing GazeLens would show you. No eye-tracking knowledge needed."
+          text="Pick who you are and see what GazeLens would show you. No eye-tracking knowledge needed."
         />
         <AudienceSwitcher />
       </section>
@@ -191,6 +192,7 @@ export default function Landing({ onNavigate }) {
       {/* ------------------------------------------------------------ how */}
       <section id="how" className="mx-auto max-w-[1100px] scroll-mt-24 px-5 py-28 sm:px-8 lg:py-36">
         <SectionHeading
+          wide
           eyebrow="How it works"
           title="From setup to report in four easy steps"
           text="No training needed. Scroll through to watch each step happen."
@@ -261,12 +263,12 @@ export default function Landing({ onNavigate }) {
 
 /* ------------------------------------------------------------------ parts */
 
-function SectionHeading({ eyebrow, title, text }) {
+function SectionHeading({ eyebrow, title, text, wide = false }) {
   return (
-    <Reveal once className="mx-auto max-w-[720px] px-5 text-center sm:px-8">
+    <Reveal once className={`mx-auto ${wide ? "max-w-[1100px]" : "max-w-[720px]"} px-5 text-center sm:px-8`}>
       <div className="text-[13px] font-semibold uppercase tracking-[0.14em] text-accent">{eyebrow}</div>
-      <h2 className="mt-3 text-[36px] font-bold leading-[1.08] tracking-[-0.02em] text-text-primary sm:text-[50px]">{title}</h2>
-      {text && <p className="mt-4 text-balance text-[18px] leading-relaxed text-text-secondary">{text}</p>}
+      <h2 className={`mt-3 text-[36px] font-bold leading-[1.08] tracking-[-0.02em] text-text-primary sm:text-[50px] ${wide ? "lg:whitespace-nowrap lg:text-[46px] xl:text-[50px]" : ""}`}>{title}</h2>
+      {text && <p className={`mt-4 text-balance text-[18px] leading-relaxed text-text-secondary ${wide ? "lg:whitespace-nowrap" : ""}`}>{text}</p>}
     </Reveal>
   );
 }
