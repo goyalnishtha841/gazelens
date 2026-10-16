@@ -107,12 +107,35 @@ def init_db(drop: bool = False) -> None:
         if drop:
             Base.metadata.drop_all(bind=engine)
         Base.metadata.create_all(bind=engine)
+        _add_missing_columns()
     except OperationalError as exc:
         raise RuntimeError(
             f"could not open the database at {DATABASE_URL}.\n"
             f"Check the path is writable, or set FIXATION_DATABASE_URL to one "
             f"that is.\nUnderlying error: {exc.orig}"
         ) from exc
+
+
+# Columns added to an existing table after it shipped. create_all only creates
+# missing TABLES, so a database from before the column existed would fail
+# every query that selects it. Nullable columns only -- SQLite can ADD COLUMN
+# those in place. This is the stopgap init_db's docstring describes, not a
+# migration tool: once anything here needs a backfill, add Alembic instead.
+_ADDED_COLUMNS = {
+    "sessions": {"processing_started_at": "DATETIME"},
+}
+
+
+def _add_missing_columns() -> None:
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table, columns in _ADDED_COLUMNS.items():
+            existing = {c["name"] for c in insp.get_columns(table)}
+            for name, ddl_type in columns.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl_type}"))
 
 
 def get_db() -> Iterator[Session]:

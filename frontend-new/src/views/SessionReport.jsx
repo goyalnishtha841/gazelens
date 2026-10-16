@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useInView, useReducedMotion } from "framer-motion";
 import { useAuth } from "../context/AuthContext.jsx";
-import { getSessionReport, downloadSessionPdf } from "../api/client.js";
+import { getSessionReport, downloadSessionPdf, finalizeSession } from "../api/client.js";
 import { useCountUp } from "../components/Primitives.jsx";
 import { Reveal } from "../components/Motion.jsx";
 import IrisMark from "../components/IrisMark.jsx";
@@ -19,6 +19,11 @@ import { pageName as pageNameOf } from "../lib/sessionData.js";
  */
 
 const REPORT_POLL_MS = 2000;
+// Give up polling after this long. A little over the backend's own default
+// (GAZELENS_ANALYSIS_TIMEOUT_SECONDS, 10 min), which fails a run that has
+// gone quiet on the next read -- this is the fallback if that read never
+// gets an answer.
+const REPORT_POLL_TIMEOUT_MS = 11 * 60 * 1000;
 const DWELL_THRESHOLD_PCT = 5;     // agents/rules.py CTA_DWELL_POOR_VISIBILITY_PCT
 
 export const SEVERITY = {
@@ -37,6 +42,8 @@ export default function SessionReport({ sessionId, onBack }) {
   const { token } = useAuth();
   const [report, setReport] = useState(null);
   const [pollError, setPollError] = useState(null);
+  const [attempt, setAttempt] = useState(0);      // bumped by "Try again" to restart polling
+  const [retrying, setRetrying] = useState(false);
   const [pdfState, setPdfState] = useState("idle"); // idle | downloading | success | error
   const pollRef = useRef(null);
   const successTimerRef = useRef(null);
@@ -57,12 +64,22 @@ export default function SessionReport({ sessionId, onBack }) {
 
   useEffect(() => {
     let cancelled = false;
+    const startedAt = Date.now();
     async function poll() {
       try {
         const data = await getSessionReport(token, sessionId);
         if (cancelled) return;
         setReport(data);
-        if (!data.ready) pollRef.current = setTimeout(poll, REPORT_POLL_MS);
+        if (data.ready) return;
+        // Only "processing" is worth waiting on. "failed" is terminal, and
+        // anything else means no analysis is running at all (finalize never
+        // got through) -- either way, polling would spin forever.
+        if (data.status !== "processing") return;
+        if (Date.now() - startedAt > REPORT_POLL_TIMEOUT_MS) {
+          setPollError("This is taking much longer than it should, so the analysis has probably stopped.");
+          return;
+        }
+        pollRef.current = setTimeout(poll, REPORT_POLL_MS);
       } catch (err) {
         if (!cancelled) setPollError(err.message || "Couldn't load the report");
       }
@@ -72,10 +89,30 @@ export default function SessionReport({ sessionId, onBack }) {
       cancelled = true;
       clearTimeout(pollRef.current);
     };
-  }, [sessionId, token]);
+  }, [sessionId, token, attempt]);
+
+  // Re-runs the analysis from the gaze already recorded -- no recalibration
+  // or re-recording. finalize refuses (409) only while a run is genuinely in
+  // progress, in which case going back to polling is the right thing anyway.
+  const handleRetry = async () => {
+    setRetrying(true);
+    try {
+      await finalizeSession(token, sessionId);
+    } catch (err) {
+      if (err.status !== 409) {
+        setPollError(err.message || "Couldn't restart the analysis");
+        setRetrying(false);
+        return;
+      }
+    }
+    setPollError(null);
+    setReport(null);
+    setRetrying(false);
+    setAttempt((a) => a + 1);
+  };
 
   if (pollError || !report || !report.ready) {
-    return <ReportWaiting error={pollError} report={report} onBack={onBack} />;
+    return <ReportWaiting error={pollError} report={report} onBack={onBack} onRetry={handleRetry} retrying={retrying} />;
   }
   return <ReportBody report={report} onBack={onBack} pdfState={pdfState} onDownload={handleDownloadPdf} />;
 }
@@ -596,9 +633,19 @@ function ReliabilityCard({ quality, nameOf, rejected, warnings }) {
 }
 
 /** Loading / failed state while the analysis runs. */
-function ReportWaiting({ error, report, onBack }) {
-  const failed = error || report?.status === "failed";
-  const message = error || (report?.status === "failed" ? `Analysis failed: ${report.message || "unknown error"}` : "Analysing your session…");
+function ReportWaiting({ error, report, onBack, onRetry, retrying }) {
+  // Not processing and no report: either it failed, or it was never analysed.
+  const stopped = Boolean(report) && report.status !== "processing";
+  const failed = Boolean(error) || stopped;
+  const notStarted = !error && stopped && report.status !== "failed";
+  // The backend's message already reads "analysis failed: <reason>".
+  const reason = report?.message?.replace(/^analysis failed:\s*/i, "");
+  const message = error
+    || (notStarted ? "This session hasn't been analysed yet."
+      : stopped ? `The analysis failed: ${reason || "unknown error"}`
+        : "Analysing your session…");
+  // A session with no gaze (next_action "restart") can't be retried from here.
+  const canRetry = failed && report?.next_action !== "restart";
   const steps = ["Finding where people looked", "Matching it to the page", "Checking what was missed", "Writing your report"];
   const [active, setActive] = useState(0);
   useEffect(() => {
@@ -609,7 +656,7 @@ function ReportWaiting({ error, report, onBack }) {
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-[560px] flex-col items-center justify-center px-6 text-center">
       <span className={`drop-shadow-[0_0_20px_rgb(var(--color-accent)/0.6)] ${failed ? "text-coral" : "text-accent"}`}><IrisMark size={64} wander={!failed} /></span>
-      <h1 className="mt-6 text-[28px] font-bold tracking-tight text-text-primary">{failed ? "Something went wrong" : "Building your report"}</h1>
+      <h1 className="mt-6 text-[28px] font-bold tracking-tight text-text-primary">{notStarted ? "No report yet" : failed ? "Something went wrong" : "Building your report"}</h1>
       <p className={`mt-2 text-[16px] ${failed ? "text-coral" : "text-text-secondary"}`}>{message}</p>
       {!failed && (
         <ul className="mt-8 w-full space-y-2 text-left">
@@ -621,7 +668,19 @@ function ReportWaiting({ error, report, onBack }) {
           ))}
         </ul>
       )}
-      <button onClick={onBack} className="mt-8 rounded-full border border-white/10 px-5 py-2.5 text-[14px] text-text-secondary transition-colors hover:text-text-primary">← Back to sessions</button>
+      {canRetry && (
+        <>
+          <p className="mt-3 text-[14px] text-text-secondary">Your recording is saved, so there's no need to calibrate or record again.</p>
+          <button
+            onClick={onRetry}
+            disabled={retrying}
+            className="mt-6 rounded-full bg-accent px-6 py-2.5 text-[14px] font-semibold text-[#0A0E14] transition-shadow hover:shadow-[0_0_30px_-6px_rgb(var(--color-accent)/0.7)] disabled:opacity-60"
+          >
+            {retrying ? "Starting…" : notStarted ? "Build report" : "Try again"}
+          </button>
+        </>
+      )}
+      <button onClick={onBack} className={`${canRetry ? "mt-3" : "mt-8"} rounded-full border border-white/10 px-5 py-2.5 text-[14px] text-text-secondary transition-colors hover:text-text-primary`}>← Back to sessions</button>
     </div>
   );
 }

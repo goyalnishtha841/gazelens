@@ -54,7 +54,8 @@ from gaze_estimation import router as gaze_router             # noqa: E402
 from render import router as render_router                    # noqa: E402
 
 from .auth_routes import router as auth_router                # noqa: E402
-from .db import init_db                                       # noqa: E402
+from .db import SessionLocal, init_db                         # noqa: E402
+from .session_routes import recover_interrupted_sessions      # noqa: E402
 from .session_routes import router as session_router          # noqa: E402
 
 @asynccontextmanager
@@ -65,6 +66,11 @@ async def lifespan(_app: FastAPI):
     # lifespan rather than @app.on_event("startup"): on_event is deprecated in
     # this FastAPI version and emits a DeprecationWarning on import.
     init_db()
+    # Any session still "processing" was abandoned by the previous process:
+    # its BackgroundTask died with it. Fail them so their report pages stop
+    # spinning and offer a retry. See session_routes' module docstring.
+    with SessionLocal() as session:
+        recover_interrupted_sessions(session)
     yield
 
 

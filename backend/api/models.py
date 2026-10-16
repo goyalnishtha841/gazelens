@@ -122,6 +122,13 @@ class Session(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # When the current /finalize run began. The analysis is an in-process
+    # BackgroundTask, so a worker crash or restart leaves nothing behind to
+    # mark it failed; this is what lets a read tell "still running" from
+    # "nobody is working on this any more" (session_routes.expire_if_stale).
+    processing_started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     user: Mapped["User"] = relationship(back_populates="sessions")
     report: Mapped[Optional["Report"]] = relationship(
