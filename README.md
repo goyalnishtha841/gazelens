@@ -1,356 +1,494 @@
-# GazeLens
-### *Built on the GazeUX-Agent framework — a webcam-based, multi-agent framework for gaze-driven UI/UX evaluation*
+<div align="center">
 
-GazeLens turns an ordinary laptop webcam into a low-cost usability-testing tool. It tracks where someone actually looks while using a web page (or any live URL), maps that attention to specific UI elements, and runs it through a chain of evidence-grounded AI agents that produce a UX report a designer can act on — not a vague "make it better," but "the checkout button got 2% of total gaze time against a 5% threshold, here's the fix, here's the confidence score, here's why the system believes it."
+# 👁️ GazeLens
+
+**See what your users actually see.**
+
+Webcam eye tracking and AI-agent UX reports, no special hardware needed.
+Built on **GazeUX-Agent**, a multi-agent framework for gaze-driven UI/UX evaluation.
+
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-backend-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![MediaPipe](https://img.shields.io/badge/MediaPipe-iris%20landmarks-0097A7)
+![Tests](https://img.shields.io/badge/tests-707%20passing-2EE6C5)
+![LLM](https://img.shields.io/badge/LLM-Groq%20%7C%20Claude%20(optional)-8A63D2)
+
+<img src="docs/screenshots/landing.png" alt="GazeLens landing page" width="900">
+
+</div>
 
 ---
 
-## Why this exists
+## Contents
 
-Proper eye-tracking hardware is expensive, and even when you have gaze data, someone still has to manually work out *why* a design failed. GazeLens closes that gap with three concrete contributions:
-
-1. **A benchmarked, swappable pupil detector** — comparing YOLOv8, SSD300, and Faster R-CNN on the same dataset, evaluated on precision, recall, mAP@0.5, and inference speed — not just accuracy.
-2. **Gaze-to-UI-element attribution** — converting raw gaze coordinates into per-element metrics (dwell time, time-to-first-fixation, revisit count, scanpath), not just a heatmap.
-3. **A traceable multi-agent reasoning layer** — Behavior → UX Evaluation → Recommendation → Critic/Verifier, where every claim must cite a real metric, and a dedicated verifier agent rejects anything it can't independently re-derive from raw data.
+- [What GazeLens does](#what-gazelens-does)
+- [Screenshots](#screenshots)
+- [How it works](#how-it-works)
+- [Measured results](#measured-results)
+- [Tech stack](#tech-stack)
+- [Repository layout](#repository-layout)
+- [Getting started](#getting-started)
+- [Configuration](#configuration)
+- [Using GazeLens](#using-gazelens)
+- [API overview](#api-overview)
+- [Testing](#testing)
+- [Developer tools](#developer-tools)
+- [Limitations](#limitations)
+- [Roadmap](#roadmap)
+- [Team and contributing](#team-and-contributing)
 
 ---
 
-## Detector benchmark results
+## What GazeLens does
+
+Lab eye trackers are expensive, and even with gaze data someone still has to work
+out *why* a design failed. GazeLens does both jobs with an ordinary laptop webcam:
+
+1. **Calibrate in about a minute.** The user follows 16 dots, then a 5-dot accuracy
+   check measures how far off the tracking is. A setup that's too inaccurate is
+   refused rather than trusted.
+2. **Test any page.** Pick one of five built-in sample pages, or paste a link to any
+   website. GazeLens screenshots the page and finds its buttons, links, images and
+   forms automatically.
+3. **Use it normally.** A live gaze cursor follows the user's eyes while they browse.
+   Long pages scroll, and the scroll position is recorded with every frame.
+4. **Get a report.** Gaze is matched to page elements, then four agents analyse it.
+   The report has a verdict, a heatmap, an eye path, per-element charts, what to fix
+   and how, and a downloadable PDF.
+
+Every finding cites a measured number (for example *"Received only 0.0% of total gaze
+time (threshold: 5.0%)"*). A dedicated critic agent re-derives each claim from the raw
+metrics and throws out anything it can't confirm.
+
+### Key features
+
+| | |
+|---|---|
+| 🎯 **Webcam gaze tracking** | MediaPipe iris + eyelid + head-pose features, per-session ridge model, 16-point calibration and a 5-dot accuracy check |
+| 🧭 **Steady live cursor** | Fixation-locked smoothing holds still while the eyes rest and follows real eye movements within ~0.3 s |
+| 🌐 **Any website** | Playwright captures the full page and detects elements; gaze is mapped through scrolling to the whole document |
+| 📊 **Per-element metrics** | Dwell time, time to first look, fixation count, revisits and scanpath for every element |
+| 🤖 **Four-agent analysis** | Behaviour → Evaluation → Recommendation → Critic, with optional LLM writing (Groq or Claude) that the critic must verify |
+| 🛡️ **Honest by design** | A quality gate blocks findings when tracking is unreliable, and elements smaller than the measured error are flagged as indicative |
+| 🔥 **Report visuals** | Heatmap over the real page (blur = measured error), an eye path built from real fixations, attention bars and a first-look timeline |
+| 📄 **PDF reports** | Branded, print-ready PDF with the verdict, visuals, problems, fixes and a "how we checked" audit |
+| 📈 **Analytics across tests** | Problems per test, urgency breakdown, recurring design principles, key-element coverage and accuracy trend |
+| 🔐 **Accounts** | Sign-up and sign-in (bcrypt + JWT); every session and report is scoped to its owner |
+
+---
+
+## Screenshots
+
+| Session report | Heatmap over the real page |
+|---|---|
+| <img src="docs/screenshots/report.png" alt="Session report" width="440"> | <img src="docs/screenshots/report-heatmap.png" alt="Heatmap" width="440"> |
+| **Eye path (real fixations, grouped into areas)** | **Downloadable PDF report** |
+| <img src="docs/screenshots/eye-path.png" alt="Eye path" width="440"> | <img src="docs/screenshots/pdf-report.png" alt="PDF report" width="440"> |
+| **AI insights: the four agents and their findings** | **Analytics across every test** |
+| <img src="docs/screenshots/insights.png" alt="AI insights" width="440"> | <img src="docs/screenshots/analytics.png" alt="Analytics" width="440"> |
+| **Choosing what to test** | **Landing page: who it's for** |
+| <img src="docs/screenshots/new-test.png" alt="New test" width="440"> | <img src="docs/screenshots/landing-personas.png" alt="Personas" width="440"> |
+
+---
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Webcam frame] --> B[MediaPipe Face Landmarker<br/>iris · eyelids · head pose]
+    B --> C[Per-session gaze model<br/>ridge regression]
+    C --> D[Live cursor<br/>fixation-locked smoothing]
+    C --> E[Gaze stream<br/>+ scroll offset]
+    P[Page<br/>sample page or captured URL] --> F
+    E --> F[Attribution<br/>fixations → elements]
+    F --> G[Quality gate]
+    G --> H1[1 · Behaviour]
+    H1 --> H2[2 · Evaluation]
+    H2 --> H3[3 · Recommendation]
+    H3 --> H4[4 · Critic<br/>re-verifies every claim]
+    H4 --> I[Consolidation]
+    I --> R[Report<br/>heatmap · eye path · PDF]
+```
+
+**1. Calibration** (`backend/calibration`, `backend/gaze_estimation`).
+The user looks at 16 dots in random order, about 24 frames each. Several feature sets
+are compared: iris position relative to the eye corners, eyelid openness, MediaPipe
+`eyeLook*` blendshapes and head pose. Model degree and ridge strength are chosen by
+leave-one-point-out cross-validation. Degree-1 models are fitted on one median row
+per dot, which removes the frame noise that otherwise squashes gaze towards the
+screen's centre. A 5-dot accuracy check then measures the error on *new* points.
+A per-axis bias correction is kept only if it beats the raw model by 10% on held-out
+dots, and calibrations over 15% of the screen diagonal are refused.
+
+**2. Live session** (`backend/api`, `frontend-new/src/views/LiveSession.jsx`).
+Each webcam frame goes to the server, which returns a gaze point remapped into the
+page area. The cursor uses a fixation-locked stabiliser
+(`frontend-new/src/lib/gazeStabilizer.js`). The server stores the raw stream, because
+fixation detection needs real saccade timing.
+
+**3. Any URL** (`backend/render`).
+Playwright captures a full-page screenshot and detects interactive and content
+elements with heuristic classification. Every capture reports how much was guessed.
+Gaze points carry the page's scroll offset and are translated into document
+coordinates, so long pages work.
+
+**4. Attribution** (`backend/attribution`).
+Dispersion-based fixation detection, then hit-testing against element boxes with a
+near-miss tolerance tied to the measured tracking error. This produces dwell time,
+time to first fixation, fixation and revisit counts, and the scanpath.
+
+**5. Agents** (`backend/agents`).
+
+| Agent | Role | With an LLM key |
+|---|---|---|
+| Quality gate | Blocks findings when gaze error, tracking coverage or data volume is too poor ("insufficient"), or caps severity ("limited") | unchanged |
+| 1 · Behaviour | First noticed, most attended, ignored important elements, scattered attention | also writes a plain-English account of the session |
+| 2 · Evaluation | Maps behaviour to usability heuristics with a severity | also explains each issue for this specific page |
+| 3 · Recommendation | Template fixes per issue | writes one specific fix per issue, naming the element |
+| 4 · Critic | Re-derives every cited metric and every number in the text; rejects what it can't confirm | **always deterministic, never calls an LLM** |
+| Consolidation | One issue and one fix per element, readable names, caveats on elements smaller than the gaze error | unchanged |
+
+**6. Reports** (`backend/reports`).
+The heatmap is gaze density over the page screenshot, blurred by the measured error
+and with the hottest spots numbered. The eye path groups real fixations into areas,
+sized by time and numbered by first visit. The HTML report renders to PDF through
+WeasyPrint, or headless Chromium as a fallback.
+
+---
+
+## Measured results
+
+All numbers below are reproducible from data and scripts in this repository.
+
+### Gaze accuracy (webcam, held-out accuracy-check dots)
+
+Measured with `scripts/evaluate_gaze_sessions.py`, which retrains each saved
+calibration and scores it on that sitting's 5 accuracy-check dots. These dots are
+never used for training.
+
+| Model | Median error | p90 error | Vertical gain* |
+|---|---|---|---|
+| Fitted on every frame (previous) | 76 px | 137 px | 0.65 |
+| **Fitted on per-dot medians (current)** | **65 px** | **120 px** | **0.83** |
+
+\*Gain is the slope of predicted vs. true position; 1.0 means the full screen range
+is reproduced. Basis: 4 calibrations, 20 check dots, one participant, on a
+1694×840 laptop screen. A multi-participant study is still to come (see
+[Limitations](#limitations)).
+
+### Live cursor stability
+
+Replaying recorded accuracy-check frames through each smoothing method:
+
+| Method | Average movement while holding still | Worst 5% | Frames to follow a real move |
+|---|---|---|---|
+| Raw | 118 px | 260 px | 0 |
+| One-Euro filter (previous) | 44 px | 97 px | 2 |
+| **Fixation-locked stabiliser (current)** | **14 px** | **38 px** | **3 (~0.3 s)** |
+
+### Pupil detector benchmark (research component)
+
+Three detectors were trained and compared on the LPW dataset. **The live pipeline
+uses MediaPipe iris landmarks instead.** On a ~30 px webcam eye crop the
+LPW-trained detector was out of domain, and the first real calibration with it
+had no usable signal (437 px median error). The detector stays available for the
+iris-vs-detector ablation (`FIXATION_PUPIL_SOURCE=fused|yolo`).
 
 | Model | Precision | Recall | mAP@0.5 | FPS |
 |---|---|---|---|---|
-| **YOLOv8n** (retrained, held-out) | 0.925 | 0.683 | 0.746 | 18.95† |
+| YOLOv8n (retrained, held-out) | 0.925 | 0.683 | 0.746 | 18.95† |
 | Faster R-CNN | 0.926 | 0.938 | 0.954 | 23.3 |
-| SSD300 | **0.991** | 0.869 | **0.975** | 127.1 |
+| SSD300 | 0.991 | 0.869 | 0.975 | 127.1 |
 
-†CPU, latency-equivalent throughput at batch size 1 — not directly comparable to the GPU FPS numbers above until Faster R-CNN/SSD get the same re-run (see below). Full table in `runs/eval/final_comparison.csv`; source for the YOLO row: `yolo_eval.csv`, conf=0.5, IoU=0.5, 29,999 test images.
+†CPU at batch size 1; the other two FPS figures are GPU, so not directly
+comparable. The Faster R-CNN and SSD rows are not yet re-run on the held-out
+subject split.
 
-**Chosen for the live pipeline: YOLOv8n.** Even after the honest retrain below it, it still runs far ahead of Faster R-CNN on CPU, and a continuous webcam stream needs every frame processed in real time — an occasional missed detection is recoverable (calibration takes 12–15 samples per point), a detector too slow to keep up with the frame rate is not.
-
-**⚠️ Known limitation, now measured rather than assumed: recall is condition-dependent, and drops hard in exactly the situations a real participant sits in.**
+<details>
+<summary>YOLOv8n recall by condition (where webcam conditions hurt)</summary>
 
 | Condition | Images | Precision | Recall | F1 | mAP@0.5 |
 |---|---|---|---|---|---|
 | All | 29,999 | 0.925 | 0.683 | 0.785 | 0.746 |
 | Indoor | 20,000 | 0.958 | 0.810 | 0.878 | 0.843 |
-| Outdoor | 9,999 | 0.817 | **0.427** | 0.561 | 0.538 |
+| Outdoor | 9,999 | 0.817 | 0.427 | 0.561 | 0.538 |
 | Natural light | 25,999 | 0.930 | 0.660 | 0.772 | 0.735 |
 | Artificial light | 10,000 | 0.950 | 0.719 | 0.819 | 0.734 |
 | No glasses | 23,999 | 0.939 | 0.784 | 0.854 | 0.846 |
-| **Glasses** | 6,000 | 0.793 | **0.278** | 0.412 | 0.329 |
+| Glasses | 6,000 | 0.793 | 0.278 | 0.412 | 0.329 |
 
-Precision stays high (0.79–0.96) in every condition — when the model fires, it's usually right. **Recall is where it falls apart**, and glasses are the single biggest factor: recall drops from 0.784 to 0.278, worse than the outdoor drop (0.810 → 0.427). Practical read for anyone running calibration: indoors, artificial/even lighting, no glasses if avoidable, is a meaningfully different experience from a sunlit room with glasses on — this isn't "bad luck," it's the measured operating envelope of the current detector.
-
-This closes the honest-held-out-number item from `OPEN_ITEMS.md` §4b for YOLO. Faster R-CNN and SSD above are still the original training-data numbers (§4, not yet re-run on the subject split) — **not a fair comparison against YOLO's retrained row** until they get the same treatment.
-
----
-
-## Architecture
-
-```
-backend/
-├── agents/            ✅ built + tested — behavior analysis, heuristic evaluation,
-│                          recommendation generation, critic/verification
-├── reports/            ✅ built + tested — HTML/PDF report generation from agent output
-├── api/                 ✅ built + tested — FastAPI: JWT auth, session lifecycle,
-│                          SQLite/SQLAlchemy, and the orchestration that runs
-│                          the whole pipeline (see its CONTRACT.md)
-├── render/              ✅ built + tested — arbitrary-URL screenshot + auto element
-│                          detection (Playwright/Chromium). Labels are heuristics,
-│                          not design intent — see its CONTRACT.md
-├── cv/                  ✅ built + tested — MediaPipe eye landmarking -> YOLOv8n pupil
-│                          localisation, CPU-only, frame-in/coords-out
-├── calibration/         ✅ built + tested — 9/16-point data collection endpoint,
-│                          persists training-ready rows (see calibration/CONTRACT.md)
-├── gaze_estimation/     ✅ built + tested — per-session pupil → screen regression,
-│                          leave-one-point-out accuracy (see its CONTRACT.md)
-├── attribution/         ✅ built + tested — gaze → UI element metrics
-│                          (dwell/TTFF/fixations/scanpath), feeds the agent chain
-└── db/                  ✅ built + tested — folded into api/ (models.py, db.py):
-                           users, sessions, reports on SQLite/SQLAlchemy
-
-frontend/                 ✅ built — React app: landing, sign-in/up, calibration UI, live
-                              session UI (fixed test pages + arbitrary URL mode), dashboard,
-                              report view. Session/report data currently mocked
-                              (frontend/src/api/client.js) pending backend/api session endpoints.
-
-configs/, dataset/, evaluation/, LPW/, models/, scripts/, training/
-                          ✅ detector training + evaluation complete for all 3 models
-test_uis/                 ⏳ open — the 5 real test UI pages (currently placeholders in Live Session)
-```
-
-> **📋 Open items with concrete next steps: [OPEN_ITEMS.md](OPEN_ITEMS.md)** —
-> the real detector weights, first-participant validation, the frontend
-> contract, and the train==val benchmark split.
->
-> **⚠️ `frontend/` is still not in this repo.** It has never been pushed to
-> `origin/main`, so a fresh clone gets the whole backend and no frontend at
-> all. The one consequence you will hit: **`frontend/src/api/client.js`
-> doesn't exist**, so the session API's request/response shapes were defined
-> server-side rather than matched to the client. See
-> `backend/api/CONTRACT.md` for exactly what to check when it lands — the
-> provisional parts are confined to `schemas.py` and the route prefixes.
->
-> `backend/api/` and `backend/render/` were both described as built but never
-> pushed; both have now been written here. `scripts/generate_api_client.py`
-> emits a reference client + OpenAPI spec to diff the real `client.js`
-> against.
-
-**Pipeline, end to end:**
-
-```
-Webcam → Face/Eye Landmarking → Pupil Detection (YOLOv8n) → Gaze Estimation
-       → Gaze-to-UI Attribution → Metrics + Heatmap
-       → Agent Chain (Behavior → Evaluation → Recommendation → Critic)
-       → PDF/HTML Report + Dashboard
-```
+Precision stays high everywhere; recall drops most with glasses (0.784 → 0.278).
+</details>
 
 ---
 
-## Current status
+## Tech stack
 
-| Module | Status | Notes |
-|---|---|---|
-| Pupil detection (YOLO / SSD / Faster R-CNN) | ✅ Done | Trained + evaluated, all 3, full benchmark table above |
-| Live webcam integration | ✅ Done | `backend/cv/` — wraps `models/pupil_yolo_final.pt`, the winning detector |
-| Calibration | ✅ Done | `backend/calibration/` — endpoint + storage. **Not yet reconciled with `Calibration.jsx`**, which isn't in this repo (see below) |
-| Gaze estimation | ✅ Done | `backend/gaze_estimation/` — per-session polynomial ridge, degree auto-selected by leave-one-point-out CV. Validated on synthetic sessions only; no real participant data exists yet |
-| UI attribution + metrics | ✅ Done | `backend/attribution/` — gaze + bboxes → `SessionMetrics`, piped end-to-end into the agent chain in its test suite |
-| Heatmap rendering | ✅ Done | `reports/gaze_heatmap.py`: gaze density over a screenshot of the page as shown, blurred by the session's measured gaze error. The per-element dwell chart and gaze path remain (`heatmap_stub.py`) |
-| Agent chain (behavior/evaluation/recommendation/critic) | ✅ Done | Fully tested against mock session data |
-| Report quality gate + consolidation | ✅ Done | `agents/quality_gate.py` runs first: sessions with too much gaze error (from the calibration accuracy check), too little tracking or too little data get "insufficient" (no findings) or "limited" (nothing above Medium). `agents/consolidate.py` runs last: one issue and one recommendation per element, readable names, and findings on elements smaller than the gaze error downgraded with a caveat. Attribution's near-miss tolerance follows the measured error (`attribution/engine.py` `error_model`) |
-| Report generation | ✅ Done | Generates PDF/HTML reports, tested against multiple scenarios |
-| Arbitrary-URL rendering | ✅ Done | `backend/render/` — Chromium screenshot + DOM element detection. Element **types are inferred**, not authored; every capture reports `low_confidence_fraction` and reports say so |
-| Session/report API endpoints | ✅ Done | `backend/api/` — full lifecycle, ownership-scoped. **Not yet reconciled with `client.js`**, which isn't in this repo |
-| Auth (signup/login) | ✅ Done | Built in this task — bcrypt + JWT + SQLite. The earlier claim that it existed was never backed by pushed code |
-| Frontend (all screens) | ✅ Done | Landing, auth, calibration, live session, dashboard, report |
-| 5 real test UI pages | ⏳ Open | Currently placeholder blocks in Live Session |
+| Layer | Technology |
+|---|---|
+| Frontend | React 18, Vite 5, Tailwind CSS 3, Framer Motion |
+| API | FastAPI, Pydantic, SQLAlchemy + SQLite, bcrypt + JWT |
+| Computer vision | MediaPipe Face Landmarker (iris, blendshapes, head pose), OpenCV |
+| Gaze model | NumPy ridge regression with LOPO model selection |
+| Page capture | Playwright (headless Chromium) |
+| Reports | Jinja2, Matplotlib, WeasyPrint / Chromium PDF |
+| Agents | Rule engine + optional LLM (Groq `openai/gpt-oss-120b` or Anthropic Claude) |
+| Detector research | Ultralytics YOLOv8, torchvision SSD300 / Faster R-CNN |
 
-The agent and report layers were deliberately built against **hand-authored mock session data** so they could be developed and tested in parallel with the CV/gaze pipeline. Swapping mock data for real session output requires no changes to the agents or report code — only the data source changes.
+---
+
+## Repository layout
+
+```
+gazelens/
+├── backend/
+│   ├── api/              FastAPI app: auth, sessions, live gaze, reports (CONTRACT.md)
+│   ├── calibration/      16-point capture, per-point quality, storage (CONTRACT.md)
+│   ├── cv/               MediaPipe landmarking, iris pupil, optional YOLO fusion
+│   ├── gaze_estimation/  feature sets, ridge model, LOPO selection, accuracy check,
+│   │                     bias correction, offline evaluation (CONTRACT.md)
+│   ├── attribution/      fixations → per-element metrics (CONTRACT.md)
+│   ├── render/           URL capture + element detection (CONTRACT.md)
+│   ├── agents/           quality gate, 4 agents, consolidation, LLM client
+│   └── reports/          heatmap, eye path, HTML/PDF report template
+├── frontend-new/         the web app (landing, auth, calibration, live test,
+│                         sessions, report, gaze map, analytics, AI insights, reports)
+├── test_uis/             5 sample pages with element configs
+│                         (shop product, sign-up form, dashboard, login, article)
+├── scripts/              model asset fetchers, gaze evaluation, API client generator
+├── evaluation/, training/, configs/   detector training and benchmark
+├── docs/screenshots/     images used in this README
+├── frontend/             earlier prototype UI (superseded by frontend-new)
+└── OPEN_ITEMS.md         open research items with concrete next steps
+```
 
 ---
 
 ## Getting started
 
 ### Requirements
-- **Python 3.12 specifically** — pinned in `.python-version`. Not 3.13/3.14: mediapipe has no wheels for those, and without mediapipe there is no face landmarking and so no live gaze. Everything except live capture works on newer versions, which makes this easy to get wrong quietly.
-- Node.js + npm
-- A CUDA GPU is only needed for *retraining* the detectors — everything else (including inference) runs fine on CPU.
 
-### Backend
+- **Python 3.12** (pinned in `.python-version`). MediaPipe has no wheels for
+  3.13+, and without it there is no live gaze.
+- **Node.js 18+** and npm.
+- A webcam. A GPU is only needed to *retrain* the detectors.
+
+### 1. Backend
+
 ```bash
-git clone <repo-url>
-cd fixation
+git clone https://github.com/goyalnishtha841/gazelens.git
+cd gazelens
 
-py -3.12 -m venv .venv                  # Windows;  python3.12 -m venv .venv elsewhere
-.venv/Scripts/activate                  #           source .venv/bin/activate
+python3.12 -m venv .venv
+source .venv/bin/activate                 # Windows: .venv\Scripts\activate
 
-# CPU-only torch — skips the ~2.5GB CUDA build we never use for inference
+# CPU-only torch keeps the install small
 pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
 pip install -r requirements.txt
 
-python scripts/fetch_face_landmarker.py # models/face_landmarker.task, needed by backend/cv
-playwright install chromium             # backend/render + the report PDF fallback
-
-# Optional: JWT signing key. If unset, one is generated and saved to
-# backend/api/.secret_key (gitignored) so tokens survive restarts. Set the
-# variable explicitly for anything deployed.
-# export FIXATION_SECRET_KEY=$(python -c "import secrets;print(secrets.token_urlsafe(48))")
+python scripts/fetch_face_landmarker.py   # models/face_landmarker.task (needed for live gaze)
+playwright install chromium               # URL capture + PDF rendering
 
 cd backend
-python -m api.init_db --demo-user       # create the SQLite schema
+python -m api.init_db --demo-user         # creates demo@example.com / demo-password-123
 uvicorn api.main:app --reload --port 8000
 ```
 
-> The run command is `cd backend && uvicorn api.main:app`, **not**
-> `cd backend/api && uvicorn main:app`. `backend/api` is a package now, and has
-> to be: several backend packages define a `schemas.py`, and running from
-> inside the directory puts `api/schemas.py` where it can shadow
-> `attribution`'s or `gaze_estimation`'s.
+Run the API from `backend/` as `uvicorn api.main:app`, not from inside `backend/api`.
+Several packages define a `schemas.py`, and running from inside would shadow them.
+`GET http://localhost:8000/health` reports whether live capture is available.
 
-To reproduce an exact environment (pilot study, paper numbers) use
-`pip install -r requirements.lock.txt` instead of `requirements.txt`.
+### 2. Frontend
 
-**Model assets are gitignored and fetched separately:**
-
-| Asset | How |
-|---|---|
-| `models/face_landmarker.task` | `python scripts/fetch_face_landmarker.py` |
-| `models/pupil_yolo_final.pt` | Copy from Drive — **the** trained YOLOv8n detector, the one behind the benchmark table above |
-| `models/pupil_smoketest.pt` | `python scripts/make_smoketest_detector.py` — optional stand-in, see below |
-
-Without them the API still starts and every test suite still passes (all are
-loaded lazily); only live capture is unavailable. `GET /health` reports
-`cv_available` so you can tell which state you're in.
-
-**Live gaze does not use the pupil detector.** The live pipeline takes the
-pupil point from MediaPipe's iris landmarks and regresses gaze from
-landmark features: iris position relative to the eye corners, MediaPipe's
-`eyeLook*` blendshapes and head pose. It needs only `face_landmarker.task`.
-YOLO on a ~30 px webcam eye crop is out of domain for an LPW-trained model,
-and with it in the loop the first real calibration had no usable gaze
-signal (437 px median error). To run the detector live for the iris-vs-YOLO
-ablation, set `FIXATION_PUPIL_SOURCE=fused` (blend) or `yolo` (detector
-only). Calibration now ends with a 5-dot accuracy check, and a session
-refuses a calibration whose check error exceeds 15% of the screen diagonal.
-
-**If you don't have Drive access**, `scripts/make_smoketest_detector.py` trains a
-small pupil detector on synthetic drawn eyes in about a minute on CPU, so the
-live pipeline can be run and tested end to end. `backend/cv` picks weights in
-this order — real detector, `$FIXATION_PUPIL_WEIGHTS`, smoke-test stand-in —
-so dropping `pupil_yolo_final.pt` into `models/` silently upgrades everything.
-
-> ⚠️ **The smoke-test model is not a measurement instrument.** It was trained on
-> ellipses, not eyes. `PupilDetector.is_smoketest` flags when it's in use.
-> Never report numbers from it — the benchmark table comes from
-> `pupil_yolo_final.pt` and nothing else.
-
-**Known Windows setup wrinkles**
-- `pip check` reports *"ultralytics requires opencv-python, which is not installed"*. Expected — mediapipe needs `opencv-contrib-python`, which is a strict superset and satisfies both. Installing `opencv-python` alongside it writes two versions into the same `cv2/` directory and breaks the import. Leave it as is.
-- `weasyprint` needs native GTK libraries pip cannot install. **This no longer blocks PDF reports**: `backend/reports/pdf_backends.py` falls back to headless Chromium, which the project already installs for `backend/render`. Install the [GTK3 runtime](https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer) only if you want WeasyPrint's exact rendering.
-
-### Frontend
 ```bash
-cd frontend
+cd frontend-new
 npm install
-npm run dev
-```
-Open the printed URL (usually `http://localhost:5173`).
-
-### Run the agent chain against mock data
-```bash
-cd backend/agents
-python3 test_agents.py      # test suite (includes the LLM-mode tests, with a fake client)
-python3 orchestrator.py     # runs mock sessions, prints JSON
+npm run dev                               # http://localhost:5180
 ```
 
-### Optional: LLM-written findings (Groq or Claude)
-By default all four agents are rule-based: no key, no network, fully
-deterministic. Set an API key and agents 1–3 also use an LLM to write from the
-same metrics:
+The dev server proxies `/api` and `/health` to `localhost:8000`.
 
-| Agent | Rules decide (unchanged) | The LLM adds |
+### 3. Try it
+
+Open <http://localhost:5180>, sign in with `demo@example.com` / `demo-password-123`
+(or create an account), complete the camera setup, and run a test.
+
+> Use Chrome or Edge and allow camera access. Sit about an arm's length from the
+> screen with even light on your face and keep your head still. The accuracy check
+> tells you if a second try is needed.
+
+---
+
+## Configuration
+
+All settings are optional environment variables.
+
+| Variable | Purpose | Default |
 |---|---|---|
-| 1 · Behaviour | findings, first/most-attended, ignored elements | a plain-English account of the session |
-| 2 · Evaluation | heuristic + severity of every issue | a page-specific explanation per issue |
-| 3 · Recommendation | the template library (fallback) | one specific fix per issue, naming the element |
-| 4 · Critic | **always deterministic, never calls the LLM** | — |
+| `FIXATION_SECRET_KEY` | JWT signing key (set this for any deployment) | generated into `backend/api/.secret_key` |
+| `FIXATION_TOKEN_TTL_MINUTES` | Login session length | `720` |
+| `FIXATION_DATA_DIR` | Where gaze streams, captures and reports are stored | `backend/api/session_data` |
+| `GROQ_API_KEY` | Enables LLM writing via Groq (free tier) | off |
+| `ANTHROPIC_API_KEY` | Enables LLM writing via Claude | off |
+| `GAZELENS_LLM_PROVIDER` | `groq` or `anthropic` when both keys are set | Claude if both set |
+| `GAZELENS_LLM_MODEL` | Override the provider's model | `openai/gpt-oss-120b` / `claude-opus-5-5` |
+| `GAZELENS_LLM_EFFORT` | `low` / `medium` / `high` | `medium` |
+| `GAZELENS_LLM` | `off` forces the rule-based agents even with a key | on when a key is set |
+| `FIXATION_PUPIL_SOURCE` | `iris` (default), `fused` or `yolo`, for the detector ablation | `iris` |
+| `FIXATION_PUPIL_WEIGHTS` | Path to custom detector weights | `models/pupil_yolo_final.pt` |
 
-Every piece of LLM text comes with structured claims (`element_id`, `metric`,
-`value`). The critic recomputes each claim from the raw session metrics and
-also checks every measurement-like number in the prose ("8.4s", "2%",
-"7 fixations"); one number it can't re-derive rejects the text. A rejected fix
-lands in `recommendations_rejected` (with the reason) and the template fix for
-that issue goes through the critic instead; a rejected narrative or explanation
-is dropped. All rejections are listed in `pipeline_result["llm"]["audit"]` and
-under "How we checked" in the PDF/HTML report. Any API error, refusal or
-malformed reply falls back to the rule-based output for that step.
+**LLM mode.** Both clients are in `requirements.txt`; set a key and restart the API. Agents 1–3 then write their text with the LLM, and each
+piece of text includes structured claims. The critic recomputes every claim and every
+measurement-like number in the prose; one number it can't re-derive rejects that text,
+and the rule-based output is used instead. API errors and malformed replies also fall
+back to the rules. Each report records the mode, provider, model and an audit of
+rejections (`pipeline_result["llm"]`), shown under *How we checked* in the PDF.
 
-**Groq (free tier, used for the demo).** Create a key at
-<https://console.groq.com/keys>, then:
+---
+
+## Using GazeLens
+
+| Page | What it's for |
+|---|---|
+| **Home** | Calibration status, recent report, quick actions |
+| **New test** | Choose a sample page (live previews) or load your own website |
+| **Calibration** | 16 dots + 5-dot accuracy check, with plain-language results |
+| **Live recording** | The page with the live gaze cursor, a camera preview and notes |
+| **Report** | Verdict, accuracy ring, heatmap / eye path, attention and first-look charts, problems, fixes, reliability, PDF download |
+| **Sessions** | Every test, its status and number of problems |
+| **Gaze Map** | Heatmap, eye path and per-element charts for any finished test |
+| **Analytics** | Trends across all tests |
+| **AI Insights** | The agent pipeline with live counts, and every finding with its fix |
+| **Reports** | Gallery of reports with heatmap previews and PDF downloads |
+| **System status** | Server, face detection and calibration health |
+
+---
+
+## API overview
+
+Interactive docs at <http://localhost:8000/docs> once the API is running.
+
+| Endpoint | Description |
+|---|---|
+| `POST /api/auth/signup`, `POST /api/auth/login`, `GET /api/auth/me` | Accounts |
+| `POST /api/calibration/sessions`, `…/{id}/samples`, `…/{id}/complete` | Calibration capture |
+| `POST /api/gaze/models/{id}/train`, `…/validate`, `…/estimate` | Train, accuracy check, estimate |
+| `POST /api/render/capture` | Screenshot a URL and detect its elements |
+| `GET /api/sessions/meta/test-uis` | List the sample pages |
+| `POST /api/sessions` | Create a test (sample page or URL) |
+| `POST /api/sessions/{id}/calibration` | Link a calibration and train the gaze model |
+| `POST /api/sessions/{id}/gaze/frame` | One webcam frame → one gaze point (with scroll offset) |
+| `POST /api/sessions/{id}/finalize` | Run attribution, agents and report rendering |
+| `GET /api/sessions/{id}/report`, `/heatmap`, `/scanpath`, `/pdf` | Report data and files |
+| `GET /api/sessions`, `DELETE /api/sessions/{id}` | List and delete tests |
+| `GET /health` | Service and model status |
+
+Each backend module documents its own contract in its `CONTRACT.md`.
+
+---
+
+## Testing
+
+The backend has **707 tests** across 8 suites. None needs a webcam, model weights or
+an API key: the detector is stubbed, gaze models train on synthetic sessions and the
+LLM is faked. Each suite runs from its own folder:
 
 ```bash
-pip install groq
-export GROQ_API_KEY=gsk_...
-```
-
-The default model is `openai/gpt-oss-120b` (strict JSON-schema output). The free
-tier is rate-limited; one report is three short calls.
-
-**Claude (Anthropic).**
-
-```bash
-pip install anthropic
-export ANTHROPIC_API_KEY=sk-ant-...      # default model claude-opus-5-5
-```
-
-**Optional settings:**
-
-```bash
-export GAZELENS_LLM_PROVIDER=groq       # only needed if BOTH keys are set (else Claude wins)
-export GAZELENS_LLM_MODEL=...           # override the provider's default model
-export GAZELENS_LLM_EFFORT=medium       # low | medium | high
-export GAZELENS_LLM=off                 # force rule-based with a key set
-```
-
-Restart the API after changing these. `pipeline_result["llm"]` records the mode,
-provider and model behind each report. The code is in
-`backend/agents/llm_client.py`.
-
-**Demo without the webcam:** `cd backend/agents && python3 orchestrator.py` runs
-the mock sessions through the chain with whatever key is set. To show the critic
-rejecting fabricated numbers on demand, run `python3 test_llm_agents.py`.
-
-### Run the CV + calibration + gaze tests
-None of these need a webcam, `models/*.pt`, or mediapipe — the detector is stubbed
-and gaze estimation trains on synthetic calibration sessions.
-```bash
-cd backend/cv              && python3 test_cv.py
-cd backend/calibration     && python3 test_calibration.py
-cd backend/gaze_estimation && python3 test_gaze_estimation.py
-cd backend/attribution     && python3 test_attribution.py   # also pipes into the agent chain
-cd backend/api             && python3 test_api.py           # full session lifecycle, throwaway DB
-cd backend/render          && python3 test_render.py        # captures a local HTML fixture, no network
-```
-
-### Check live pupil detection against your own webcam
-Needs the full install above, plus `face_landmarker.task` and *some* pupil
-weights (`pupil_yolo_final.pt` from Drive, or the smoke-test stand-in).
-```bash
-cd backend/cv
-python3 webcam_demo.py            # press q to quit
-python3 webcam_demo.py --headless # no window, prints FPS + detection rate
-```
-
-### Generate a sample UX report
-```bash
-cd backend/reports
-python3 report_generator.py
-# outputs to backend/reports/generated/  (HTML + PDF + heatmap PNG)
-```
-PDF rendering tries WeasyPrint, then headless Chromium. The returned dict
-carries `pdf_backend` so you know which produced the file. HTML is always
-written first, so a machine with neither backend still gets a readable report.
-
-### Run the detector benchmark
-```bash
-python evaluation/evaluate.py --model frcnn --weights runs/frcnn/frcnn_final.pth
-python evaluation/evaluate.py --model ssd   --weights runs/ssd/ssd_final.pth
-yolo val model=models/pupil_yolo_final.pt data=configs/lpw.yaml
-python evaluation/compare_models.py   # consolidates all 3 into runs/eval/final_comparison.csv
+cd backend/agents          && python test_agents.py           #  89  agents, gate, consolidation
+cd backend/agents          && python test_llm_agents.py       #  37  LLM mode + critic rejections
+cd backend/api             && python test_api.py              # 141  full session lifecycle
+cd backend/attribution     && python test_attribution.py      #  95  fixations → metrics
+cd backend/calibration     && python test_calibration.py      #  76  capture + quality
+cd backend/cv              && python test_cv.py               #  73  landmarks + pupil
+cd backend/gaze_estimation && python test_gaze_estimation.py  # 141  models, selection, accuracy check
+cd backend/render          && python test_render.py           #  55  URL capture (local fixture)
 ```
 
 ---
 
-## Contributing
+## Developer tools
 
 ```bash
-git checkout -b <yourname>/<feature>   # e.g. sarah/calibration
-# ... do the work, commit normally ...
-git push -u origin <yourname>/<feature>
+# Compare gaze model variants on every saved calibration's accuracy-check dots
+python scripts/evaluate_gaze_sessions.py
+
+# Re-render existing reports after changing the visuals or the PDF template
+cd backend && python -m api.rerender_reports
+
+# Run the agent chain on mock sessions (uses an LLM if a key is set)
+cd backend/agents && python orchestrator.py
+
+# Try live landmark + pupil detection against your webcam
+cd backend/cv && python webcam_demo.py
+
+# Detector benchmark
+python evaluation/evaluate.py --model frcnn --weights runs/frcnn/frcnn_final.pth
+python evaluation/evaluate.py --model ssd   --weights runs/ssd/ssd_final.pth
+yolo val model=models/pupil_yolo_final.pt data=configs/lpw.yaml
+python evaluation/compare_models.py
 ```
-Open a PR into `main` rather than pushing directly — most open modules above are independent of each other, so conflicts should be rare, but PRs keep the history reviewable.
+
+Model weights and datasets are kept out of git:
+
+| Asset | How to get it |
+|---|---|
+| `models/face_landmarker.task` | `python scripts/fetch_face_landmarker.py` (required for live gaze) |
+| `models/pupil_yolo_final.pt` | Team Drive (only for the detector ablation and benchmark) |
+| `models/pupil_smoketest.pt` | `python scripts/make_smoketest_detector.py`, a stand-in for tests (never report numbers from it) |
+
+---
+
+## Limitations
+
+- **Accuracy is webcam-grade.** ~65 px median error is enough to tell which button,
+  image or heading someone looked at, not which word. Findings on elements smaller
+  than the measured error are marked as indicative.
+- **The accuracy figures come from one participant.** A multi-participant pilot study
+  is the next step; see [OPEN_ITEMS.md](OPEN_ITEMS.md).
+- **Head movement after calibration lowers accuracy.** The app warns when you've
+  moved, and recalibrating fixes it.
+- **Captured websites are static snapshots**, and their element types are inferred
+  from the DOM rather than designed. Reports say how much was guessed.
+- **Not yet deployed.** It runs locally; webcam access needs HTTPS in production.
 
 ---
 
 ## Roadmap
 
-1. ~~Wire `models/pupil_yolo_final.pt` into a live webcam loop (`backend/cv/`).~~ ✅
-2. ~~Build the calibration data-collection endpoint (`backend/calibration/`).~~ ✅ — still needs its request/response field names reconciled with `Calibration.jsx` once the frontend is pushed; see `backend/calibration/CONTRACT.md`.
-3. ~~Train the gaze regression model from calibration data (`backend/gaze_estimation/`).~~ ✅ — accuracy verified against synthetic sessions; needs re-checking against a real participant once one exists.
-4. ~~Build the UI attribution + metrics engine (`backend/attribution/`).~~ ✅ — verified end-to-end into the agent chain against hand-scripted gaze; see `backend/attribution/CONTRACT.md`.
-5. Build the 5 real test UI pages with bounding-box configs (`test_uis/`).
-6. ~~Wire real session/report endpoints into `backend/api/`.~~ ✅ — the full pipeline now runs end to end through the API; see `backend/api/CONTRACT.md`.
-7. Run the participant pilot study; finalize experiments for the paper.
+- [x] Webcam gaze pipeline with calibration, accuracy check and quality gate
+- [x] Gaze-to-element attribution and metrics
+- [x] Four-agent analysis with a deterministic critic
+- [x] Optional LLM writing (Groq / Claude) verified by the critic
+- [x] Arbitrary-URL testing with full-page scrolling
+- [x] Heatmap, eye path and branded PDF reports
+- [x] Web app: landing, sessions, report, gaze map, analytics, AI insights
+- [ ] Multi-participant pilot study and results
+- [ ] Multi-participant studies in the app (aggregate several people on one page)
+- [ ] Deployment (HTTPS hosting), Docker and CI
+- [ ] Head-movement compensation during sessions
+- [ ] Password reset, account settings and "delete my data"
 
 ---
 
-## Publication target
+## Team and contributing
 
-Best fit: **ETTAC 2026** (Second International Workshop on Eye Tracking Techniques, Applications and Challenges), held with **ICPR 2026** in Lyon, August 21 2026. Scope directly covers gaze detection, gaze-based HCI, eye tracking + AI/LLMs, and usability inspection.
+GazeLens is a capstone project by a five-member team.
 
----
+<!-- Team: add each member's name, role and GitHub profile below. -->
 
-## License
+| Member | Area |
+|---|---|
+| Nishtha Goyal | |
+| Eva Singh | |
+| arshia080 | |
+| | |
+| | |
 
-*(add license here)*
+**Contributing:** create a branch (`git checkout -b <name>/<feature>`), keep the
+module's tests passing, and open a pull request into `main`.
+
+**Research target:** ETTAC 2026 (Eye Tracking Techniques, Applications and
+Challenges), held with ICPR 2026.
+
+**License:** not yet chosen. All rights reserved by the authors until one is added.
