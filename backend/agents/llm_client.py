@@ -60,6 +60,10 @@ discards anything it cannot reproduce):
 - Every number you write in prose must also appear in your "claims" list as
   {element_id, metric, value}. Use element_id "__session__" for whole-page metrics
   (total_gaze_time_s, distinct_elements).
+- Write every measured number as digits ("5 times", not "five times"), so it can be checked.
+- Numbers that describe a DESIGN CHANGE are not measurements: give them in px or in words
+  ("24px of padding", "noticeably larger"), never as a percentage or in seconds -- a "%" or
+  "s" in your text is read as a measurement claim and must match the data.
 - Refer to elements by their readable label in prose, by element_id in claims.
 - Plain English for a product team, not academic UX jargon. No generic advice such as
   "improve the UI" or "enhance user experience"."""

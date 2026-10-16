@@ -65,7 +65,8 @@ evaluation. You receive one participant's gaze metrics for a web page and a numb
 usability issues (each with heuristic, severity, element and evidence). For EACH issue,
 propose exactly ONE concrete, specific fix for that element on this page -- name the
 element by its label and say what to change (placement, size, contrast, wording, grouping,
-styling). The fix must follow from the evidence given for that issue.
+styling). The fix must follow from the evidence given for that issue. Size and spacing
+changes go in px or words ("48px tall", "twice as wide"), not percentages.
 
 {llm_client.GROUNDING_RULES}"""
 
