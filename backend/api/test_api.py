@@ -688,6 +688,67 @@ _html = Path(_rendered["html_path"]).read_text()
 check("report uses readable names", "Area A" in _html)
 check("report shows per-element attention bars", "Share of attention" in _html and "bar-fill" in _html)
 
+print("\ndeployment config -- login rate limit, CORS, production secret")
+from fastapi.testclient import TestClient                          # noqa: E402
+
+from api import ratelimit, security                                # noqa: E402
+from api.main import CORS_ORIGINS, app                             # noqa: E402
+
+_client = TestClient(app)
+_limiter = ratelimit.login_limiter
+_saved_max = _limiter.max_failures
+_limiter.max_failures = 3
+_limiter.reset("testclient")
+_bad = {"email": "alice@example.com", "password": "wrong-password"}
+_good = {"email": "alice@example.com", "password": "alice-password-1"}
+_codes = [_client.post("/api/auth/login", json=_bad).status_code for _ in range(3)]
+check("failed logins under the limit are plain 401s", _codes == [401, 401, 401])
+_blocked = _client.post("/api/auth/login", json=_good)
+check("over the limit -> 429, even with the right password", _blocked.status_code == 429)
+check("429 says when to retry", int(_blocked.headers.get("retry-after", "0")) > 0)
+_limiter.reset("testclient")
+check("after the window, the right password works",
+      _client.post("/api/auth/login", json=_good).status_code == 200)
+_client.post("/api/auth/login", json=_bad)
+_client.post("/api/auth/login", json=_bad)
+_client.post("/api/auth/login", json=_good)
+check("a successful login clears the failure count",
+      _limiter.retry_after("testclient") == 0 and not _limiter._failures.get("testclient"))
+_limiter.max_failures = _saved_max
+
+_clock = [0.0]
+_window = ratelimit.FailureLimiter(2, 60, clock=lambda: _clock[0])
+_window.record_failure("ip")
+_window.record_failure("ip")
+check("limiter blocks at max failures", _window.retry_after("ip") == 60)
+_clock[0] = 61.0
+check("failures age out of the sliding window", _window.retry_after("ip") == 0)
+
+_origin = CORS_ORIGINS[0]
+_pre = _client.options("/api/auth/login", headers={"Origin": _origin,
+                                                   "Access-Control-Request-Method": "POST"})
+check("CORS preflight allowed for a configured origin",
+      _pre.headers.get("access-control-allow-origin") == _origin)
+_pre = _client.options("/api/auth/login", headers={"Origin": "https://evil.example",
+                                                   "Access-Control-Request-Method": "POST"})
+check("CORS preflight refused for an unknown origin",
+      "access-control-allow-origin" not in _pre.headers)
+
+_saved_env = {k: os.environ.pop(k, None)
+              for k in ("GAZELENS_SECRET_KEY", "FIXATION_SECRET_KEY", "GAZELENS_ENV")}
+os.environ["GAZELENS_ENV"] = "production"
+try:
+    security._load_secret()
+    check("production without a secret key refuses to start", False)
+except RuntimeError:
+    check("production without a secret key refuses to start", True)
+os.environ["GAZELENS_SECRET_KEY"] = "x" * 48
+check("GAZELENS_SECRET_KEY is used when set", security._load_secret() == "x" * 48)
+for _k, _v in _saved_env.items():
+    os.environ.pop(_k, None)
+    if _v is not None:
+        os.environ[_k] = _v
+
 print(f"\n{'=' * 40}\n{passed} passed, {failed} failed\n{'=' * 40}")
 
 if failed:

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 import { startSession, linkCalibration, estimateGazeFrame, finalizeSession, listTestUis } from "../api/client.js";
 import { renderUrl } from "../api/render.js";
+import { apiUrl } from "../api/base.js";
 import { CAMERA_CONSTRAINTS } from "../api/calibration.js";
 import { GazeStabilizer } from "../lib/gazeStabilizer.js";
 import { motion } from "framer-motion";
@@ -367,7 +368,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
                     >
                       <div className="relative aspect-[16/10] overflow-hidden rounded-[14px] border border-white/10 bg-white">
                         <iframe
-                          src={`/test-uis/${pageId}/index.html`}
+                          src={apiUrl(`/test-uis/${pageId}/index.html`)}
                           title={`${info.name} preview`}
                           tabIndex={-1}
                           loading="lazy"
@@ -522,7 +523,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
                 <p className="text-[15px] text-text-secondary">We couldn't get a picture of {renderedPage.url}.</p>
               </div>
             ) : (
-              <iframe key={selectedPage} src={`/test-uis/${selectedPage}/index.html`} title={`Test page: ${pageLabel}`} className="h-full w-full border-0" />
+              <iframe key={selectedPage} src={apiUrl(`/test-uis/${selectedPage}/index.html`)} title={`Test page: ${pageLabel}`} className="h-full w-full border-0" />
             )}
             {mode === "url" && renderedPage?.screenshot_base64 && (
               <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-bg/75 px-3 py-1 text-[12px] text-text-secondary backdrop-blur">

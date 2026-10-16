@@ -43,7 +43,8 @@ MIN_SECRET_BYTES = 32
 
 
 def _load_secret() -> str:
-    """Signing key: environment first, then a persisted local file.
+    """Signing key: $GAZELENS_SECRET_KEY (or legacy $FIXATION_SECRET_KEY), then a
+    persisted local file -- the file only outside production.
 
     There is deliberately no hardcoded default -- it would end up in the pilot
     deployment, where it would let anyone mint a token for any participant.
@@ -58,15 +59,23 @@ def _load_secret() -> str:
     If the file can't be written (read-only checkout, locked-down CI) it falls
     back to the old per-process key and says so.
     """
-    key = os.environ.get("FIXATION_SECRET_KEY")
+    key = os.environ.get("GAZELENS_SECRET_KEY") or os.environ.get("FIXATION_SECRET_KEY")
     if key:
         if len(key.encode()) < MIN_SECRET_BYTES:
             warnings.warn(
-                f"FIXATION_SECRET_KEY is only {len(key.encode())} bytes; "
+                f"GAZELENS_SECRET_KEY is only {len(key.encode())} bytes; "
                 f"HS256 wants at least {MIN_SECRET_BYTES}.",
                 RuntimeWarning, stacklevel=2,
             )
         return key
+
+    # In production a generated key is a misconfiguration, not a convenience:
+    # it lives on the container's disk and disappears with it.
+    if os.environ.get("GAZELENS_ENV", "").lower() == "production":
+        raise RuntimeError(
+            "GAZELENS_ENV=production but GAZELENS_SECRET_KEY is not set. "
+            "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+        )
 
     try:
         if SECRET_FILE.exists():
@@ -82,7 +91,7 @@ def _load_secret() -> str:
         except OSError:
             pass
         warnings.warn(
-            f"FIXATION_SECRET_KEY was not set, so a key was generated and "
+            f"GAZELENS_SECRET_KEY was not set, so a key was generated and "
             f"saved to {SECRET_FILE} (gitignored). Tokens will survive "
             f"restarts. For a deployment, set the environment variable "
             f"instead and delete that file.",
@@ -91,7 +100,7 @@ def _load_secret() -> str:
         return generated
     except OSError as exc:
         warnings.warn(
-            f"FIXATION_SECRET_KEY is not set and {SECRET_FILE} could not be "
+            f"GAZELENS_SECRET_KEY is not set and {SECRET_FILE} could not be "
             f"written ({exc}) -- falling back to a random per-process key. "
             f"Tokens will be invalidated on every restart.",
             RuntimeWarning, stacklevel=2,

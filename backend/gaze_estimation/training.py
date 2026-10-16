@@ -14,6 +14,7 @@ Training a session is a few closed-form solves over at most a few hundred
 rows -- milliseconds on CPU, no GPU anywhere in the path.
 """
 
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -33,7 +34,10 @@ from .features import (
 )
 from .model import GazeModel
 
-MODEL_DIR = Path(__file__).resolve().parent / "gaze_models"
+# Overridable so a container can keep trained models on a mounted volume.
+MODEL_DIR = Path(
+    os.environ.get("GAZELENS_GAZE_MODEL_DIR", Path(__file__).resolve().parent / "gaze_models")
+)
 
 
 @dataclass

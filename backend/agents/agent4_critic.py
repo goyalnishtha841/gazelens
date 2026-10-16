@@ -51,7 +51,7 @@ def _repeat_jumps(scanpath: list[str]) -> int:
     counted fresh here rather than taken from Agent 1."""
     jumps: dict[str, int] = {}
     seen: set[str] = set()
-    for prev, element_id in zip(scanpath, scanpath[1:]):
+    for prev, element_id in zip(scanpath, scanpath[1:], strict=False):
         if element_id != prev and element_id in seen:
             jumps[element_id] = jumps.get(element_id, 0) + 1
         seen.add(element_id)

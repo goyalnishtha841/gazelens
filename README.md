@@ -259,7 +259,6 @@ gazelens/
 ├── scripts/              model asset fetchers, gaze evaluation, API client generator
 ├── evaluation/, training/, configs/   detector training and benchmark
 ├── docs/screenshots/     images used in this README
-├── frontend/             earlier prototype UI (superseded by frontend-new)
 └── OPEN_ITEMS.md         open research items with concrete next steps
 ```
 
@@ -337,6 +336,9 @@ All settings are optional environment variables.
 | `GAZELENS_LLM` | `off` forces the rule-based agents even with a key | on when a key is set |
 | `FIXATION_PUPIL_SOURCE` | `iris` (default), `fused` or `yolo`, for the detector ablation | `iris` |
 | `FIXATION_PUPIL_WEIGHTS` | Path to custom detector weights | `models/pupil_yolo_final.pt` |
+
+Deployment settings (CORS origins, login rate limit, storage paths) are listed in
+[DEPLOY.md](DEPLOY.md) and [.env.example](.env.example).
 
 **LLM mode.** Both clients are in `requirements.txt`; set a key and restart the API. Agents 1–3 then write their text with the LLM, and each
 piece of text includes structured claims. The critic recomputes every claim and every
@@ -450,7 +452,8 @@ Model weights and datasets are kept out of git:
   moved, and recalibrating fixes it.
 - **Captured websites are static snapshots**, and their element types are inferred
   from the DOM rather than designed. Reports say how much was guessed.
-- **Not yet deployed.** It runs locally; webcam access needs HTTPS in production.
+- **Not yet deployed.** Deployment config is ready (Vercel + Render, see [DEPLOY.md](DEPLOY.md));
+  webcam access needs HTTPS in production.
 
 ---
 

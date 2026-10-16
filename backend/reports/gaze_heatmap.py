@@ -331,7 +331,6 @@ def generate_gaze_path(
     background, w, h = _load(screenshot_path, size)
     radius = max(40.0, 0.9 * (error_frac or 0.05) * w)
     fixes = detect_fixations(gaze_points, (w, h), radius)
-    total = len(fixes)
     fixes = fixes[:max_steps]
 
     footer_in = 0.6

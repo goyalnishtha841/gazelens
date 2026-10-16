@@ -68,7 +68,7 @@ export default function SystemStatus({ hasCalibration, onNavigate }) {
               </span>
             )}
           </div>
-          {error && <p className="mt-4 rounded-[14px] border border-coral/40 bg-coral/10 px-4 py-3 text-[15px] text-text-primary">We can't reach the server. Is it running on port 8000?</p>}
+          {error && <p className="mt-4 rounded-[14px] border border-coral/40 bg-coral/10 px-4 py-3 text-[15px] text-text-primary">We can't reach the server. Is the API running?</p>}
           {!error && !health && (
             <div className="flex justify-center py-10"><IrisMark size={36} wander /></div>
           )}

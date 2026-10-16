@@ -31,6 +31,7 @@ Mounted routers:
     /api/render         arbitrary-URL screenshot + element detection
 """
 
+import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -74,11 +75,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# The Vite dev server runs on a different origin, so the browser preflights
-# every POST. Dev origins only -- tighten before this is exposed anywhere.
+# Browser origins allowed to call the API cross-origin. Only needed when the
+# frontend is served from a different origin than the API (e.g. Vercel ->
+# Render); the Vite proxy and the Docker nginx proxy are same-origin and never
+# hit CORS. Comma-separated; defaults to the local Vite dev server.
+_DEV_ORIGINS = "http://localhost:5180,http://127.0.0.1:5180,http://localhost:5173"
+CORS_ORIGINS = [
+    o.strip().rstrip("/")
+    for o in os.environ.get("GAZELENS_CORS_ORIGINS", _DEV_ORIGINS).split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

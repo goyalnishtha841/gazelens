@@ -1,0 +1,4 @@
+# Server deps plus what the test suites and linting need.
+-r requirements-server.txt
+httpx          # fastapi.testclient
+ruff

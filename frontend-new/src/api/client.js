@@ -18,7 +18,9 @@
  *   GET    /api/sessions/meta/test-uis      which ui_page values are valid
  */
 
-const BASE = "/api/sessions";
+import { apiUrl } from "./base.js";
+
+const BASE = apiUrl("/api/sessions");
 
 function authHeaders(token) {
   return { Authorization: `Bearer ${token}` };
@@ -213,6 +215,6 @@ export async function deleteSession(token, sessionId) {
  * (backend/api/main.py). Unauthenticated, like the route itself.
  */
 export async function getHealth() {
-  const res = await fetch("/health");
+  const res = await fetch(apiUrl("/health"));
   return handleResponse(res);
 }
