@@ -124,13 +124,17 @@ and hands the work to a worker thread — same fix, same reason as
 
 ## 6. SSRF
 
-`POST /api/render/capture` fetches a caller-supplied URL from the server.
-Loopback, private, link-local and reserved addresses are refused.
+`POST /api/render/capture` (and a `mode="url"` session) fetches a
+caller-supplied URL from the server, via `capture_page(block_private=True)`.
+Loopback, private, link-local, reserved, multicast and unspecified addresses
+are refused — for the URL as given, for **every redirect hop**, and for every
+subresource the page loads. Playwright's route handler only sees the first
+URL of a redirect chain, so the handler follows redirects itself and checks
+each hop before requesting it.
 
-**That check is a guardrail, not a security boundary** — DNS can still resolve
-a public name to a private address (rebinding), and the check happens before
-Chromium does its own resolution. Keep this endpoint behind auth and off the
-public internet.
+**That check is a guardrail, not a security boundary** — DNS can still answer
+differently between our lookup and Chromium's (rebinding). The endpoint
+requires a logged-in user; keep it off the public internet as well.
 
 ## 7. How `backend/api` uses it
 

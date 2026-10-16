@@ -1,11 +1,19 @@
 /**
- * calibration.js -- ported unchanged from frontend/src/api/calibration.js.
- * Same backend contract (backend/calibration/routes.py).
+ * calibration.js -- ported from frontend/src/api/calibration.js. Same backend
+ * contract (backend/calibration/routes.py).
+ *
+ * Every calibration and gaze-model route requires a bearer token, and a
+ * calibration is visible only to the user who started it -- callers pass the
+ * `token` from useAuth() first, same as client.js.
  */
 
 import { apiUrl } from "./base.js";
 
 const BASE = apiUrl("/api/calibration");
+
+function authHeaders(token) {
+  return { Authorization: `Bearer ${token}` };
+}
 
 async function handleResponse(res) {
   if (!res.ok) {
@@ -19,10 +27,10 @@ async function handleResponse(res) {
   return res.json();
 }
 
-export async function startCalibration({ participantId, pattern = 16, screenWidth, screenHeight, samplesPerPoint }) {
+export async function startCalibration(token, { participantId, pattern = 16, screenWidth, screenHeight, samplesPerPoint }) {
   const res = await fetch(`${BASE}/sessions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify({
       participant_id: participantId,
       pattern,
@@ -34,10 +42,10 @@ export async function startCalibration({ participantId, pattern = 16, screenWidt
   return handleResponse(res);
 }
 
-export async function submitCalibrationSamples(sessionId, pointIndex, frames, targetX, targetY) {
+export async function submitCalibrationSamples(token, sessionId, pointIndex, frames, targetX, targetY) {
   const res = await fetch(`${BASE}/sessions/${sessionId}/samples`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify({
       point_index: pointIndex,
       frames,
@@ -48,13 +56,16 @@ export async function submitCalibrationSamples(sessionId, pointIndex, frames, ta
   return handleResponse(res);
 }
 
-export async function completeCalibration(sessionId) {
-  const res = await fetch(`${BASE}/sessions/${sessionId}/complete`, { method: "POST" });
+export async function completeCalibration(token, sessionId) {
+  const res = await fetch(`${BASE}/sessions/${sessionId}/complete`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
   return handleResponse(res);
 }
 
-export async function getCalibrationSession(sessionId) {
-  const res = await fetch(`${BASE}/sessions/${sessionId}`);
+export async function getCalibrationSession(token, sessionId) {
+  const res = await fetch(`${BASE}/sessions/${sessionId}`, { headers: authHeaders(token) });
   return handleResponse(res);
 }
 
@@ -64,10 +75,10 @@ export async function getCalibrationSession(sessionId) {
  * trains the model on first call, scores this dot, and returns the running
  * summary (median_error_px, verdict: good | fair | poor | insufficient).
  */
-export async function validateGaze(sessionId, pointIndex, frames, targetX, targetY) {
+export async function validateGaze(token, sessionId, pointIndex, frames, targetX, targetY) {
   const res = await fetch(apiUrl(`/api/gaze/models/${sessionId}/validate`), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify({ point_index: pointIndex, frames, target_x: targetX, target_y: targetY }),
   });
   return handleResponse(res);

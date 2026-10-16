@@ -647,6 +647,9 @@ def capture_page(
             viewport=viewport,
             screenshot_path=screenshot_path,
             timeout_ms=timeout_ms,
+            # A participant-supplied URL, fetched from this server: same
+            # private-address guard as /api/render/capture.
+            block_private=True,
         )
     except RenderUnavailable as exc:
         return {"ok": False, "reason": f"Chromium unavailable: {exc}",

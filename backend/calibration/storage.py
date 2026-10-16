@@ -119,6 +119,7 @@ class CalibrationStore:
                             # take down the whole listing
             out.append({
                 "session_id": d.get("session_id"),
+                "owner_id": d.get("owner_id"),
                 "participant_id": d.get("participant_id"),
                 "pattern": d.get("pattern"),
                 "status": d.get("status"),

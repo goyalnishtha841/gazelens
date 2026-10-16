@@ -208,7 +208,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
     setRenderError(null);
     setRenderedPage(null);
     try {
-      const result = await renderUrl(urlInput.trim());
+      const result = await renderUrl(token, urlInput.trim());
       setRenderedPage(result);
     } catch (err) {
       setRenderError(err.message || "Couldn't render that URL");

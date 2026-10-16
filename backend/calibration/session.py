@@ -189,6 +189,10 @@ class CalibrationSession:
     # heavily glasses- and outdoor-light-dependent. A single rejected_frames
     # total collapses that distinction; this dict keeps it.
     rejection_reasons: Dict[str, int] = field(default_factory=dict)
+    # The backend/api user who started this session. None on files written
+    # before ownership was recorded -- see api/deps.owned_calibration for how
+    # those legacy sessions are scoped.
+    owner_id: Optional[str] = None
 
     # ------------------------------------------------------------------
 
@@ -200,6 +204,7 @@ class CalibrationSession:
         screen_width: int = 1920,
         screen_height: int = 1080,
         samples_per_point: int = DEFAULT_SAMPLES_PER_POINT,
+        owner_id: Optional[str] = None,
     ) -> "CalibrationSession":
         if pattern not in PATTERNS:
             raise ValueError(
@@ -213,6 +218,7 @@ class CalibrationSession:
             screen_width=screen_width,
             screen_height=screen_height,
             samples_per_point=samples_per_point,
+            owner_id=owner_id,
         )
 
     @property
@@ -343,6 +349,7 @@ class CalibrationSession:
     def to_dict(self) -> dict:
         return {
             "session_id": self.session_id,
+            "owner_id": self.owner_id,
             "participant_id": self.participant_id,
             "pattern": self.pattern,
             "screen_width": self.screen_width,
@@ -372,6 +379,7 @@ class CalibrationSession:
             status=d.get("status", STATUS_IN_PROGRESS),
             rejected_frames=d.get("rejected_frames", 0),
             rejection_reasons=dict(d.get("rejection_reasons", {})),
+            owner_id=d.get("owner_id"),
         )
         # "points" and "quality" are derived on read, not restored -- keeping
         # them in the file makes it readable by hand, but the objects stay

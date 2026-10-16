@@ -18,12 +18,20 @@ inputs rather than assertions that the code agrees with itself.
 
 import asyncio
 import json
+import os
 import sys
+import tempfile
 from dataclasses import asdict
 from pathlib import Path
 
 # backend/ on the path so this runs directly, the way test_agents.py does.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# routes pulls in api.deps for its auth dependency, which reads these at
+# import: a throwaway DB and key so this suite never touches backend/api's.
+os.environ.setdefault("FIXATION_DATABASE_URL",
+                      f"sqlite:///{tempfile.mkdtemp(prefix='attr_auth_')}/test.db")
+os.environ.setdefault("FIXATION_SECRET_KEY", "test-only-key-not-for-deployment-0123456789abcdef")
 
 from attribution import routes                                   # noqa: E402
 from attribution.agents_schema import SessionMetrics             # noqa: E402

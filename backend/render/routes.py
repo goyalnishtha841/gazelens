@@ -9,26 +9,37 @@ layout can be previewed before a participant is sat in front of it -- which
 matters, because auto-detection is heuristic and worth eyeballing first.
 
 SSRF NOTE: this endpoint fetches a URL the caller supplies, from the server.
-Loopback and private ranges are refused (see _reject_private) so it can't be
-used to reach services on the study machine's network. That check is a
-guardrail, not a security boundary -- DNS can still resolve a public name to a
-private address. Keep this endpoint behind auth and off the public internet.
+Loopback and private ranges are refused -- for the URL as typed (see
+_reject_private) and, inside Chromium, for every redirect hop and subresource
+(capture_page(block_private=True)) -- so it can't be used to reach services on
+the study machine's network. That check is a guardrail, not a security
+boundary -- DNS can still resolve a public name to a private address -- so
+the router requires a logged-in user, and it belongs off the public internet.
 """
 
 import base64
-import ipaddress
-import socket
 import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional
-from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from .capture import DEFAULT_VIEWPORT, RenderUnavailable, capture_page
+from api.deps import get_current_user
 
-router = APIRouter(prefix="/api/render", tags=["render"])
+from .capture import (
+    DEFAULT_VIEWPORT,
+    PrivateAddressBlocked,
+    RenderUnavailable,
+    capture_page,
+    private_address_reason,
+)
+
+router = APIRouter(
+    prefix="/api/render",
+    tags=["render"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 class CaptureRequest(BaseModel):
@@ -61,28 +72,13 @@ class CaptureResponse(BaseModel):
 
 
 def _reject_private(url: str) -> None:
-    """Refuse loopback/private/link-local targets."""
-    host = (urlparse(url).hostname or "").strip("[]")
-    if not host:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="URL has no host")
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except socket.gaierror as exc:
+    """Refuse loopback/private/link-local targets before launching Chromium."""
+    reason = private_address_reason(url)
+    if reason:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"could not resolve {host!r}: {exc}",
-        ) from exc
-
-    for info in infos:
-        addr = ipaddress.ip_address(info[4][0])
-        if (addr.is_private or addr.is_loopback or addr.is_link_local
-                or addr.is_reserved):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"refusing to fetch a private/loopback address ({addr}). "
-                       f"Point this at a public URL.",
-            )
+            detail=f"{reason}. Point this at a public URL.",
+        )
 
 
 @router.post("/capture", response_model=CaptureResponse)
@@ -103,7 +99,13 @@ async def capture(payload: CaptureRequest) -> CaptureResponse:
                 viewport=(payload.viewport_width, payload.viewport_height),
                 screenshot_path=screenshot_path,
                 timeout_ms=payload.timeout_ms,
+                block_private=True,
             )
+        except PrivateAddressBlocked as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"{exc}. Point this at a public URL.",
+            ) from exc
         except RenderUnavailable as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)

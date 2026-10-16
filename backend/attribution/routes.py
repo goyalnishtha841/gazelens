@@ -18,9 +18,15 @@ would be pure overhead. This endpoint exists for the frontend, for
 re-analysing a stored session with different thresholds, and for letting the
 module be exercised independently -- which is also why the thresholds are
 request parameters rather than constants.
+
+Both routes require a logged-in user (router-level dependency): /analyze is
+unbounded CPU work on caller-supplied data, so it shouldn't be open to anyone
+who can reach the server.
 """
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from api.deps import get_current_user
 
 from .elements import ElementConfigError, build_ui_config
 from .engine import analyze_session
@@ -34,7 +40,11 @@ from .fixations import (
 from .elements import ELEMENT_TYPES, IMPORTANCE_VALUES
 from .schemas import AnalyzeRequest, AnalyzeResponse, DefaultsResponse
 
-router = APIRouter(prefix="/api/attribution", tags=["attribution"])
+router = APIRouter(
+    prefix="/api/attribution",
+    tags=["attribution"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.get("/defaults", response_model=DefaultsResponse)

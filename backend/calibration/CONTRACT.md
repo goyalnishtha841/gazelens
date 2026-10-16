@@ -60,15 +60,21 @@ POST /sessions/{id}/complete
   it already works, just chattier.
 - **Frame encoding.** Raw base64 or a full `data:image/...;base64,` URL;
   `canvas.toDataURL()` output can be posted as-is.
-- **Auth.** No auth dependency is attached — `backend/api`'s JWT code isn't
-  in the repo. When it is, add it once at the router level:
+- **Auth.** Every route (including `/patterns`) requires
+  `Authorization: Bearer <token>` from `/api/auth/login`; without one it is
+  401. A session records its creator as `owner_id` and is visible only to
+  them: anyone else gets the same 404 as an unknown id, and
+  `GET /sessions` lists only the caller's. The rule lives in
+  `api/deps.owned_calibration`.
 
-  ```python
-  app.include_router(calibration_router, dependencies=[Depends(current_user)])
-  ```
+  **Legacy files** (written before `owner_id` existed) have no owner. One is
+  reachable only by a user who already linked it to one of their own
+  `/api/sessions` sessions; it can't be claimed now by naming it in a new
+  session. An unlinked legacy calibration is unreachable over the API —
+  still on disk, and set `"owner_id"` in its JSON by hand to assign it.
 
-  `participant_id` is currently client-supplied; it should come from the JWT
-  subject once auth exists.
+  `participant_id` is still client-supplied: it labels the person being
+  calibrated, which needn't be the logged-in account.
 
 ---
 

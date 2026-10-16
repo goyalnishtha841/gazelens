@@ -386,6 +386,10 @@ Interactive docs at <http://localhost:8000/docs> once the API is running.
 | `GET /api/sessions`, `DELETE /api/sessions/{id}` | List and delete tests |
 | `GET /health` | Service and model status |
 
+Everything except signup, login and `/health` requires
+`Authorization: Bearer <token>`. Calibrations and gaze models, like sessions,
+are visible only to the user who created them.
+
 Each backend module documents its own contract in its `CONTRACT.md`.
 
 ---
