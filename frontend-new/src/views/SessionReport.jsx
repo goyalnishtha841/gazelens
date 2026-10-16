@@ -108,6 +108,8 @@ function ReportBody({ report, onBack, pdfState, onDownload }) {
       return "The gaze tracking in this session wasn't accurate enough to say which parts of the page people looked at, so GazeLens didn't draw any conclusions. Recalibrate and run it again.";
     }
     const b = pr.behavior_summary || {};
+    // LLM mode: the behaviour agent's critic-verified account
+    if (b.narrative) return b.narrative;
     const parts = [];
     if (b.first_noticed) parts.push(`People noticed ${nameOf(b.first_noticed)} first`);
     if (b.most_attended && b.most_attended !== b.first_noticed) parts.push(`spent the most time on ${nameOf(b.most_attended)}`);
@@ -521,6 +523,7 @@ export function IssueCard({ issue, nameOf, index }) {
         </div>
         <span className={`shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold ${s.soft} ${s.text}`}>{s.label}</span>
       </div>
+      {issue.explanation && <p className="mt-3 text-[15px] leading-relaxed text-text-primary/90">{issue.explanation}</p>}
       <p className="mt-3 inline-block rounded-[10px] bg-bg/60 px-3 py-2 font-mono text-[13px] leading-relaxed text-text-secondary">{issue.evidence}</p>
       {issue.also?.length > 0 && <p className="mt-3 text-[14px] text-text-secondary">Also: {issue.also.join("; ")}</p>}
       {issue.caveat && <p className="mt-2 text-[13px] italic text-text-secondary">{issue.caveat}</p>}

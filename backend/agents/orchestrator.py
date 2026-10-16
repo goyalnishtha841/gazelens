@@ -17,6 +17,7 @@ import agent2_evaluation
 import agent3_recommendation
 import agent4_critic
 import consolidate
+import llm_client
 import quality_gate
 
 
@@ -37,6 +38,10 @@ def run_pipeline(
     "issues" and "recommendations_kept" are the consolidated lists (one per
     element); "issues_raw" / "recommendations_raw" keep the agents' own
     output for audit.
+
+    "llm" says which mode ran and lists every piece of LLM text the critic
+    threw out ("audit"), with its reasons. Rule-based mode is the default;
+    see llm_client.py for how LLM mode is switched on.
     """
     verdict = quality_gate.assess(quality) if quality is not None else None
     labels = labels or {}
@@ -45,6 +50,10 @@ def run_pipeline(
         "quality": asdict(verdict) if verdict else None,
         "element_labels": {e: consolidate.readable_label(e, labels)
                            for e in session.element_type},
+        "llm": {"mode": "llm" if llm_client.enabled() else "rules",
+                "provider": llm_client.provider_name(),
+                "model": llm_client.model_name(),
+                "audit": []},
     }
 
     if verdict is not None and verdict.level == "insufficient":
@@ -59,10 +68,27 @@ def run_pipeline(
         })
         return result
 
-    behavior = agent1_behavior.analyze(session)
-    issues = agent2_evaluation.evaluate(behavior, session)
-    recommendations = agent3_recommendation.recommend_all(issues)
+    names = result["element_labels"]
+    behavior = agent1_behavior.analyze(session, names)
+    issues = agent2_evaluation.evaluate(behavior, session, names)
+    recommendations = agent3_recommendation.recommend_all(issues, session, names)
+
+    # The critic re-checks every LLM claim against the raw metrics.
+    audit = agent4_critic.audit_behavior(behavior, session)
+    audit += agent4_critic.audit_issues(issues, session)
     verified = agent4_critic.verify(recommendations, session)
+
+    # A thrown-out LLM fix stays in the rejected list; its issue still gets
+    # the template fix, which the critic checks the same way.
+    fallbacks = [agent3_recommendation.rule_based_recommend(issue)
+                 for issue, v in zip(issues, verified, strict=True) if v.source == "llm" and not v.kept]
+    for v in verified:
+        if v.source == "llm" and not v.kept:
+            audit.append({"agent": "Recommendation", "element_id": v.element_id,
+                          "text": v.recommendation, "reasons": v.evidence})
+    verified += agent4_critic.verify(fallbacks, session)
+    result["llm"]["audit"] = audit
+
     kept = [asdict(v) for v in verified if v.kept]
     rejected = [asdict(v) for v in verified if not v.kept]
     raw_issues = [asdict(i) for i in issues]

@@ -61,6 +61,10 @@ class BehaviorSummary:
     ignored_important_elements: List[str]
     attention_scattered: bool
     findings: List[BehaviorFinding] = field(default_factory=list)
+    # LLM mode only: a plain-English account of the session, and the numbers
+    # it relies on. Agent 4 clears the narrative if any number fails re-check.
+    narrative: Optional[str] = None
+    narrative_claims: List[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -71,6 +75,10 @@ class UXIssue:
     evidence: str
     heuristic: str
     element_id: str
+    # LLM mode only: why this matters on this page, in plain English. Same
+    # critic rule as the narrative -- cleared if its numbers don't re-derive.
+    explanation: Optional[str] = None
+    explanation_claims: List[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -79,6 +87,8 @@ class Recommendation:
     recommendation: str
     linked_issue: str
     element_id: str
+    source: str = "rules"     # "rules" | "llm"
+    claims: List[dict] = field(default_factory=list)  # {element_id, metric, value}, LLM only
 
 
 @dataclass
@@ -90,3 +100,4 @@ class VerifiedRecommendation:
     evidence: List[str]
     confidence: float         # 0.0 - 1.0
     kept: bool                 # False if Agent 4 rejected it
+    source: str = "rules"      # which Agent 3 mode wrote it

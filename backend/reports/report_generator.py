@@ -14,6 +14,7 @@ machine, no separate system binary to hunt down.
 """
 
 import datetime
+import html
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
@@ -66,6 +67,11 @@ def _build_narrative(pipeline_result: dict, ui_page: str) -> dict:
         sentences.append("Eyes kept jumping back and forth between the same parts, a sign the layout may be confusing.")
     if not issues:
         sentences.append("Attention went where you'd expect on this page.")
+    # LLM mode: the behaviour agent's own account replaces the templated
+    # sentences. It was already re-checked by the critic, and cleared
+    # upstream if any number in it didn't hold.
+    if behavior.get("narrative"):
+        sentences = [html.escape(behavior["narrative"])]
     if quality.get("level") == "limited":
         sentences.append("Tracking accuracy was only fair, so no finding is rated above \"worth fixing\".")
 
@@ -161,6 +167,7 @@ def _render_html(pipeline_result: dict, ui_page: str, heatmap_path: str | None,
         scanpath_path=scanpath_path,
         dwell_chart_path=dwell_chart_path,
         quality=pipeline_result.get("quality"),
+        llm=pipeline_result.get("llm") or {"mode": "rules", "audit": []},
         **narrative,
     )
 
