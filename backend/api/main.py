@@ -77,8 +77,8 @@ app = FastAPI(
 
 # Browser origins allowed to call the API cross-origin. Only needed when the
 # frontend is served from a different origin than the API (e.g. Vercel ->
-# Render); the Vite proxy and the Docker nginx proxy are same-origin and never
-# hit CORS. Comma-separated; defaults to the local Vite dev server.
+# Hugging Face Spaces); the Vite dev proxy is same-origin and never hits CORS.
+# Comma-separated; defaults to the local Vite dev server.
 _DEV_ORIGINS = "http://localhost:5180,http://127.0.0.1:5180,http://localhost:5173"
 CORS_ORIGINS = [
     o.strip().rstrip("/")
@@ -86,9 +86,14 @@ CORS_ORIGINS = [
     if o.strip()
 ]
 
+# Optional regex on top, for origins that can't be listed ahead of time --
+# e.g. Vercel preview deployments: ^https://gazelens(-[a-z0-9-]+)?\.vercel\.app$
+CORS_ORIGIN_REGEX = os.environ.get("GAZELENS_CORS_ORIGIN_REGEX") or None
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

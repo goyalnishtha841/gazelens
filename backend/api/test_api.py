@@ -37,6 +37,8 @@ sys.path.insert(0, str(BACKEND))
 _TMP = Path(tempfile.mkdtemp(prefix="fixation_api_test_"))
 os.environ["FIXATION_DATABASE_URL"] = f"sqlite:///{(_TMP / 'test.db').as_posix()}"
 os.environ["FIXATION_DATA_DIR"] = str(_TMP / "data")
+# Read by api.main at import (deployment-config section below).
+os.environ["GAZELENS_CORS_ORIGIN_REGEX"] = r"^https://gazelens(-[a-z0-9-]+)?\.vercel\.app$"
 # Rule-based agents: no network, same results whoever runs this
 # (backend/agents/test_llm_agents.py covers LLM mode with a fake client).
 os.environ["GAZELENS_LLM"] = "off"
@@ -732,6 +734,15 @@ check("CORS preflight allowed for a configured origin",
 _pre = _client.options("/api/auth/login", headers={"Origin": "https://evil.example",
                                                    "Access-Control-Request-Method": "POST"})
 check("CORS preflight refused for an unknown origin",
+      "access-control-allow-origin" not in _pre.headers)
+_preview = "https://gazelens-git-feature-team.vercel.app"
+_pre = _client.options("/api/auth/login", headers={"Origin": _preview,
+                                                   "Access-Control-Request-Method": "POST"})
+check("CORS regex admits a Vercel preview origin",
+      _pre.headers.get("access-control-allow-origin") == _preview)
+_pre = _client.options("/api/auth/login", headers={"Origin": "https://gazelens.vercel.app.evil.com",
+                                                   "Access-Control-Request-Method": "POST"})
+check("CORS regex is anchored (no lookalike suffix)",
       "access-control-allow-origin" not in _pre.headers)
 
 _saved_env = {k: os.environ.pop(k, None)
