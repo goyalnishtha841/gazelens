@@ -78,7 +78,7 @@ created ──calibration──> calibrated ──gaze──> recording ──fi
 ```
 
 `GET /api/sessions/{id}` returns `next_action` (`calibrate`, `train_gaze_model`,
-`record`, `finalize`, `wait`, `view_report`, `restart`) so the live-session UI
+`record`, `finalize`, `wait`, `view_report`, `retry`, `restart`) so the live-session UI
 doesn't have to reimplement this state machine. Two copies of it would drift
 the first time a status is added.
 
@@ -92,6 +92,17 @@ polling dashboard to give up on a resource that is about to appear.
 `failed` with the reason recorded. A session stuck on `processing` forever is
 worse than one that says why it broke, because the dashboard polls it
 indefinitely.
+
+That includes the worker dying mid-analysis (a crash, a restart, `--reload`),
+which no `except` can catch. On startup every session still on `processing`
+is marked `failed` ("analysis was interrupted ... please retry"), and any read
+of a session processing for longer than `GAZELENS_ANALYSIS_TIMEOUT_SECONDS`
+(default 600) marks it `failed` there and then.
+
+**A failed session can be retried.** `POST /finalize` again on a `failed`
+session re-runs the analysis from the gaze stream already on disk, so there is
+no need to recalibrate or re-record. `next_action` is `retry` for a failed
+session with gaze, `restart` for one with none.
 
 ---
 

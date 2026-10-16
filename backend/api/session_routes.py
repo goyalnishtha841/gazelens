@@ -24,8 +24,18 @@ Finalising runs in a BackgroundTask: the chain ends in a Chromium PDF render
 that takes seconds, and holding the request open for it would time out the
 browser and give the frontend nothing to show. The session goes to
 "processing" immediately and /report answers 202 until it's done.
+
+A BackgroundTask lives in the worker process, so if that process dies
+mid-analysis (a native crash, a restart, --reload) nothing is left to mark the
+session failed. Two things make that self-healing: startup marks every
+leftover "processing" session failed (recover_interrupted_sessions, called
+from main.lifespan), and any read of a session that has been processing for
+longer than ANALYSIS_TIMEOUT_SECONDS marks it failed there and then
+(expire_if_stale). A failed session can be finalised again -- the gaze stream
+is still on disk -- so the participant never has to recalibrate or re-record.
 """
 
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -71,6 +81,66 @@ from .schemas import (
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
+# How long an analysis may run before a read treats it as dead. A normal run
+# is well under a minute (the PDF render dominates); ten minutes leaves room
+# for LLM mode on a slow network without leaving a crashed run spinning for
+# long. Seconds, so the tests can set it small.
+ANALYSIS_TIMEOUT_SECONDS = float(os.environ.get("GAZELENS_ANALYSIS_TIMEOUT_SECONDS", "600"))
+
+INTERRUPTED_ERROR = ("analysis was interrupted before it finished (the server "
+                     "restarted or crashed); please retry")
+TIMED_OUT_ERROR = "analysis did not finish within {minutes:g} minutes; please retry"
+
+
+def _as_utc(value: datetime) -> datetime:
+    # SQLite hands DateTime(timezone=True) back naive; every value written
+    # here is UTC, so that is what a naive one means.
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _mark_failed(session: SessionModel, error: str) -> None:
+    session.status = STATUS_FAILED
+    session.error = error
+    session.completed_at = datetime.now(timezone.utc)
+
+
+def recover_interrupted_sessions(db: DBSession) -> int:
+    """Fail every session left on "processing". Called once at startup.
+
+    At startup no analysis can be running -- they are BackgroundTasks in this
+    process, and this process has only just started -- so every such session
+    was abandoned by a previous one. Assumes a single worker, which is how
+    the Dockerfile and the dev command run it; with several workers, one
+    starting up would fail another's in-flight run.
+    """
+    stuck = db.query(SessionModel).filter(SessionModel.status == STATUS_PROCESSING).all()
+    for session in stuck:
+        _mark_failed(session, INTERRUPTED_ERROR)
+    if stuck:
+        db.commit()
+    return len(stuck)
+
+
+def expire_if_stale(session: SessionModel, db: DBSession) -> bool:
+    """Fail a session that has been processing for longer than the timeout.
+
+    The startup sweep covers restarts; this covers a run that hung, or a
+    deployment that recycles workers without a clean startup. True if the
+    session was changed.
+    """
+    if session.status != STATUS_PROCESSING:
+        return False
+    started = session.processing_started_at
+    if started is not None:
+        elapsed = (datetime.now(timezone.utc) - _as_utc(started)).total_seconds()
+        if elapsed <= ANALYSIS_TIMEOUT_SECONDS:
+            return False
+    # started is None: processing since before the column existed, so it
+    # can't be a run this process knows about.
+    _mark_failed(session, TIMED_OUT_ERROR.format(minutes=ANALYSIS_TIMEOUT_SECONDS / 60))
+    db.commit()
+    return True
+
 
 def _next_action(session: SessionModel) -> str:
     """What the client should do next.
@@ -80,7 +150,9 @@ def _next_action(session: SessionModel) -> str:
     logic would drift the first time a status is added.
     """
     if session.status == STATUS_FAILED:
-        return "restart"
+        # The gaze stream survives a failed analysis, so finalising again is
+        # enough; only a session with nothing recorded needs starting over.
+        return "retry" if session.gaze_point_count > 0 else "restart"
     if session.status == STATUS_COMPLETE:
         return "view_report"
     if session.status == STATUS_PROCESSING:
@@ -213,6 +285,8 @@ async def list_sessions(
         .offset(offset)
         .all()
     )
+    for row in rows:
+        expire_if_stale(row, db)
     return SessionListResponse(
         sessions=[_to_response(s) for s in rows],
         total=total, limit=limit, offset=offset,
@@ -226,6 +300,7 @@ async def get_session(
     db: DBSession = Depends(get_db),
 ) -> SessionDetailResponse:
     session = owned_session(session_id, user, db)
+    expire_if_stale(session, db)
     detail = SessionDetailResponse.model_validate(session)
     detail.has_report = session.report is not None
     detail.calibration = pipeline.calibration_summary(session.calibration_session_id)
@@ -459,6 +534,7 @@ def _run_analysis(session_id: str) -> None:
         session = db.get(SessionModel, session_id)
         if session is None:
             return
+        started_at = session.processing_started_at
         try:
             gaze = pipeline.read_gaze(Path(session.gaze_path))
             result = pipeline.analyse_session(
@@ -471,6 +547,13 @@ def _run_analysis(session_id: str) -> None:
                 calibration_session_id=session.calibration_session_id,
             )
 
+            db.refresh(session)
+            if session.report is not None or session.processing_started_at != started_at:
+                # A newer run owns this session: this one was timed out and
+                # retried while it was still going, and the retry got there
+                # first (or is still going). Writing a second report would
+                # break the one-report-per-session constraint.
+                return
             db.add(Report(
                 session_id=session.id,
                 pipeline_result=result["pipeline_result"],
@@ -488,9 +571,11 @@ def _run_analysis(session_id: str) -> None:
             # The status must always land somewhere terminal. A session stuck
             # on "processing" forever is worse than one that says why it
             # failed -- the dashboard would poll it indefinitely.
-            session.status = STATUS_FAILED
-            session.error = f"{type(exc).__name__}: {exc}"
-            session.completed_at = datetime.now(timezone.utc)
+            db.rollback()
+            db.refresh(session)
+            if session.processing_started_at != started_at:
+                return                      # superseded by a retry, as above
+            _mark_failed(session, f"{type(exc).__name__}: {exc}")
         db.commit()
     finally:
         db.close()
@@ -503,8 +588,13 @@ async def finalize_session(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ) -> FinalizeResponse:
-    """Run the analysis chain. Returns immediately; poll the session or report."""
+    """Run the analysis chain. Returns immediately; poll the session or report.
+
+    Also the retry: a failed session (crash, restart, timeout, pipeline
+    error) is finalised again from the gaze stream already on disk.
+    """
     session = owned_session(session_id, user, db)
+    expire_if_stale(session, db)
 
     if session.status == STATUS_PROCESSING:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
@@ -520,6 +610,8 @@ async def finalize_session(
 
     session.status = STATUS_PROCESSING
     session.error = None
+    session.completed_at = None
+    session.processing_started_at = datetime.now(timezone.utc)
     db.commit()
 
     background.add_task(_run_analysis, session.id)
@@ -546,6 +638,7 @@ async def get_report(
     404 would tell a polling dashboard to give up.
     """
     session = owned_session(session_id, user, db)
+    expire_if_stale(session, db)
     report = session.report
 
     if report is None:

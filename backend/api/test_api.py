@@ -617,6 +617,112 @@ try:
     pipeline.capture_page = _real_capture
 
     # ------------------------------------------------------------------
+    print("\nsessions -- an interrupted analysis fails and can be retried")
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import inspect, text
+
+    from api import db as api_db
+    from api.main import app as _app, lifespan
+
+    # A database from before processing_started_at existed: init_db adds it.
+    with api_db.engine.begin() as conn:
+        conn.execute(text("ALTER TABLE sessions DROP COLUMN processing_started_at"))
+    init_db()
+    check("init_db adds processing_started_at to an older sessions table",
+          "processing_started_at" in {c["name"] for c in
+                                      inspect(api_db.engine).get_columns("sessions")})
+
+    def recorded_session(label):
+        s = run(session_routes.create_session(
+            CreateSessionRequest(mode="test_ui", ui_page="ecommerce_product_page",
+                                 label=label), alice_user, db))
+        run(session_routes.append_gaze(
+            s.id, GazeBatchRequest(gaze=payload[:200]), alice_user, db))
+        return s.id
+
+    def set_processing(sid, started):
+        row = db.get(SessionModel, sid)
+        row.status = "processing"
+        row.processing_started_at = started
+        db.commit()
+
+    # The worker died mid-analysis: status says processing, nothing is running.
+    crashed = recorded_session("crashed mid-analysis")
+    set_processing(crashed, datetime.now(timezone.utc))
+    db.expire_all()
+    still = run(session_routes.get_session(crashed, alice_user, db))
+    check("a recent processing session is left alone on read",
+          still.status == "processing" and still.next_action == "wait")
+
+    async def _start_app():
+        async with lifespan(_app):
+            pass
+    asyncio.run(_start_app())
+    db.expire_all()
+    recovered = run(session_routes.get_session(crashed, alice_user, db))
+    check("startup marks a leftover 'processing' session failed",
+          recovered.status == "failed")
+    check("with an error saying it was interrupted",
+          "interrupted" in (recovered.error or ""))
+    check("and next_action says retry, not restart", recovered.next_action == "retry")
+    crashed_report = run(session_routes.get_report(crashed, fastapi.Response(),
+                                                   alice_user, db))
+    check("the report endpoint stops saying 'in progress'",
+          crashed_report.status == "failed" and "interrupted" in crashed_report.message)
+
+    bg = _Background()
+    retry = run(session_routes.finalize_session(crashed, bg, alice_user, db))
+    check("a failed session can be finalised again", retry.status == "processing")
+    db.expire_all()
+    retried = run(session_routes.get_session(crashed, alice_user, db))
+    check("the retry completes from the gaze already on disk",
+          retried.status == STATUS_COMPLETE and retried.has_report)
+    check("the retry clears the old error", retried.error is None)
+
+    # Hung or killed without a restart: the timeout catches it on read.
+    hung = recorded_session("hung analysis")
+    set_processing(hung, datetime.now(timezone.utc) - timedelta(
+        seconds=session_routes.ANALYSIS_TIMEOUT_SECONDS + 60))
+    db.expire_all()
+    hung_report = run(session_routes.get_report(hung, fastapi.Response(), alice_user, db))
+    check("a session processing past the timeout reads as failed",
+          hung_report.status == "failed" and "did not finish" in hung_report.message)
+    check("and offers a retry", hung_report.next_action == "retry")
+
+    listed_hung = recorded_session("hung, seen in the list")
+    set_processing(listed_hung, None)
+    db.expire_all()
+    listed = run(session_routes.list_sessions(100, 0, None, alice_user, db))
+    check("the session list expires stale runs too",
+          next(x for x in listed.sessions if x.id == listed_hung).status == "failed")
+
+    # The timed-out run was still going and finishes after the retry started:
+    # it must not write a report over the retry's.
+    late = recorded_session("late original run")
+    set_processing(late, datetime.now(timezone.utc))
+    _real_analyse = pipeline.analyse_session
+
+    def _retried_meanwhile(**kwargs):
+        out = _real_analyse(**kwargs)
+        other = SessionLocal()
+        other.get(SessionModel, late).processing_started_at = datetime.now(timezone.utc)
+        other.commit()
+        other.close()
+        return out
+
+    pipeline.analyse_session = _retried_meanwhile
+    try:
+        session_routes._run_analysis(late)
+    finally:
+        pipeline.analyse_session = _real_analyse
+    db.expire_all()
+    check("a superseded run writes no report",
+          db.query(Report).filter(Report.session_id == late).count() == 0)
+    check("and leaves the newer run's status alone",
+          db.get(SessionModel, late).status == "processing")
+
+    # ------------------------------------------------------------------
     print("\nsessions -- deletion")
     gaze_file = Path(pipeline.gaze_path_for(DATA_DIR, session_id))
     check("gaze file exists before deletion", gaze_file.exists())
