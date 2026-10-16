@@ -106,7 +106,7 @@ def _llm_recommend_all(issues: list[UXIssue], session: Optional[SessionMetrics],
         RECOMMENDATION_SCHEMA,
     )
     out: Dict[int, Recommendation] = {}
-    for item in (data or {}).get("recommendations") or []:
+    for item in llm_client.dict_items(data, "recommendations"):
         n = item.get("index")
         text = str(item.get("recommendation", "")).strip()
         if isinstance(n, int) and 0 <= n < len(issues) and text and n not in out:
@@ -115,7 +115,7 @@ def _llm_recommend_all(issues: list[UXIssue], session: Optional[SessionMetrics],
                 linked_issue=issues[n].issue,
                 element_id=issues[n].element_id,  # from the issue, never from the model
                 source="llm",
-                claims=list(item.get("claims") or []),
+                claims=llm_client.dict_items(item, "claims"),
             )
     return out
 

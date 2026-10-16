@@ -51,7 +51,8 @@ def run_pipeline(
         "element_labels": {e: consolidate.readable_label(e, labels)
                            for e in session.element_type},
         "llm": {"mode": "llm" if llm_client.enabled() else "rules",
-                "model": llm_client.model_name() if llm_client.enabled() else None,
+                "provider": llm_client.provider_name(),
+                "model": llm_client.model_name(),
                 "audit": []},
     }
 

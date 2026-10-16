@@ -12,9 +12,12 @@ What it proves:
     claim, a number in the prose with no claim, a claim about an element
     that doesn't exist -- and the rejection shows up in the report
   * an API error or a refusal falls back to rules instead of failing
+  * the same holds with Groq as the provider, and the key in the
+    environment picks the provider
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -74,11 +77,30 @@ class FakeClient:
                                content=[SimpleNamespace(type="text", text=json.dumps(answer))])
 
 
+class FakeGroqClient(FakeClient):
+    """Stands in for groq.Groq(): OpenAI-style chat.completions."""
+
+    def __init__(self, finish_reason="stop", **kwargs):
+        super().__init__(**kwargs)
+        self.finish_reason = finish_reason
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._chat))
+
+    def _chat(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error:
+            raise self.error
+        system = kwargs["messages"][0]["content"]
+        answer = next(v for k, v in self.answers.items() if k in system)
+        message = SimpleNamespace(content=json.dumps(answer))
+        return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason=self.finish_reason)])
+
+
 def run(check):
     print("\nLLM mode -- off without a key: the rule-based chain, unchanged")
     llm_client.set_client(None)
     rules_result = run_pipeline(ignored_cta_session)
-    check("mode reported as rules", rules_result["llm"] == {"mode": "rules", "model": None, "audit": []})
+    check("mode reported as rules",
+          rules_result["llm"] == {"mode": "rules", "provider": None, "model": None, "audit": []})
     check("no narrative or explanations in rules mode",
           rules_result["behavior_summary"]["narrative"] is None
           and all(i["explanation"] is None for i in rules_result["issues"]))
@@ -91,7 +113,8 @@ def run(check):
     result = run_pipeline(ignored_cta_session, labels={"checkout_button": "Checkout button"})
     check("pipeline_result keeps the keys the frontend/PDF read", set(result) == PIPELINE_KEYS)
     check("mode and model reported", result["llm"]["mode"] == "llm"
-          and result["llm"]["model"] == llm_client.DEFAULT_MODEL)
+          and result["llm"]["provider"] == "anthropic"
+          and result["llm"]["model"] == llm_client.DEFAULT_MODELS["anthropic"])
     check("three LLM calls (agents 1-3), none from the critic", len(fake.calls) == 3)
     check("requests use structured JSON output",
           all(c["output_config"]["format"]["type"] == "json_schema" for c in fake.calls))
@@ -162,6 +185,67 @@ def run(check):
         ignored_cta_session)
     check("an issue the LLM skipped still gets a template fix",
           [r.source for r in recs] == ["llm", "rules"])
+
+    print("\nLLM mode -- Groq as the provider")
+    groq_fake = FakeGroqClient()
+    llm_client.set_client(groq_fake, provider="groq")
+    g = run_pipeline(ignored_cta_session)
+    call = groq_fake.calls[0]
+    check("Groq: provider and default model reported",
+          g["llm"]["provider"] == "groq" and g["llm"]["model"] == "openai/gpt-oss-120b")
+    check("Groq: strict JSON-schema output requested",
+          len(groq_fake.calls) == 3
+          and call["response_format"]["type"] == "json_schema"
+          and call["response_format"]["json_schema"]["strict"] is True)
+    check("Groq: reasoning kept out of the reply",
+          call.get("include_reasoning") is False and call.get("reasoning_effort") == "medium")
+    check("Groq: verified text used, same result shape",
+          set(g) == PIPELINE_KEYS and g["behavior_summary"]["narrative"] == GOOD_NARRATIVE["narrative"]
+          and all(r["source"] == "llm" for r in g["recommendations_kept"]))
+    llm_client.set_client(FakeGroqClient(narrative=bad_narrative, recs=bad_recs), provider="groq")
+    gb = run_pipeline(ignored_cta_session)
+    check("Groq: critic rejects the same fabrications",
+          len([r for r in gb["recommendations_rejected"] if r["source"] == "llm"]) == 2
+          and len(gb["llm"]["audit"]) == 3)
+    llm_client.set_client(FakeGroqClient(finish_reason="length"), provider="groq")
+    cut = run_pipeline(ignored_cta_session)
+    check("Groq: a cut-off reply falls back to rules",
+          cut["behavior_summary"]["narrative"] is None
+          and cut["recommendations_kept"] == rules_result["recommendations_kept"])
+    sloppy = {"recommendations": [
+        "not an object",
+        {"index": 0, "recommendation": "Move the Checkout button up: found after 8.4s.",
+         "claims": ["ttff 8.4", {"element_id": "checkout_button", "metric": "ttff_s", "value": "8.4"}]},
+    ]}
+    llm_client.set_client(FakeGroqClient(recs=sloppy), provider="groq")
+    messy = run_pipeline(ignored_cta_session)
+    check("loose JSON (strings for objects/numbers) doesn't crash, and isn't trusted",
+          any(r["source"] == "llm" for r in messy["recommendations_rejected"]))
+
+    print("\nLLM mode -- the key in the environment picks the provider")
+    saved = {k: os.environ.pop(k, None) for k in
+             ("ANTHROPIC_API_KEY", "GROQ_API_KEY", "GAZELENS_LLM_PROVIDER", "GAZELENS_LLM")}
+    try:
+        def provider_with(**env):
+            for k in saved:
+                os.environ.pop(k, None)
+            os.environ.update(env)
+            llm_client.reset_client()
+            return llm_client.provider_name()
+        check("no key: rules", provider_with() is None)
+        check("GROQ_API_KEY alone: groq", provider_with(GROQ_API_KEY="gsk_test") == "groq")
+        check("both keys: anthropic unless told otherwise",
+              provider_with(GROQ_API_KEY="gsk_test", ANTHROPIC_API_KEY="sk-ant-test") == "anthropic")
+        check("both keys + GAZELENS_LLM_PROVIDER=groq: groq",
+              provider_with(GROQ_API_KEY="gsk_test", ANTHROPIC_API_KEY="sk-ant-test",
+                            GAZELENS_LLM_PROVIDER="groq") == "groq")
+        check("GAZELENS_LLM=off wins over a key",
+              provider_with(GROQ_API_KEY="gsk_test", GAZELENS_LLM="off") is None)
+    finally:
+        for k, v in saved.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
 
     llm_client.set_client(None)
 

@@ -217,5 +217,5 @@ def _llm_narrate(summary: BehaviorSummary, session: SessionMetrics,
     data = llm_client.complete_json(NARRATIVE_SYSTEM_PROMPT, user, NARRATIVE_SCHEMA)
     if not data or not str(data.get("narrative", "")).strip():
         return
-    summary.narrative = data["narrative"].strip()
-    summary.narrative_claims = list(data.get("claims") or [])
+    summary.narrative = str(data["narrative"]).strip()
+    summary.narrative_claims = llm_client.dict_items(data, "claims")

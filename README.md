@@ -224,12 +224,12 @@ python3 test_agents.py      # test suite (includes the LLM-mode tests, with a fa
 python3 orchestrator.py     # runs mock sessions, prints JSON
 ```
 
-### Optional: LLM-written findings (Claude)
+### Optional: LLM-written findings (Groq or Claude)
 By default all four agents are rule-based: no key, no network, fully
-deterministic. Set an Anthropic API key and agents 1–3 also use Claude to
-write from the same metrics:
+deterministic. Set an API key and agents 1–3 also use an LLM to write from the
+same metrics:
 
-| Agent | Rules decide (unchanged) | Claude adds |
+| Agent | Rules decide (unchanged) | The LLM adds |
 |---|---|---|
 | 1 · Behaviour | findings, first/most-attended, ignored elements | a plain-English account of the session |
 | 2 · Evaluation | heuristic + severity of every issue | a page-specific explanation per issue |
@@ -246,16 +246,40 @@ is dropped. All rejections are listed in `pipeline_result["llm"]["audit"]` and
 under "How we checked" in the PDF/HTML report. Any API error, refusal or
 malformed reply falls back to the rule-based output for that step.
 
+**Groq (free tier, used for the demo).** Create a key at
+<https://console.groq.com/keys>, then:
+
 ```bash
-pip install anthropic
-export ANTHROPIC_API_KEY=sk-ant-...      # turns LLM mode on
-export GAZELENS_LLM_MODEL=claude-opus-5-5   # optional, this is the default
-export GAZELENS_LLM_EFFORT=medium           # optional: low | medium | high
-export GAZELENS_LLM=off                     # optional: force rule-based with a key set
+pip install groq
+export GROQ_API_KEY=gsk_...
 ```
 
-Restart the API after changing these. `pipeline_result["llm"]["mode"]` says
-which mode produced a report. The code is in `backend/agents/llm_client.py`.
+The default model is `openai/gpt-oss-120b` (strict JSON-schema output). The free
+tier is rate-limited; one report is three short calls.
+
+**Claude (Anthropic).**
+
+```bash
+pip install anthropic
+export ANTHROPIC_API_KEY=sk-ant-...      # default model claude-opus-5-5
+```
+
+**Optional settings:**
+
+```bash
+export GAZELENS_LLM_PROVIDER=groq       # only needed if BOTH keys are set (else Claude wins)
+export GAZELENS_LLM_MODEL=...           # override the provider's default model
+export GAZELENS_LLM_EFFORT=medium       # low | medium | high
+export GAZELENS_LLM=off                 # force rule-based with a key set
+```
+
+Restart the API after changing these. `pipeline_result["llm"]` records the mode,
+provider and model behind each report. The code is in
+`backend/agents/llm_client.py`.
+
+**Demo without the webcam:** `cd backend/agents && python3 orchestrator.py` runs
+the mock sessions through the chain with whatever key is set. To show the critic
+rejecting fabricated numbers on demand, run `python3 test_llm_agents.py`.
 
 ### Run the CV + calibration + gaze tests
 None of these need a webcam, `models/*.pt`, or mediapipe — the detector is stubbed

@@ -124,9 +124,9 @@ def _llm_explain(issues: list[UXIssue], session: SessionMetrics,
     data = llm_client.complete_json(EXPLAIN_SYSTEM_PROMPT, user, EXPLAIN_SCHEMA)
     if not data:
         return
-    for item in data.get("explanations") or []:
+    for item in llm_client.dict_items(data, "explanations"):
         n = item.get("index")
         text = str(item.get("explanation", "")).strip()
         if isinstance(n, int) and 0 <= n < len(issues) and text:
             issues[n].explanation = text
-            issues[n].explanation_claims = list(item.get("claims") or [])
+            issues[n].explanation_claims = llm_client.dict_items(item, "claims")
