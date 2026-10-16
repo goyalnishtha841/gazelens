@@ -1,0 +1,37 @@
+# Render Blueprint for the GazeLens API.
+#   Render dashboard -> New -> Blueprint -> pick this repo.
+# The frontend goes on Vercel (frontend-new/vercel.json); see DEPLOY.md.
+
+services:
+  - type: web
+    name: gazelens-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    # MediaPipe + headless Chromium need ~1.5GB at peak; the 512MB tiers
+    # get OOM-killed during URL capture and PDF rendering. A persistent disk
+    # also needs a paid instance.
+    plan: standard
+    # Pick the region closest to your participants -- every webcam frame
+    # makes a round trip. oregon | ohio | virginia | frankfurt | singapore
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: true
+    disk:
+      # SQLite DB, calibrations, trained gaze models, gaze streams, reports.
+      # Without it every deploy wipes all accounts and sessions.
+      name: gazelens-data
+      mountPath: /data
+      sizeGB: 2
+    envVars:
+      - key: GAZELENS_SECRET_KEY
+        generateValue: true
+      # Only needed if the frontend calls the API directly (VITE_API_BASE_URL)
+      # instead of through the Vercel rewrites. e.g. https://gazelens.vercel.app
+      - key: GAZELENS_CORS_ORIGINS
+        sync: false
+      # Optional LLM writing for the report agents.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false

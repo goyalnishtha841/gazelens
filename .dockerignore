@@ -1,0 +1,25 @@
+# Build context for backend/Dockerfile (repo root). Keep it small: no venvs,
+# no participant data, no model weights, no frontend.
+.git
+.venv
+venv
+.ruff_cache
+**/__pycache__
+**/*.pyc
+.env
+dataset
+LPW
+runs
+training
+evaluation
+configs
+frontend-new
+docs
+models/*.pt
+models/*.task
+backend/api/*.db*
+backend/api/session_data
+backend/api/.secret_key
+backend/calibration/calibration_data
+backend/gaze_estimation/gaze_models
+backend/reports/generated
