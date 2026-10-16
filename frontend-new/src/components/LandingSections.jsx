@@ -41,22 +41,22 @@ export function HeroFloaters() {
     animate: { y: [0, -9, 0] },
     transition: { duration: 6, repeat: Infinity, ease: "easeInOut", delay },
   });
-  // every card is the same size so the hero reads as one balanced set
+  // small cards of one width, sized to their content, floating at the sides
   const card = (active, tone = "accent") =>
-    `flex h-[160px] w-[260px] flex-col rounded-[18px] border bg-surface/85 p-4 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] backdrop-blur transition-all duration-700 ${
+    `flex w-[216px] flex-col rounded-[16px] border bg-surface/85 px-3.5 py-3 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] backdrop-blur transition-all duration-700 ${
       active ? `border-transparent ring-1 ${TONE[tone].ring} shadow-[0_0_50px_-14px_rgb(${TONE[tone].rgb}/0.55)]` : "border-border"
     }`;
   const slot = (side, top, delay) => ({
     initial: { opacity: 0, x: side === "left" ? -20 : 20 },
     animate: { opacity: 1, x: 0 },
     transition: { delay, duration: 0.7 },
-    className: `absolute ${side === "left" ? "left-0" : "right-0"} ${top}`,
+    className: `absolute ${side === "left" ? "left-[2%]" : "right-[2%]"} ${top}`,
   });
 
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 hidden xl:block">
       {/* top left: live tracking */}
-      <motion.div {...slot("left", "top-[19%]", 0.8)}>
+      <motion.div {...slot("left", "top-[22%]", 0.8)}>
         <motion.div {...float(0)} className={card(lit === 0)}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-[13px] font-semibold text-text-primary">
@@ -66,18 +66,18 @@ export function HeroFloaters() {
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-coral" /> REC
             </span>
           </div>
-          <div className="mt-2 text-[13px] text-text-secondary">Looking at: <span className="font-medium text-accent">Sign-up button</span></div>
-          <div className="mt-auto"><Sparkline /></div>
+          <div className="mt-1.5 text-[13px] text-text-secondary">Looking at: <span className="font-medium text-accent">Sign-up button</span></div>
+          <Sparkline />
         </motion.div>
       </motion.div>
 
       {/* top right: a finding */}
-      <motion.div {...slot("right", "top-[19%]", 0.9)}>
+      <motion.div {...slot("right", "top-[26%]", 0.9)}>
         <motion.div {...float(0.8)} className={card(lit === 1, "amber")}>
           <div className="flex items-center gap-2 text-[12px] font-semibold text-amber"><span className="h-1.5 w-1.5 rounded-full bg-amber" /> Worth fixing</div>
-          <div className="mt-1.5 text-[14px] font-semibold leading-snug text-text-primary">“Add to cart” was noticed late</div>
+          <div className="mt-1 text-[14px] font-semibold leading-snug text-text-primary">“Add to cart” seen late</div>
           <div className="mt-1 text-[12px] text-text-secondary">First seen after 6.1 seconds</div>
-          <div className="mt-auto flex gap-1.5">
+          <div className="mt-2.5 flex gap-1.5">
             {[["Fix first", "coral"], ["Strong evidence", "accent"]].map(([t, c]) => (
               <span key={t} className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${TONE[c].soft} ${TONE[c].text}`}>{t}</span>
             ))}
@@ -86,25 +86,25 @@ export function HeroFloaters() {
       </motion.div>
 
       {/* bottom right: heatmap */}
-      <motion.div {...slot("right", "top-[58%]", 1.0)}>
+      <motion.div {...slot("right", "top-[60%]", 1.0)}>
         <motion.div {...float(1.6)} className={card(lit === 2, "coral")}>
           <div className="mb-2 flex items-center justify-between text-[12px]">
             <span className="font-semibold text-text-primary">Heatmap ready</span>
             <span className="text-text-secondary">32 s test</span>
           </div>
-          <div className="mt-auto"><MiniHeatmap label="" /></div>
+          <MiniHeatmap label="" />
         </motion.div>
       </motion.div>
 
       {/* bottom left: accuracy check */}
-      <motion.div {...slot("left", "top-[58%]", 1.1)}>
+      <motion.div {...slot("left", "top-[62%]", 1.1)}>
         <motion.div {...float(2.4)} className={card(lit === 3)}>
-          <div className="text-[12px] font-semibold text-text-primary">Accuracy check</div>
-          <div className="mt-auto flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <MiniRing pct={0.82} />
             <div>
-              <div className="text-[18px] font-semibold text-text-primary">Good <span className="text-[13px] font-normal text-text-secondary">· 55 px</span></div>
-              <div className="mt-0.5 text-[12px] text-accent">Ready to test</div>
+              <div className="text-[12px] text-text-secondary">Accuracy check</div>
+              <div className="text-[15px] font-semibold text-text-primary">Good <span className="text-[12px] font-normal text-text-secondary">· 55 px</span></div>
+              <div className="text-[11px] text-accent">Ready to test</div>
             </div>
           </div>
         </motion.div>
@@ -117,7 +117,7 @@ function Sparkline() {
   const reduce = useReducedMotion();
   const d = "M0 18 L12 14 L24 16 L36 6 L48 9 L60 4 L72 12 L84 8 L96 10 L108 3 L120 7";
   return (
-    <svg viewBox="0 0 120 22" className="mt-3 h-6 w-full" aria-hidden="true">
+    <svg viewBox="0 0 120 22" className="mt-2 h-5 w-full" preserveAspectRatio="none" aria-hidden="true">
       <motion.path d={d} fill="none" stroke="rgb(var(--color-accent))" strokeWidth="1.6" strokeLinecap="round"
         initial={{ pathLength: reduce ? 1 : 0 }} animate={{ pathLength: 1 }}
         transition={reduce ? undefined : { duration: 2.4, repeat: Infinity, repeatType: "loop", ease: "linear", repeatDelay: 0.8 }} />
@@ -128,7 +128,7 @@ function Sparkline() {
 function MiniRing({ pct }) {
   const R = 16, C = 2 * Math.PI * R;
   return (
-    <svg viewBox="0 0 40 40" className="h-14 w-14 -rotate-90" aria-hidden="true">
+    <svg viewBox="0 0 40 40" className="h-11 w-11 shrink-0 -rotate-90" aria-hidden="true">
       <circle cx="20" cy="20" r={R} fill="none" stroke="rgb(255 255 255 / 0.08)" strokeWidth="4" />
       <motion.circle cx="20" cy="20" r={R} fill="none" stroke="rgb(var(--color-accent))" strokeWidth="4" strokeLinecap="round"
         strokeDasharray={C} initial={{ strokeDashoffset: C }} animate={{ strokeDashoffset: C * (1 - pct) }}
