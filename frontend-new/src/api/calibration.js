@@ -3,7 +3,9 @@
  * Same backend contract (backend/calibration/routes.py).
  */
 
-const BASE = "/api/calibration";
+import { apiUrl } from "./base.js";
+
+const BASE = apiUrl("/api/calibration");
 
 async function handleResponse(res) {
   if (!res.ok) {
@@ -63,7 +65,7 @@ export async function getCalibrationSession(sessionId) {
  * summary (median_error_px, verdict: good | fair | poor | insufficient).
  */
 export async function validateGaze(sessionId, pointIndex, frames, targetX, targetY) {
-  const res = await fetch(`/api/gaze/models/${sessionId}/validate`, {
+  const res = await fetch(apiUrl(`/api/gaze/models/${sessionId}/validate`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ point_index: pointIndex, frames, target_x: targetX, target_y: targetY }),

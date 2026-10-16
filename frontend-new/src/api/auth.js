@@ -4,7 +4,9 @@
  * than a reimplementation.
  */
 
-const BASE = "/api/auth";
+import { apiUrl } from "./base.js";
+
+const BASE = apiUrl("/api/auth");
 
 function extractErrorMessage(body, status) {
   const { detail } = body;

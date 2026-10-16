@@ -5,6 +5,8 @@
  * shape components expect.
  */
 
+import { apiUrl } from "./base.js";
+
 function adaptCaptureResponse(data) {
   const elements = Object.entries(data.layout || {}).map(([elementId, info]) => {
     const [x, y, w, h] = info.bbox;
@@ -32,7 +34,7 @@ function adaptCaptureResponse(data) {
 }
 
 export async function renderUrl(url) {
-  const res = await fetch("/api/render/capture", {
+  const res = await fetch(apiUrl("/api/render/capture"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),
