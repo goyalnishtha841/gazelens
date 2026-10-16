@@ -37,6 +37,9 @@ sys.path.insert(0, str(BACKEND))
 _TMP = Path(tempfile.mkdtemp(prefix="fixation_api_test_"))
 os.environ["FIXATION_DATABASE_URL"] = f"sqlite:///{(_TMP / 'test.db').as_posix()}"
 os.environ["FIXATION_DATA_DIR"] = str(_TMP / "data")
+# Rule-based agents: no network, same results whoever runs this
+# (backend/agents/test_llm_agents.py covers LLM mode with a fake client).
+os.environ["GAZELENS_LLM"] = "off"
 # >=32 bytes: PyJWT warns below that for HS256 (RFC 7518 §3.2), and a warning
 # on every run trains people to ignore warnings.
 os.environ.setdefault(

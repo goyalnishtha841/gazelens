@@ -108,6 +108,8 @@ def merge_issues(
             "also": _unique(i["issue"] for i in group[1:] if i["issue"] != lead["issue"]),
             "merged_count": len(group),
             "caveat": caveat,
+            # LLM mode: the critic-verified plain-English explanation, if any
+            "explanation": next((i.get("explanation") for i in group if i.get("explanation")), None),
         })
     merged.sort(key=lambda i: (-_rank(i["severity"]), i["element_label"]))
     return merged
@@ -145,6 +147,7 @@ def merge_recommendations(
             "measurability": round(factor, 2),
             "support": "Strong" if confidence >= STRONG_CONFIDENCE else "Weak",
             "kept": True,
+            "source": lead.get("source", "rules"),
         })
     merged.sort(key=lambda r: (-r["confidence"], r["element_label"]))
     return merged

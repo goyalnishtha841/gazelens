@@ -1,10 +1,14 @@
 """
 agent1_behavior.py
 
-Behavior Analysis Agent. Deliberately 100% rule-based -- no LLM call
-anywhere in this file. This agent's job is to turn raw numbers into
-labeled observations, and rules are the right tool for that: it's fast,
-free, fully deterministic, and testable without mocking an API.
+Behavior Analysis Agent. The findings are 100% rule-based: this agent's
+job is to turn raw numbers into labeled observations, and rules are the
+right tool for that -- fast, free, deterministic, testable offline.
+
+In LLM mode (see llm_client.py) the agent also asks the model for a short
+plain-English narrative of the session, built from the same metrics and
+the rule findings. The narrative never adds or removes findings, and
+Agent 4 discards it if any number in it fails a fresh re-check.
 
 Implements the four rules from the project brief:
   - CTA TTFF > 5s                    -> delayed discovery
@@ -22,8 +26,12 @@ could never actually appear in a report):
   - high-importance element, 0 fixations -> accessibility
 """
 
+import json
 from collections import Counter
+from typing import Dict, Optional
+
 from schemas import SessionMetrics, BehaviorFinding, BehaviorSummary
+import llm_client
 import rules
 
 
@@ -65,7 +73,7 @@ def _attention_scattered(session: SessionMetrics) -> bool:
     return any(count >= rules.SCANPATH_REPEAT_JUMP_THRESHOLD for count in jump_counts.values())
 
 
-def analyze(session: SessionMetrics) -> BehaviorSummary:
+def analyze(session: SessionMetrics, labels: Optional[Dict[str, str]] = None) -> BehaviorSummary:
     findings: list[BehaviorFinding] = []
 
     for element_id, ttff in session.ttff.items():
@@ -161,7 +169,7 @@ def analyze(session: SessionMetrics) -> BehaviorSummary:
                 metric_value=0.0,
             ))
 
-    return BehaviorSummary(
+    summary = BehaviorSummary(
         session_id=session.session_id,
         first_noticed=_first_noticed(session),
         most_attended=_most_attended(session),
@@ -169,3 +177,45 @@ def analyze(session: SessionMetrics) -> BehaviorSummary:
         attention_scattered=scattered,
         findings=findings,
     )
+    if llm_client.enabled():
+        _llm_narrate(summary, session, labels)
+    return summary
+
+
+# --- LLM mode: plain-English narrative ---------------------------------------
+
+NARRATIVE_SYSTEM_PROMPT = f"""You are the behaviour analyst in a gaze-tracking UX evaluation.
+You receive one participant's gaze metrics for a web page, plus findings a rule engine has
+already made. Write 2-4 sentences describing what this person actually did on the page:
+where their eyes went first, what held their attention, what important parts they missed,
+and whether their scanning looked settled or confused. Describe behaviour only; do not
+recommend fixes. Do not contradict the rule findings or add new problems they don't support.
+
+{llm_client.GROUNDING_RULES}"""
+
+NARRATIVE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "narrative": {"type": "string"},
+        "claims": {"type": "array", "items": llm_client.CLAIM_SCHEMA},
+    },
+    "required": ["narrative", "claims"],
+    "additionalProperties": False,
+}
+
+
+def _llm_narrate(summary: BehaviorSummary, session: SessionMetrics,
+                 labels: Optional[Dict[str, str]]) -> None:
+    findings = [{"type": f.finding_type, "element_id": f.element_id, "evidence": f.evidence}
+                for f in summary.findings]
+    user = (f"Session metrics:\n{llm_client.metrics_digest(session, labels)}\n\n"
+            f"Rule-engine summary: first noticed = {summary.first_noticed}, "
+            f"most attended = {summary.most_attended}, "
+            f"important but ignored = {summary.ignored_important_elements}, "
+            f"attention scattered = {summary.attention_scattered}\n"
+            f"Rule-engine findings:\n{json.dumps(findings, indent=1)}")
+    data = llm_client.complete_json(NARRATIVE_SYSTEM_PROMPT, user, NARRATIVE_SCHEMA)
+    if not data or not str(data.get("narrative", "")).strip():
+        return
+    summary.narrative = data["narrative"].strip()
+    summary.narrative_claims = list(data.get("claims") or [])

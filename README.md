@@ -220,9 +220,42 @@ Open the printed URL (usually `http://localhost:5173`).
 ### Run the agent chain against mock data
 ```bash
 cd backend/agents
-python3 test_agents.py      # test suite
+python3 test_agents.py      # test suite (includes the LLM-mode tests, with a fake client)
 python3 orchestrator.py     # runs mock sessions, prints JSON
 ```
+
+### Optional: LLM-written findings (Claude)
+By default all four agents are rule-based: no key, no network, fully
+deterministic. Set an Anthropic API key and agents 1–3 also use Claude to
+write from the same metrics:
+
+| Agent | Rules decide (unchanged) | Claude adds |
+|---|---|---|
+| 1 · Behaviour | findings, first/most-attended, ignored elements | a plain-English account of the session |
+| 2 · Evaluation | heuristic + severity of every issue | a page-specific explanation per issue |
+| 3 · Recommendation | the template library (fallback) | one specific fix per issue, naming the element |
+| 4 · Critic | **always deterministic, never calls the LLM** | — |
+
+Every piece of LLM text comes with structured claims (`element_id`, `metric`,
+`value`). The critic recomputes each claim from the raw session metrics and
+also checks every measurement-like number in the prose ("8.4s", "2%",
+"7 fixations"); one number it can't re-derive rejects the text. A rejected fix
+lands in `recommendations_rejected` (with the reason) and the template fix for
+that issue goes through the critic instead; a rejected narrative or explanation
+is dropped. All rejections are listed in `pipeline_result["llm"]["audit"]` and
+under "How we checked" in the PDF/HTML report. Any API error, refusal or
+malformed reply falls back to the rule-based output for that step.
+
+```bash
+pip install anthropic
+export ANTHROPIC_API_KEY=sk-ant-...      # turns LLM mode on
+export GAZELENS_LLM_MODEL=claude-opus-5-5   # optional, this is the default
+export GAZELENS_LLM_EFFORT=medium           # optional: low | medium | high
+export GAZELENS_LLM=off                     # optional: force rule-based with a key set
+```
+
+Restart the API after changing these. `pipeline_result["llm"]["mode"]` says
+which mode produced a report. The code is in `backend/agents/llm_client.py`.
 
 ### Run the CV + calibration + gaze tests
 None of these need a webcam, `models/*.pt`, or mediapipe — the detector is stubbed

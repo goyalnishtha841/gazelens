@@ -9,6 +9,7 @@ recommendation instead of just rubber-stamping everything.
 """
 
 from schemas import Recommendation
+import llm_client
 import agent1_behavior
 import agent2_evaluation
 import agent3_recommendation
@@ -17,6 +18,10 @@ from mock_sessions import clean_session, cluttered_search_session, ignored_cta_s
 
 passed = 0
 failed = 0
+
+# Rule-based mode for everything above the LLM section, even if the
+# developer running this has ANTHROPIC_API_KEY set.
+llm_client.set_client(None)
 
 
 def check(label, condition):
@@ -166,6 +171,9 @@ check("insufficient session: no issues or recommendations at all",
       and not blocked["recommendations_kept"])
 check("no quality input = gate skipped (mock data has no measurement)",
       raw["quality"] is None)
+
+import test_llm_agents  # noqa: E402
+test_llm_agents.run(check)
 
 print(f"\n{'=' * 40}\n{passed} passed, {failed} failed\n{'=' * 40}")
 
