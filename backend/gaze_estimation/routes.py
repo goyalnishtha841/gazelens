@@ -64,7 +64,7 @@ def _append_validation_frames(session_id, payload, frames, points) -> None:
     # one id per request, so a dot redone straight away stays separable
     attempt = uuid.uuid4().hex[:12]
     with path.open("a", encoding="utf-8") as fh:
-        for fr, pt in zip(frames, points):
+        for fr, pt in zip(frames, points, strict=False):
             fh.write(json.dumps({
                 "attempt": attempt,
                 "point_index": payload.point_index,
