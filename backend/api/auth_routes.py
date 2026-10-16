@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session as DBSession
 from .db import get_db
 from .deps import get_current_user
 from .models import User
+from .ratelimit import login_rate_limit
 from .schemas import LoginRequest, SignupRequest, TokenResponse, UserResponse
 from .security import (
     PasswordError,
@@ -61,7 +62,8 @@ async def signup(payload: SignupRequest, db: DBSession = Depends(get_db)) -> Tok
     )
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=TokenResponse,
+             dependencies=[Depends(login_rate_limit)])
 async def login(payload: LoginRequest, db: DBSession = Depends(get_db)) -> TokenResponse:
     email = _normalise_email(payload.email)
     user = db.query(User).filter(User.email == email).first()

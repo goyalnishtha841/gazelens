@@ -157,7 +157,12 @@ class EyeLandmarker:
             output_face_blendshapes=True,
             output_facial_transformation_matrixes=True,
         )
-        self._landmarker = FaceLandmarker.create_from_options(options)
+        try:
+            self._landmarker = FaceLandmarker.create_from_options(options)
+        except (OSError, RuntimeError) as exc:
+            # Native library failed to load (e.g. a container missing
+            # libGLESv2). Unavailable, not a crash -- /health must still answer.
+            raise LandmarkerUnavailable(f"mediapipe could not start: {exc}") from exc
         return self._landmarker
 
     @property

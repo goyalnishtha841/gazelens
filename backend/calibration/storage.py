@@ -31,7 +31,10 @@ from .session import (
     CalibrationSession,
 )
 
-DATA_DIR = Path(__file__).resolve().parent / "calibration_data"
+# Overridable so a container can keep participant data on a mounted volume.
+DATA_DIR = Path(
+    os.environ.get("GAZELENS_CALIBRATION_DIR", Path(__file__).resolve().parent / "calibration_data")
+)
 
 
 class SessionNotFound(KeyError):
