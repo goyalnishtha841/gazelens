@@ -1,8 +1,9 @@
 # GazeLens API: FastAPI + MediaPipe + headless Chromium (page capture, PDFs).
 #
 # Build from the REPO ROOT -- the API serves test_uis/ and loads models/:
-# Render builds this from render.yaml; nobody needs Docker locally. To build
-# it by hand anyway:
+# Hugging Face Spaces builds this (pushed by .github/workflows/deploy-hf.yml),
+# or Render from render.yaml; nobody needs Docker locally. To build it by
+# hand anyway:
 #   docker build --platform linux/amd64 -f backend/Dockerfile -t gazelens-api .
 #
 # linux/amd64 only: mediapipe 0.10.35 publishes no linux/arm64 wheel. On Apple
@@ -48,7 +49,11 @@ ENV GAZELENS_ENV=production \
     GAZELENS_GAZE_MODEL_DIR=/data/gaze_models \
     PORT=8000
 
-# Runs as root only long enough for docker-entrypoint.sh to make /data
+# HOME for the app user either way: Hugging Face starts the container as
+# uid 1000 directly, skipping the entrypoint's root branch.
+ENV HOME=/home/gazelens
+
+# When started as root, runs as root only long enough for docker-entrypoint.sh to make /data
 # writable (a host's persistent disk is often mounted root-owned), then
 # drops to this user.
 RUN useradd --create-home --uid 1000 gazelens \
@@ -66,6 +71,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 
 # One worker: SQLite + the in-memory login rate limiter + per-process gaze
 # model cache all assume a single process. --proxy-headers so the rate limiter
-# sees the real client IP behind Render's proxy.
+# sees the real client IP behind the host's proxy.
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["sh", "-c", "exec uvicorn api.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*'"]

@@ -452,7 +452,7 @@ Model weights and datasets are kept out of git:
   moved, and recalibrating fixes it.
 - **Captured websites are static snapshots**, and their element types are inferred
   from the DOM rather than designed. Reports say how much was guessed.
-- **Not yet deployed.** Deployment config is ready (Vercel + Render, see [DEPLOY.md](DEPLOY.md));
+- **Not yet deployed.** Deployment config is ready (Vercel + Hugging Face Spaces, free; see [DEPLOY.md](DEPLOY.md));
   webcam access needs HTTPS in production.
 
 ---
