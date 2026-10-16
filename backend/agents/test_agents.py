@@ -8,6 +8,8 @@ importantly -- proves Agent 4 actually rejects a fabricated
 recommendation instead of just rubber-stamping everything.
 """
 
+from dataclasses import replace
+
 from schemas import Recommendation
 import llm_client
 import agent1_behavior
@@ -105,6 +107,43 @@ generic_rec = Recommendation(
 )
 generic_verified = agent4_critic.verify([generic_rec], ignored_cta_session)
 check("generic phrasing rejected", generic_verified[0].kept is False)
+
+print("\nAgent 4 -- re-derives the three added rules, not just the original four")
+recs4 = agent3_recommendation.recommend_all(issues4, cluttered_search_session)
+verified4 = agent4_critic.verify(recs4, cluttered_search_session)
+by_element = {v.element_id: v for v in verified4}
+check("no added-heuristic fix falls back to the generic template",
+      not any("Review this element's placement" in r.recommendation for r in recs4))
+check("submit_button (never looked at, absent from dwell/ttff) keeps a verified fix",
+      by_element["submit_button"].kept and by_element["submit_button"].support != "Unsupported")
+check("submit_button evidence names the zero fixations",
+      any("0 fixations" in e for e in by_element["submit_button"].evidence))
+check("apply_filters (revisited 5 times) keeps a verified fix",
+      by_element["apply_filters"].kept
+      and any("Revisit count re-checked: 5" in e for e in by_element["apply_filters"].evidence))
+check("session-level cognitive load re-derived, not a blanket 'Weak'",
+      by_element["__session__"].kept
+      and any("Attention spread re-checked" in e for e in by_element["__session__"].evidence))
+
+never_seen = Recommendation(recommendation="Move the button up.", linked_issue="x", element_id="submit_button")
+# as a text block (not a CTA, so poor visibility doesn't apply) only the zero-fixation rule can back it
+never_seen_text = replace(cluttered_search_session,
+                          element_type={**cluttered_search_session.element_type, "submit_button": "text"})
+check("never-seen high-importance text block is still verified",
+      agent4_critic.verify([never_seen], never_seen_text)[0].kept is True)
+check("...but not on a session too short for 'never' to mean anything",
+      agent4_critic.verify([never_seen], replace(never_seen_text, total_gaze_time=4.0))[0].kept is False)
+check("an element on no page config at all is still rejected",
+      agent4_critic.verify([Recommendation(recommendation="Fix it.", linked_issue="x", element_id="ghost_widget")],
+                           cluttered_search_session)[0].evidence[0].startswith("Element 'ghost_widget' not found"))
+check("revisits on a non-interactive element don't count as error prevention",
+      agent4_critic.verify([Recommendation(recommendation="x", linked_issue="x", element_id="nav_menu")],
+                           replace(cluttered_search_session,
+                                   revisit_count={**cluttered_search_session.revisit_count, "nav_menu": 9}))[0].kept
+      is False)
+check("session-level claim on a calm session is rejected",
+      agent4_critic.verify([Recommendation(recommendation="Simplify the layout.", linked_issue="x",
+                                           element_id="__session__")], clean_session)[0].kept is False)
 
 print("\nQuality gate -- how much the chain may claim")
 import consolidate   # noqa: E402

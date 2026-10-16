@@ -46,46 +46,92 @@ def _text_is_generic(text: str) -> bool:
     return any(phrase in lowered for phrase in BANNED_GENERIC_PHRASES)
 
 
+def _repeat_jumps(scanpath: list[str]) -> int:
+    """Most times any one element was jumped back to (not just lingered on),
+    counted fresh here rather than taken from Agent 1."""
+    jumps: dict[str, int] = {}
+    seen: set[str] = set()
+    for prev, element_id in zip(scanpath, scanpath[1:]):
+        if element_id != prev and element_id in seen:
+            jumps[element_id] = jumps.get(element_id, 0) + 1
+        seen.add(element_id)
+    return max(jumps.values(), default=0)
+
+
+def _reverify_session(session: SessionMetrics) -> list[str]:
+    """Page-level conditions (layout confusion, cognitive load), recomputed."""
+    evidence: list[str] = []
+    jumps = _repeat_jumps(session.scanpath)
+    if jumps >= rules.SCANPATH_REPEAT_JUMP_THRESHOLD:
+        evidence.append(f"Scanpath re-checked: an element was jumped back to {jumps} times "
+                        f">= {rules.SCANPATH_REPEAT_JUMP_THRESHOLD} threshold")
+    distinct = len(set(session.scanpath))
+    top_dwell = max((session.dwell_pct(e) for e in session.dwell_time), default=0.0)
+    if (distinct >= rules.COGNITIVE_LOAD_MIN_DISTINCT_ELEMENTS
+            and top_dwell < rules.COGNITIVE_LOAD_MAX_TOP_ELEMENT_DWELL_PCT):
+        evidence.append(f"Attention spread re-checked: {distinct} distinct elements "
+                        f">= {rules.COGNITIVE_LOAD_MIN_DISTINCT_ELEMENTS}, top dwell {top_dwell:.1f}% "
+                        f"< {rules.COGNITIVE_LOAD_MAX_TOP_ELEMENT_DWELL_PCT}% threshold")
+    return evidence
+
+
+def _reverify_element(element_id: str, session: SessionMetrics) -> list[str]:
+    """Element-level conditions, recomputed from the raw session."""
+    evidence: list[str] = []
+    dwell_pct = session.dwell_pct(element_id)
+    ttff = session.ttff.get(element_id)
+    fixations = session.fixation_count.get(element_id, 0)
+    revisits = session.revisit_count.get(element_id, 0)
+    el_type = session.element_type.get(element_id)
+
+    if el_type == "CTA" and ttff is not None and ttff > rules.CTA_TTFF_DELAYED_THRESHOLD_SECONDS:
+        evidence.append(f"TTFF re-checked: {ttff:.1f}s > {rules.CTA_TTFF_DELAYED_THRESHOLD_SECONDS}s threshold")
+
+    # a CTA never looked at has no dwell entry; it's at 0%, not "absent"
+    if el_type == "CTA" and dwell_pct < rules.CTA_DWELL_POOR_VISIBILITY_PCT:
+        evidence.append(f"Dwell time re-checked: {dwell_pct:.1f}% < {rules.CTA_DWELL_POOR_VISIBILITY_PCT}% threshold")
+
+    if el_type == "non-interactive" and fixations >= rules.NON_INTERACTIVE_HIGH_FIXATION_COUNT:
+        evidence.append(f"Fixation count re-checked: {fixations} >= {rules.NON_INTERACTIVE_HIGH_FIXATION_COUNT} threshold")
+
+    if el_type in ("CTA", "form_field") and revisits >= rules.REVISIT_ERROR_PREVENTION_COUNT:
+        evidence.append(f"Revisit count re-checked: {revisits} >= {rules.REVISIT_ERROR_PREVENTION_COUNT} threshold")
+
+    if (session.element_importance.get(element_id) == "high" and fixations == 0
+            and session.total_gaze_time >= rules.ACCESSIBILITY_MIN_SESSION_GAZE_TIME_SECONDS):
+        evidence.append(f"Fixation count re-checked: 0 fixations on a high-importance element across a "
+                        f"{session.total_gaze_time:.1f}s session "
+                        f"(>= {rules.ACCESSIBILITY_MIN_SESSION_GAZE_TIME_SECONDS}s minimum)")
+    return evidence
+
+
 def _reverify_against_metrics(rec: Recommendation, session: SessionMetrics) -> tuple[str, list[str], float]:
     """
     Returns (support_level, evidence_list, confidence).
     Independently recomputes whether SOMETHING is actually wrong with
     rec.element_id, without trusting rec.recommendation's claims.
+    Every Agent 1 rule has a matching re-check here, using the same
+    thresholds from rules.py.
     """
     element_id = rec.element_id
-    evidence: list[str] = []
-    confidence = 0.0
 
     if element_id == "__session__":
-        # session-level claim (e.g. layout confusion) -- can't verify against
-        # a single element, so treat as weakly supported unless it's cheap to check
-        return "Weak", ["Session-level claim -- not tied to a single element's metrics"], 0.3
-
-    if element_id not in session.dwell_time and element_id not in session.ttff:
-        return "Unsupported", [f"Element '{element_id}' not found in session metrics at all"], 0.0
-
-    dwell_pct = session.dwell_pct(element_id)
-    ttff = session.ttff.get(element_id)
-    fixations = session.fixation_count.get(element_id, 0)
-    el_type = session.element_type.get(element_id)
-
-    if el_type == "CTA" and ttff is not None and ttff > rules.CTA_TTFF_DELAYED_THRESHOLD_SECONDS:
-        evidence.append(f"TTFF re-checked: {ttff:.1f}s > {rules.CTA_TTFF_DELAYED_THRESHOLD_SECONDS}s threshold")
-        confidence += 0.4
-
-    if el_type == "CTA" and dwell_pct < rules.CTA_DWELL_POOR_VISIBILITY_PCT:
-        evidence.append(f"Dwell time re-checked: {dwell_pct:.1f}% < {rules.CTA_DWELL_POOR_VISIBILITY_PCT}% threshold")
-        confidence += 0.4
-
-    if el_type == "non-interactive" and fixations >= rules.NON_INTERACTIVE_HIGH_FIXATION_COUNT:
-        evidence.append(f"Fixation count re-checked: {fixations} >= {rules.NON_INTERACTIVE_HIGH_FIXATION_COUNT} threshold")
-        confidence += 0.4
+        evidence = _reverify_session(session)
+    else:
+        # an element on the page config but never looked at is still real --
+        # it just has no dwell/ttff entry
+        known = (element_id in session.element_type or element_id in session.element_importance
+                 or element_id in session.dwell_time or element_id in session.ttff)
+        if not known:
+            return "Unsupported", [f"Element '{element_id}' not found in session metrics at all"], 0.0
+        evidence = _reverify_element(element_id, session)
 
     if not evidence:
         # nothing we independently recomputed backs this up
         return "Unsupported", ["No matching metric condition found on re-check"], 0.0
 
-    confidence = min(confidence + 0.2, 0.95)  # small bump for having any confirmed evidence, cap below 1.0
+    # 0.4 per confirmed condition, plus a small bump for having any; cap below 1.0
+    confidence = min(0.4 * len(evidence) + 0.2, 0.95)
     support = "Strong" if confidence >= 0.6 else "Weak"
     return support, evidence, round(confidence, 2)
 

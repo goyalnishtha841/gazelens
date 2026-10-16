@@ -48,6 +48,18 @@ RECOMMENDATION_LIBRARY = {
         "Simplify the layout so scanning order matches reading order.",
         "Group related fields together to reduce back-and-forth scanning.",
     ],
+    "Error prevention": [
+        "Show immediate feedback when the control is used (selected state, result count, or a confirmation) so it doesn't need re-checking.",
+        "Label the control with what it will do and preview the outcome before it is committed.",
+    ],
+    "Cognitive load / minimalist design": [
+        "Remove or collapse secondary elements so one primary area clearly leads the page.",
+        "Group related controls into fewer sections with clear headings.",
+    ],
+    "Accessibility": [
+        "Move the element into the main reading path near where attention already goes, with a clear label and high contrast.",
+        "Increase the element's size and contrast so it stands out from surrounding content.",
+    ],
 }
 
 
