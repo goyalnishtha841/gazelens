@@ -15,14 +15,26 @@ large to attribute, and an element scrolled off the bottom.
 Same shape as backend/agents/test_agents.py.
 """
 
+import os
 import sys
 import tempfile
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# render.routes pulls in api.deps for its auth dependency, which reads these
+# at import: a throwaway DB and key so this suite never touches backend/api's.
+os.environ.setdefault("FIXATION_DATABASE_URL",
+                      f"sqlite:///{tempfile.mkdtemp(prefix='render_auth_')}/test.db")
+os.environ.setdefault("FIXATION_SECRET_KEY", "test-only-key-not-for-deployment-0123456789abcdef")
+
+import render.capture as capture_mod                            # noqa: E402
 from render.capture import (                                    # noqa: E402
+    PrivateAddressBlocked,
     capture_page,
+    private_address_reason,
     render_available,
 )
 from render.classify import (                                   # noqa: E402
@@ -277,6 +289,115 @@ else:
     import shutil
 
     shutil.rmtree(tmp, ignore_errors=True)
+
+
+print("\nprivate addresses -- the check itself")
+for bad in ("http://127.0.0.1/", "http://localhost:8000/", "http://10.0.0.5/",
+            "http://192.168.1.1/", "http://169.254.169.254/latest/meta-data/",
+            "http://[::1]/", "http://0.0.0.0/", "file:///etc/passwd", "ftp://1.1.1.1/"):
+    check(f"{bad} refused", private_address_reason(bad) is not None)
+check("a public literal address is allowed", private_address_reason("http://1.1.1.1/") is None)
+try:
+    capture_page("http://127.0.0.1:9/", block_private=True)
+    check("block_private refuses a private URL before launching Chromium", False)
+except PrivateAddressBlocked:
+    check("block_private refuses a private URL before launching Chromium", True)
+
+
+print("\nprivate addresses -- redirects and subresources inside Chromium")
+if not render_available():
+    skip("redirect guard", "playwright not installed")
+else:
+    # Two local servers. PUBLIC plays an attacker's public site; INTERNAL
+    # plays a service on the study machine's network. Both are really on
+    # loopback, so the check is narrowed to "INTERNAL's port is private" --
+    # the routing logic under test is the same either way.
+    internal_hits = []
+
+    class Internal(BaseHTTPRequestHandler):
+        def do_GET(self):
+            internal_hits.append(self.path)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"<html><head><title>INTERNAL SECRET</title></head>"
+                             b"<body><button>admin</button></body></html>")
+
+        def log_message(self, *a):
+            pass
+
+    internal = ThreadingHTTPServer(("127.0.0.1", 0), Internal)
+    INTERNAL = f"http://127.0.0.1:{internal.server_port}"
+
+    class Public(BaseHTTPRequestHandler):
+        def do_GET(self):
+            routes = {
+                "/hop": f"{INTERNAL}/secret",
+                "/chain1": "/chain2",                 # relative, then off-site
+                "/chain2": f"{INTERNAL}/secret",
+                "/public-hop": "/page",
+            }
+            if self.path in routes:
+                self.send_response(302)
+                self.send_header("Location", routes[self.path])
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(
+                f"<html><head><title>Public page</title></head><body>"
+                f"<button style='width:300px;height:80px'>Buy</button>"
+                f"<img src='{INTERNAL}/pixel.png' width=200 height=200>"
+                # Same chain as a subresource: only the in-page route
+                # handler stands between this and the internal service.
+                f"<img src='/chain1' width=200 height=200>"
+                f"</body></html>".encode())
+
+        def log_message(self, *a):
+            pass
+
+    public = ThreadingHTTPServer(("127.0.0.1", 0), Public)
+    PUBLIC = f"http://127.0.0.1:{public.server_port}"
+    for srv in (internal, public):
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+    real_reason = capture_mod._blocked_reason
+    capture_mod._blocked_reason = (
+        lambda url: "private (test)" if url.startswith(INTERNAL) else None)
+    try:
+        # Control: without the guard the redirect really does land inside,
+        # so the blocked cases below are testing something.
+        unguarded = capture_page(f"{PUBLIC}/hop", viewport=(1280, 720))
+        check("control: unguarded, a 302 reaches the internal service",
+              unguarded.title == "INTERNAL SECRET" and internal_hits)
+
+        for path in ("/hop", "/chain1"):
+            internal_hits.clear()
+            try:
+                capture_page(f"{PUBLIC}{path}", viewport=(1280, 720),
+                             block_private=True, timeout_ms=10_000)
+                check(f"{path}: redirect to an internal address is refused", False)
+            except PrivateAddressBlocked:
+                check(f"{path}: redirect to an internal address is refused", True)
+            check(f"{path}: ...without the internal service seeing a request",
+                  internal_hits == [])
+
+        internal_hits.clear()
+        ok = capture_page(f"{PUBLIC}/public-hop", viewport=(1280, 720),
+                          block_private=True, timeout_ms=10_000)
+        check("a public-to-public redirect is still followed",
+              ok.title == "Public page" and ok.final_url.endswith("/page"))
+        check("...and the result keeps the URL that was asked for",
+              ok.url.endswith("/public-hop"))
+        check("internal subresources, direct or via a redirect chain, are not fetched",
+              internal_hits == [])
+        check("...and the capture says something was blocked",
+              any("blocked" in w for w in ok.warnings))
+    finally:
+        capture_mod._blocked_reason = real_reason
+        internal.shutdown()
+        public.shutdown()
 
 print(f"\n{'=' * 40}\n{passed} passed, {failed} failed, {skipped} skipped\n{'=' * 40}")
 

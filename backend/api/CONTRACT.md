@@ -101,6 +101,14 @@ Every session route depends on `get_current_user`, and every lookup goes
 through `deps.owned_session`. One function to audit, instead of a scoping
 check repeated per route that someone eventually forgets.
 
+The module routers (`/api/calibration`, `/api/gaze`, `/api/attribution`,
+`/api/render`) attach `get_current_user` at router level, so a route added
+later can't forget it. Calibration sessions and the gaze models trained from
+them (same id) are scoped like sessions, through `deps.owned_calibration` —
+see backend/calibration/CONTRACT.md for how pre-ownership calibrations are
+handled. `test_route_auth.py` probes every one of those routes for 401 and
+the cross-user cases for 404.
+
 **Another user's session returns 404, not 403.** A 403 confirms the id exists,
 which makes session ids enumerable. A caller who doesn't own a session should
 be unable to distinguish it from one that was never created.

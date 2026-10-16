@@ -23,18 +23,32 @@ are the unit under test anyway. Same choice as backend/calibration's suite.
 """
 
 import asyncio
+import os
 import shutil
 import sys
 import tempfile
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 # backend/ on the path so this runs directly, the way test_agents.py does.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# api.deps (pulled in by the routers' auth dependency) reads these at import:
+# a throwaway DB and key so this suite never touches backend/api's real ones.
+_AUTH_TMP = tempfile.mkdtemp(prefix="gaze_auth_")
+os.environ.setdefault("FIXATION_DATABASE_URL", f"sqlite:///{_AUTH_TMP}/test.db")
+os.environ.setdefault("FIXATION_SECRET_KEY", "test-only-key-not-for-deployment-0123456789abcdef")
+
+# The handlers are called directly, so the logged-in user is passed in by
+# hand. Only `.id` is read; db=None is fine because none of these sessions is
+# a legacy (ownerless) one reached through a backend/api session.
+ME = SimpleNamespace(id="user_me")
+SOMEONE_ELSE = SimpleNamespace(id="user_someone_else")
+
 import numpy as np                                               # noqa: E402
 
-from calibration.storage import CalibrationStore, set_store      # noqa: E402
+from calibration.storage import CalibrationStore, get_store, set_store  # noqa: E402
 
 from gaze_estimation import evaluation, routes                   # noqa: E402
 from gaze_estimation.estimator import (                          # noqa: E402
@@ -506,11 +520,12 @@ try:
     clear_cache()
     api_session = generate_calibration_session(pattern=16, samples_per_point=12,
                                                participant_id="api_p01", seed=5)
+    api_session.owner_id = ME.id
     store.save(api_session)
     sid = api_session.session_id
 
     resp = run(routes.train(sid, TrainRequest(viewing_distance_cm=60,
-                                              screen_diagonal_in=15.6)))
+                                              screen_diagonal_in=15.6), user=ME, db=None))
     check("train returns the session id", resp.session_id == sid)
     check("held-out metrics are the leave-one-point-out ones",
           resp.metrics.validation == "leave_one_point_out")
@@ -522,11 +537,11 @@ try:
     check("n_points reported", resp.n_points == 16)
 
     print("\nAPI -- validation and error paths")
-    expect_http("training an unknown session", routes.train("cal_nope", TrainRequest()), 404)
+    expect_http("training an unknown session", routes.train("cal_nope", TrainRequest(), user=ME, db=None), 404)
     expect_http("estimating with no trained model",
-                routes.estimate("cal_nope", EstimateRequest(left=PupilInput(x=0.5, y=0.5))), 404)
-    expect_http("fetching an unknown model", routes.get_model("cal_nope"), 404)
-    expect_http("deleting an unknown model", routes.delete_trained_model("cal_nope"), 404)
+                routes.estimate("cal_nope", EstimateRequest(left=PupilInput(x=0.5, y=0.5)), user=ME, db=None), 404)
+    expect_http("fetching an unknown model", routes.get_model("cal_nope", user=ME, db=None), 404)
+    expect_http("deleting an unknown model", routes.delete_trained_model("cal_nope", user=ME, db=None), 404)
 
     try:
         TrainRequest(viewing_distance_cm=60)      # missing screen_diagonal_in
@@ -543,7 +558,7 @@ try:
     print("\nAPI -- live inference endpoints")
     est_resp = run(routes.estimate(sid, EstimateRequest(
         left=PupilInput(x=0.52, y=0.49), right=PupilInput(x=0.50, y=0.50),
-        timestamp=100.0)))
+        timestamp=100.0), user=ME, db=None))
     check("single estimate returns a gaze point", est_resp.gaze.valid is True)
     check("estimate carries the model's error bar",
           est_resp.model_median_error_px is not None)
@@ -554,7 +569,7 @@ try:
                    timestamp=101.0),
         FrameInput(timestamp=101.03),                    # a blink
         FrameInput(left=PupilInput(x=0.48, y=0.51), timestamp=101.06),
-    ])))
+    ]), user=ME, db=None))
     check("batch returns one point per frame", len(batch.gaze) == 3)
     check("blink counted as invalid", batch.invalid_count == 1)
     check("valid frames counted", batch.valid_count == 2)
@@ -562,13 +577,13 @@ try:
 
     print("\nAPI -- retraining must not serve a stale cached model")
     before = run(routes.estimate(sid, EstimateRequest(
-        left=PupilInput(x=0.30, y=0.30), timestamp=1.0))).gaze
-    run(routes.train(sid, TrainRequest(feature_set="mean_eye", degree=1)))
+        left=PupilInput(x=0.30, y=0.30), timestamp=1.0), user=ME, db=None)).gaze
+    run(routes.train(sid, TrainRequest(feature_set="mean_eye", degree=1), user=ME, db=None))
     after = run(routes.estimate(sid, EstimateRequest(
-        left=PupilInput(x=0.30, y=0.30), timestamp=1.0))).gaze
+        left=PupilInput(x=0.30, y=0.30), timestamp=1.0), user=ME, db=None)).gaze
     check("retrained model actually replaces the cached one",
           (before.x, before.y) != (after.x, after.y))
-    stored = run(routes.get_model(sid))
+    stored = run(routes.get_model(sid, user=ME, db=None))
     check("override is recorded as not auto-selected",
           "override" in stored.selection.selection_criterion)
     check("a stored model still reports its held-out error",
@@ -576,13 +591,30 @@ try:
     check("a stored model reports training_metrics as null, not a copy of "
           "the held-out ones", stored.training_metrics is None)
 
+    print("\nAPI -- another user's model is a 404, not a 403")
+    expect_http("someone else fetches the model", routes.get_model(sid, user=SOMEONE_ELSE, db=None), 404)
+    expect_http("someone else estimates with it",
+                routes.estimate(sid, EstimateRequest(left=PupilInput(x=0.5, y=0.5)),
+                                user=SOMEONE_ELSE, db=None), 404)
+    expect_http("someone else batch-estimates with it",
+                routes.estimate_batch(sid, EstimateBatchRequest(frames=[
+                    FrameInput(left=PupilInput(x=0.5, y=0.5))]),
+                    user=SOMEONE_ELSE, db=None), 404)
+    expect_http("someone else retrains it",
+                routes.train(sid, TrainRequest(), user=SOMEONE_ELSE, db=None), 404)
+    expect_http("someone else deletes it",
+                routes.delete_trained_model(sid, user=SOMEONE_ELSE, db=None), 404)
+    check("...and it is still there afterwards", (model_dir / f"{sid}.json").exists())
+    check("someone else's model listing is empty",
+          run(routes.list_trained_models(user=SOMEONE_ELSE, db=None)) == [])
+
     print("\nAPI -- listing and deletion")
-    listed = run(routes.list_trained_models())
+    listed = run(routes.list_trained_models(user=ME, db=None))
     check("trained models listed", any(x.session_id == sid for x in listed))
-    run(routes.delete_trained_model(sid))
+    run(routes.delete_trained_model(sid, user=ME, db=None))
     check("deleted model is gone", not (model_dir / f"{sid}.json").exists())
     expect_http("estimating after deletion",
-                routes.estimate(sid, EstimateRequest(left=PupilInput(x=0.5, y=0.5))), 404)
+                routes.estimate(sid, EstimateRequest(left=PupilInput(x=0.5, y=0.5)), user=ME, db=None), 404)
 
 finally:
     clear_cache()
@@ -693,18 +725,29 @@ try:
     training_mod.MODEL_DIR = val_dir
     clear_cache()
     train_from_rows(iris_rows, session_id="cal_valtest", persist=True)
+    # /validate checks the caller owns the calibration the model came from,
+    # so give the model one -- in a temp store, never calibration_data/.
+    set_store(CalibrationStore(data_dir=val_dir / "calibration"))
+    from calibration.session import CalibrationSession
+    get_store().save(CalibrationSession(
+        session_id="cal_valtest", participant_id="p_val", pattern=9,
+        screen_width=1694, screen_height=840, owner_id=ME.id))
+    expect_http("someone else validates against this model",
+                lambda: routes.validate("cal_valtest", ValidateRequest(
+                    point_index=0, target_x=0.5, target_y=0.5, frames=["x"]),
+                    user=SOMEONE_ELSE, db=None), 404)
     cv.set_pipeline(stub)
 
     stub.aim_at(0.5, 0.5)
     resp = routes.validate("cal_valtest", ValidateRequest(
-        point_index=0, target_x=0.5, target_y=0.5, frames=["x"] * 8))
+        point_index=0, target_x=0.5, target_y=0.5, frames=["x"] * 8), user=ME, db=None)
     check("validation point scored on all frames",
           resp.point["n_valid"] == 8 and resp.point["usable"])
     check(f"on-target validation error is small ({resp.point['error_px']:.0f}px)",
           resp.point["error_px"] < 60)
     stub.aim_at(0.3, 0.7)
     resp = routes.validate("cal_valtest", ValidateRequest(
-        point_index=1, target_x=0.3, target_y=0.7, frames=["x"] * 8))
+        point_index=1, target_x=0.3, target_y=0.7, frames=["x"] * 8), user=ME, db=None)
     check("summary covers both points with a good verdict",
           resp.summary["n_usable"] == 2 and resp.summary["verdict"] == "good")
     stored = load_model("cal_valtest")
@@ -716,11 +759,11 @@ try:
     # participant looks somewhere else entirely: redo point 1 as a miss
     stub.aim_at(0.9, 0.1)
     resp = routes.validate("cal_valtest", ValidateRequest(
-        point_index=1, target_x=0.1, target_y=0.9, frames=["x"] * 8))
+        point_index=1, target_x=0.1, target_y=0.9, frames=["x"] * 8), user=ME, db=None)
     check("re-submitting a point replaces it", resp.summary["n_points"] == 2)
     stub.aim_at(0.9, 0.9)
     routes.validate("cal_valtest", ValidateRequest(
-        point_index=2, target_x=0.1, target_y=0.1, frames=["x"] * 8))
+        point_index=2, target_x=0.1, target_y=0.1, frames=["x"] * 8), user=ME, db=None)
     ok, why = validation_gate(load_model("cal_valtest"))
     check(f"gate refuses a poor validation ({why[:40]}...)", ok is False)
 
@@ -735,7 +778,7 @@ try:
 
     stub.fail_next = 8
     resp = routes.validate("cal_valtest", ValidateRequest(
-        point_index=3, target_x=0.5, target_y=0.5, frames=["x"] * 8))
+        point_index=3, target_x=0.5, target_y=0.5, frames=["x"] * 8), user=ME, db=None)
     check("a dot with no tracked frames is unusable, not zero error",
           resp.point["usable"] is False and resp.point["error_px"] is None)
     print("\noffline evaluation -- scoring variants on saved check frames")
@@ -766,11 +809,12 @@ try:
 
     expect_http("validating an uncalibrated session",
                 lambda: routes.validate("cal_nope", ValidateRequest(
-                    point_index=0, target_x=0.5, target_y=0.5, frames=["x"])), 404)
+                    point_index=0, target_x=0.5, target_y=0.5, frames=["x"]), user=ME, db=None), 404)
 finally:
     cv.set_pipeline(None)
     clear_cache()
     set_model_dir(None)
+    set_store(None)
     training_mod.MODEL_DIR = saved_model_dir
     shutil.rmtree(val_dir, ignore_errors=True)
 

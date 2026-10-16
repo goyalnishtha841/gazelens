@@ -1,8 +1,9 @@
 /**
- * render.js -- ported unchanged from frontend/src/api/render.js. Same
- * backend contract (backend/render/routes.py's /api/render/capture) and the
- * same adapter reshaping `layout` (dict keyed by element_id) into the array
- * shape components expect.
+ * render.js -- ported from frontend/src/api/render.js. Same backend
+ * contract (backend/render/routes.py's /api/render/capture) and the same
+ * adapter reshaping `layout` (dict keyed by element_id) into the array shape
+ * components expect. The endpoint drives a server-side browser, so it
+ * requires a bearer token: pass the `token` from useAuth().
  */
 
 import { apiUrl } from "./base.js";
@@ -33,10 +34,10 @@ function adaptCaptureResponse(data) {
   };
 }
 
-export async function renderUrl(url) {
+export async function renderUrl(token, url) {
   const res = await fetch(apiUrl("/api/render/capture"), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ url }),
   });
   if (!res.ok) {

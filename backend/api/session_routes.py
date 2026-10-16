@@ -38,7 +38,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from . import pipeline
 from .db import DATA_DIR, SessionLocal, get_db
-from .deps import get_current_user, owned_session
+from .deps import get_current_user, owned_calibration, owned_session
 from .layouts import AVAILABLE_TEST_UIS, UnknownTestUI, layout_for
 from .models import (
     MODE_URL,
@@ -131,6 +131,12 @@ async def create_session(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
+
+    if payload.calibration_session_id:
+        # Checked up front, not just on /calibration: a session row naming a
+        # calibration is what makes a legacy (ownerless) one reachable, so
+        # an unchecked id here would let anyone claim it.
+        owned_calibration(payload.calibration_session_id, user, db)
 
     capture_meta = None
 
@@ -287,6 +293,9 @@ async def link_calibration(
             detail=f"session is already {session.status}",
         )
 
+    # Only the caller's own calibration: linking someone else's would hand
+    # this session (and its report) their eye data.
+    owned_calibration(payload.calibration_session_id, user, db)
     summary = pipeline.calibration_summary(payload.calibration_session_id)
     if summary is None:
         raise HTTPException(

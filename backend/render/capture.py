@@ -28,13 +28,27 @@ Playwright's sync API refuses to run inside an asyncio event loop, and this is
 called from FastAPI request handlers. Same fix as
 backend/reports/pdf_backends.py: detect a running loop and hand the work to a
 worker thread.
+
+PRIVATE ADDRESSES
+-----------------
+capture_page(block_private=True) refuses every request -- the page itself,
+each redirect hop, and every subresource -- whose host resolves to a
+loopback/private/link-local/reserved address. Checking only the URL the
+caller typed is not enough: a public page can 302 to http://127.0.0.1/ or
+pull an <img> off the study machine's network, and the screenshot would hand
+it back. It is still a guardrail rather than a boundary (DNS can answer
+differently between our lookup and Chromium's), which is why the endpoint
+that exposes it also requires login.
 """
 
 import asyncio
 import concurrent.futures
+import ipaddress
+import socket
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
+from urllib.parse import urljoin, urlparse
 
 from .classify import classify
 
@@ -57,6 +71,111 @@ MAX_ELEMENTS = 40
 
 class RenderUnavailable(RuntimeError):
     """Playwright or its Chromium build isn't installed."""
+
+
+class PrivateAddressBlocked(ValueError):
+    """block_private=True and the page (or a redirect) pointed somewhere private."""
+
+
+def private_address_reason(url: str) -> Optional[str]:
+    """Why `url` must not be fetched from this server, or None if it may be.
+
+    Anything that isn't http(s), has no host, doesn't resolve, or resolves to
+    any non-public address is refused. Every address the name resolves to is
+    checked, not just the first: Chromium may pick a different one.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return f"only http(s) URLs may be fetched, not {parsed.scheme or 'no'} scheme"
+    host = (parsed.hostname or "").strip("[]")
+    if not host:
+        return "URL has no host"
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as exc:
+        return f"could not resolve {host!r}: {exc}"
+    for info in infos:
+        addr = ipaddress.ip_address(info[4][0].split("%")[0])
+        if (addr.is_private or addr.is_loopback or addr.is_link_local
+                or addr.is_reserved or addr.is_multicast or addr.is_unspecified):
+            return f"refusing to fetch a private/loopback address ({addr})"
+    return None
+
+
+# Indirection so tests can mark a specific local port as "private" without
+# needing a real public host to redirect from.
+_blocked_reason: Callable[[str], Optional[str]] = private_address_reason
+
+_REDIRECT_STATUSES = (301, 302, 303, 307, 308)
+_MAX_REDIRECTS = 10
+
+
+def _fetch_checked(fetch, url: str, method: str, headers: Dict[str, str],
+                   body: Optional[bytes], blocked: List[str]):
+    """Fetch `url`, following redirects by hand so every hop is checked first.
+
+    `fetch(url, method, headers, body)` must NOT follow redirects itself.
+    Returns (final_url, response), or None if a hop was refused -- in which
+    case nothing was sent to that hop and the reason is in `blocked`.
+    """
+    first = url
+    for _ in range(_MAX_REDIRECTS + 1):
+        reason = _blocked_reason(url)
+        if reason:
+            blocked.append(f"{first}: {url}: {reason}" if url != first else f"{url}: {reason}")
+            return None
+        response = fetch(url, method, headers, body)
+        location = response.headers.get("location")
+        if response.status not in _REDIRECT_STATUSES or not location:
+            return url, response
+        url = urljoin(url, location)
+        if response.status in (301, 302, 303) and method != "HEAD":
+            # What browsers do: the follow-up is a body-less GET.
+            method, body = "GET", None
+            headers = {k: v for k, v in headers.items()
+                       if k.lower() not in ("content-type", "content-length")}
+    blocked.append(f"{first}: more than {_MAX_REDIRECTS} redirects")
+    return None
+
+
+def _install_private_guard(page, blocked: List[str]) -> None:
+    """Abort any request that would reach a private address, redirects included.
+
+    Playwright hands a route handler only the FIRST url of a redirect chain:
+    fulfil it with a 3xx and Chromium follows the rest itself, unseen (checked
+    -- a public->public->private chain got through that way). So the handler
+    fetches with redirects off, walks the chain itself checking each hop
+    before requesting it, and fulfils with the final response.
+
+    The cost is that a redirected request's content arrives under its
+    original URL. For the page itself that would skew final_url and relative
+    links, so _capture_sync resolves the top-level chain before navigating;
+    for subresources it doesn't matter.
+    """
+    def handler(route):
+        request = route.request
+        if request.url.startswith(("data:", "blob:", "about:")):
+            route.continue_()
+            return
+
+        def fetch(url, method, headers, body):
+            kwargs = {"url": url, "method": method, "headers": headers, "max_redirects": 0}
+            if body is not None:
+                kwargs["post_data"] = body
+            return route.fetch(**kwargs)
+
+        try:
+            result = _fetch_checked(fetch, request.url, request.method,
+                                    dict(request.headers), request.post_data_buffer, blocked)
+        except Exception:           # noqa: BLE001 -- surface as a network error
+            route.abort("failed")
+            return
+        if result is None:
+            route.abort("blockedbyclient")
+            return
+        route.fulfill(response=result[1])
+
+    page.route("**/*", handler)
 
 
 SCOPE_VIEWPORT = "viewport"
@@ -199,6 +318,7 @@ def _capture_sync(
     timeout_ms: int,
     full_page_screenshot: bool,
     scope: str,
+    block_private: bool = False,
 ) -> CaptureResult:
     try:
         from playwright.sync_api import sync_playwright
@@ -210,6 +330,7 @@ def _capture_sync(
 
     vw, vh = viewport
     warnings: List[str] = []
+    nav_url = url
 
     with sync_playwright() as p:
         try:
@@ -221,9 +342,26 @@ def _capture_sync(
 
         try:
             page = browser.new_page(viewport={"width": vw, "height": vh})
+            blocked: List[str] = []
+            if block_private:
+                # Walk the page's own redirect chain up front (each hop
+                # checked) and navigate straight to where it ends, so the
+                # page loads under its real URL -- see _install_private_guard.
+                resolved = _fetch_checked(
+                    lambda u, m, h, b: page.request.fetch(u, method=m, headers=h,
+                                                          max_redirects=0,
+                                                          timeout=timeout_ms),
+                    url, "GET", {}, None, blocked)
+                if resolved is None:
+                    raise PrivateAddressBlocked(blocked[0])
+                nav_url = resolved[0]
+                _install_private_guard(page, blocked)
             try:
-                page.goto(url, wait_until="networkidle", timeout=timeout_ms)
+                page.goto(nav_url, wait_until="networkidle", timeout=timeout_ms)
             except Exception:       # noqa: BLE001
+                if block_private and blocked and page.url in ("about:blank", ""):
+                    # The navigation itself was refused -- don't retry it.
+                    raise PrivateAddressBlocked(blocked[0]) from None
                 # networkidle never settles on pages with polling or ads. Fall
                 # back to domcontentloaded rather than failing the capture --
                 # a late-loading widget is worth less than the whole session.
@@ -231,10 +369,19 @@ def _capture_sync(
                     "page never reached network idle; captured after DOM load, "
                     "so late-loading elements may be missing"
                 )
-                page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                page.goto(nav_url, wait_until="domcontentloaded", timeout=timeout_ms)
 
-            title = page.title()
             final_url = page.url
+            if block_private and _blocked_reason(final_url):
+                # Belt and braces: never screenshot a private page, however
+                # the browser got there.
+                raise PrivateAddressBlocked(f"{final_url}: {_blocked_reason(final_url)}")
+            if blocked:
+                warnings.append(
+                    f"{len(blocked)} request(s) to private/loopback addresses "
+                    f"were blocked; the page may be missing content"
+                )
+            title = page.title()
             collected = page.evaluate(_COLLECT_JS)
             raw = collected["elements"]
             doc = collected["document_size"]
@@ -388,8 +535,14 @@ def capture_page(
     timeout_ms: int = DEFAULT_TIMEOUT_MS,
     full_page_screenshot: bool = False,
     scope: str = SCOPE_DOCUMENT,
+    block_private: bool = False,
 ) -> CaptureResult:
     """Screenshot + element detection for a URL. Safe to call from async code.
+
+    block_private=True is for URLs a user supplied: it refuses the page, any
+    redirect hop and any subresource on a private/loopback address (raising
+    PrivateAddressBlocked when the page itself is refused). Off by default
+    because the bundled test UIs are file:// pages.
 
     scope="document" (the default) normalises boxes against the whole
     scrollable page, so elements below the fold are included. The gaze stream
@@ -403,10 +556,14 @@ def capture_page(
         raise ValueError(f"unsupported URL scheme: {url!r}")
     if scope not in (SCOPE_VIEWPORT, SCOPE_DOCUMENT):
         raise ValueError(f"scope must be 'viewport' or 'document', got {scope!r}")
+    if block_private:
+        reason = _blocked_reason(url)
+        if reason:
+            raise PrivateAddressBlocked(reason)
 
     args = (url, viewport,
             Path(screenshot_path) if screenshot_path else None,
-            timeout_ms, full_page_screenshot, scope)
+            timeout_ms, full_page_screenshot, scope, block_private)
 
     try:
         asyncio.get_running_loop()

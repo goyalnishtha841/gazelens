@@ -16,16 +16,21 @@ persist, respond. All the actual logic lives in session.py and storage.py so
 it stays testable without HTTP -- and so this file is cheap to rewrite when
 the real frontend contract turns up.
 
-No auth dependency is attached here. backend/api's JWT code isn't in the
-repo; when it is, add its dependency to the router in one line rather than
-per route -- see CONTRACT.md.
+Every route requires a logged-in user (backend/api's JWT), and a session is
+visible only to the user who started it: anyone else gets the same 404 as an
+id that never existed. The ownership rule itself, including how calibrations
+recorded before owners were stored are handled, lives in one place --
+api/deps.owned_calibration.
 """
 
 from typing import List
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session as DBSession
 
 import cv
+from api.deps import get_current_user, get_db, owned_calibration, owned_calibration_ids
+from api.models import User
 
 from .points import DEFAULT_PATTERN, PATTERNS, generate_points, point_at
 from .schemas import (
@@ -45,19 +50,19 @@ from .session import (
     CalibrationSession,
     sample_from_frame_result,
 )
-from .storage import SessionNotFound, get_store
+from .storage import get_store
 
-router = APIRouter(prefix="/api/calibration", tags=["calibration"])
+# Router-level, so a route added later can't forget it. The per-route `user`
+# parameters below resolve to the same (cached) dependency.
+router = APIRouter(
+    prefix="/api/calibration",
+    tags=["calibration"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
-def _load(session_id: str) -> CalibrationSession:
-    try:
-        return get_store().get(session_id)
-    except SessionNotFound as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"calibration session {session_id!r} not found",
-        ) from exc
+def _load(session_id: str, user: User, db: DBSession) -> CalibrationSession:
+    return owned_calibration(session_id, user, db)
 
 
 def _points_model(session: CalibrationSession) -> List[CalibrationPointModel]:
@@ -103,9 +108,13 @@ async def list_patterns() -> PatternsResponse:
     response_model=StartCalibrationResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def start_calibration(payload: StartCalibrationRequest) -> StartCalibrationResponse:
+async def start_calibration(
+    payload: StartCalibrationRequest,
+    user: User = Depends(get_current_user),
+) -> StartCalibrationResponse:
     """Open a session and hand back the full target sequence."""
     session = CalibrationSession.create(
+        owner_id=user.id,
         participant_id=payload.participant_id,
         pattern=payload.pattern,
         screen_width=payload.screen_width,
@@ -125,13 +134,18 @@ async def start_calibration(payload: StartCalibrationRequest) -> StartCalibratio
 
 
 @router.post("/sessions/{session_id}/samples", response_model=SubmitSamplesResponse)
-def submit_samples(session_id: str, payload: SubmitSamplesRequest) -> SubmitSamplesResponse:
+def submit_samples(
+    session_id: str,
+    payload: SubmitSamplesRequest,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+) -> SubmitSamplesResponse:
     """Run a burst of frames through the pupil detector and store the hits.
 
     Sync on purpose so FastAPI runs it in the threadpool -- see
     session_routes.estimate_gaze_frame.
     """
-    session = _load(session_id)
+    session = _load(session_id, user, db)
 
     if session.status == STATUS_COMPLETE:
         raise HTTPException(
@@ -211,7 +225,11 @@ def submit_samples(session_id: str, payload: SubmitSamplesRequest) -> SubmitSamp
 
 
 @router.post("/sessions/{session_id}/complete", response_model=CompleteCalibrationResponse)
-async def complete_calibration(session_id: str) -> CompleteCalibrationResponse:
+async def complete_calibration(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+) -> CompleteCalibrationResponse:
     """Close the session and write the training export.
 
     Completing a poor calibration is allowed -- it is saved with
@@ -219,7 +237,7 @@ async def complete_calibration(session_id: str) -> CompleteCalibrationResponse:
     participant's data because coverage came out at 70% would be worse than
     keeping it clearly labelled.
     """
-    session = _load(session_id)
+    session = _load(session_id, user, db)
     quality = session.quality()
     paths = get_store().complete(session)
 
@@ -236,17 +254,32 @@ async def complete_calibration(session_id: str) -> CompleteCalibrationResponse:
 
 
 @router.get("/sessions", response_model=List[SessionSummary])
-async def list_sessions() -> List[SessionSummary]:
-    return [SessionSummary(**s) for s in get_store().list_sessions()]
+async def list_sessions(
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+) -> List[SessionSummary]:
+    """The caller's own calibration sessions only."""
+    mine = owned_calibration_ids(user, db)
+    return [SessionSummary(**s) for s in get_store().list_sessions()
+            if s["session_id"] in mine]
 
 
 @router.get("/sessions/{session_id}", response_model=SessionStatusResponse)
-async def get_session(session_id: str) -> SessionStatusResponse:
-    return _status_payload(_load(session_id))
+async def get_session(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+) -> SessionStatusResponse:
+    return _status_payload(_load(session_id, user, db))
 
 
 @router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_session(session_id: str) -> None:
+async def delete_session(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+) -> None:
+    _load(session_id, user, db)
     if not get_store().delete(session_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -23,13 +23,27 @@ Two deliberate choices:
 import asyncio
 import csv
 import json
+import os
 import shutil
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 # backend/ on the path so this runs directly, the way test_agents.py does.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# api.deps (pulled in by the routers' auth dependency) reads these at import:
+# a throwaway DB and key so this suite never touches backend/api's real ones.
+_AUTH_TMP = tempfile.mkdtemp(prefix="fixation_cal_auth_")
+os.environ.setdefault("FIXATION_DATABASE_URL", f"sqlite:///{_AUTH_TMP}/test.db")
+os.environ.setdefault("FIXATION_SECRET_KEY", "test-only-key-not-for-deployment-0123456789abcdef")
+
+# The handlers are called directly, so the logged-in user is passed in by
+# hand. Only `.id` is read; db=None is fine because none of these sessions is
+# a legacy (ownerless) one reached through a backend/api session.
+ME = SimpleNamespace(id="user_me")
+SOMEONE_ELSE = SimpleNamespace(id="user_someone_else")
 
 import cv                                                        # noqa: E402
 from cv.testing import StubPipeline                              # noqa: E402
@@ -131,7 +145,7 @@ try:
         screen_width=1920,
         screen_height=1080,
         samples_per_point=5,
-    )))
+    ), user=ME))
     session_id = start.session_id
     check("session id issued", session_id.startswith("cal_"))
     check("full point sequence returned", len(start.points) == 16)
@@ -151,7 +165,7 @@ try:
     stub.aim_at(target.x, target.y)
     resp = run(routes.submit_samples(session_id, SubmitSamplesRequest(
         point_index=0, frames=[FRAME] * 5,
-    )))
+    ), user=ME, db=None))
     check("all 5 frames accepted", resp.accepted == 5)
     check("nothing rejected", resp.rejected == 0)
     check("server grid supplied the target", resp.target_source == "server_grid")
@@ -167,7 +181,7 @@ try:
     stub.aim_at(grid16[1].x, grid16[1].y)
     blinked = run(routes.submit_samples(session_id, SubmitSamplesRequest(
         point_index=1, frames=[FRAME] * 5,
-    )))
+    ), user=ME, db=None))
     check("3 misses rejected", blinked.rejected == 3)
     check("2 hits accepted", blinked.accepted == 2)
     check("miss reason surfaced", "no_pupil_detected" in blinked.note)
@@ -177,25 +191,25 @@ try:
     stub.aim_at(0.42, 0.77)
     override = run(routes.submit_samples(session_id, SubmitSamplesRequest(
         point_index=2, frames=[FRAME] * 5, target_x=0.42, target_y=0.77,
-    )))
+    ), user=ME, db=None))
     check("client target used", override.target_source == "client")
     check("client x stored", abs(override.target_x - 0.42) < 1e-9)
 
     print("\nPOST /samples -- bad input is rejected")
     expect_http("point_index past the grid",
                 lambda: routes.submit_samples(session_id, SubmitSamplesRequest(
-                    point_index=99, frames=[FRAME])), 422)
+                    point_index=99, frames=[FRAME]), user=ME, db=None), 422)
     expect_http("half a target override",
                 lambda: routes.submit_samples(session_id, SubmitSamplesRequest(
-                    point_index=3, frames=[FRAME], target_x=0.5)), 422)
+                    point_index=3, frames=[FRAME], target_x=0.5), user=ME, db=None), 422)
     expect_http("unknown session",
                 lambda: routes.submit_samples("cal_doesnotexist", SubmitSamplesRequest(
-                    point_index=0, frames=[FRAME])), 404)
+                    point_index=0, frames=[FRAME]), user=ME, db=None), 404)
     expect_http("path traversal in session id",
-                routes.get_session("../../etc/passwd"), 404)
+                routes.get_session("../../etc/passwd", user=ME, db=None), 404)
 
     print("\nGET /sessions/{id} -- progress and quality")
-    st = run(routes.get_session(session_id))
+    st = run(routes.get_session(session_id, user=ME, db=None))
     check("every point has a count, including zeros", len(st.sample_counts) == 16)
     check("point 0 has 5 samples", st.sample_counts[0] == 5)
     check("point 1 has 2 samples", st.sample_counts[1] == 2)
@@ -212,17 +226,17 @@ try:
     full = run(routes.start_calibration(StartCalibrationRequest(
         participant_id="p002", pattern=9,
         screen_width=1440, screen_height=900, samples_per_point=6,
-    )))
+    ), user=ME))
     full_id = full.session_id
     for p in points_mod.generate_points(9):
         stub.aim_at(p.x, p.y)
         r = run(routes.submit_samples(full_id, SubmitSamplesRequest(
             point_index=p.index, frames=[FRAME] * 6,
-        )))
+        ), user=ME, db=None))
     check("session reports complete after last point", r.session_complete is True)
     check("no points remaining", r.points_remaining == [])
 
-    done = run(routes.complete_calibration(full_id))
+    done = run(routes.complete_calibration(full_id, user=ME, db=None))
     check("status is complete", done.status == "complete")
     check("54 samples stored (9 points x 6)", done.total_samples == 54)
     check("quality is usable", done.quality.usable is True)
@@ -235,7 +249,7 @@ try:
     print("\ncompleted session is closed for writes")
     expect_http("submitting to a complete session",
                 lambda: routes.submit_samples(full_id, SubmitSamplesRequest(
-                    point_index=0, frames=[FRAME])), 409)
+                    point_index=0, frames=[FRAME]), user=ME, db=None), 409)
 
     # ------------------------------------------------------------------
     print("\nthe handoff to backend/gaze_estimation -- the CSV export")
@@ -298,13 +312,43 @@ try:
           sparse.covered_points() == [])
     check("all 9 points listed as remaining", len(sparse.points_remaining()) == 9)
 
+    print("\nownership -- another user can't see or touch this session")
+    check("new session records its owner", get_store().get(full_id).owner_id == ME.id)
+    on_disk = json.loads((tmp_dir / f"{full_id}.json").read_text())
+    check("owner is persisted to the JSON file", on_disk.get("owner_id") == ME.id)
+    expect_http("someone else GETs it", routes.get_session(full_id, user=SOMEONE_ELSE, db=None), 404)
+    expect_http("someone else submits samples",
+                lambda: routes.submit_samples(full_id, SubmitSamplesRequest(
+                    point_index=0, frames=[FRAME]), user=SOMEONE_ELSE, db=None), 404)
+    expect_http("someone else completes it",
+                routes.complete_calibration(full_id, user=SOMEONE_ELSE, db=None), 404)
+    expect_http("someone else deletes it",
+                routes.delete_session(full_id, user=SOMEONE_ELSE, db=None), 404)
+    check("...and it is still there afterwards", (tmp_dir / f"{full_id}.json").exists())
+    check("someone else's listing is empty",
+          run(routes.list_sessions(user=SOMEONE_ELSE, db=None)) == [])
+
+    # A file written before owners were recorded: no owner_id key at all.
+    legacy = CalibrationSession.create("p_legacy", pattern=9)
+    legacy_dict = legacy.to_dict()
+    legacy_dict.pop("owner_id")
+    (tmp_dir / f"{legacy.session_id}.json").write_text(json.dumps(legacy_dict))
+    check("a legacy file still loads, with no owner",
+          get_store().get(legacy.session_id).owner_id is None)
+    expect_http("a legacy session isn't open to any logged-in user",
+                routes.get_session(legacy.session_id, user=ME, db=None), 404)
+    check("...nor listed for them",
+          legacy.session_id not in {s.session_id for s in
+                                    run(routes.list_sessions(user=ME, db=None))})
+    get_store().delete(legacy.session_id)
+
     print("\nGET /sessions and DELETE")
-    listing = run(routes.list_sessions())
+    listing = run(routes.list_sessions(user=ME, db=None))
     check("both sessions listed", len({s.session_id for s in listing}) == 2)
-    run(routes.delete_session(full_id))
+    run(routes.delete_session(full_id, user=ME, db=None))
     check("deleted session's JSON is gone", not (tmp_dir / f"{full_id}.json").exists())
     check("deleted session's CSV is gone", not csv_path.exists())
-    expect_http("deleting a session twice", routes.delete_session(full_id), 404)
+    expect_http("deleting a session twice", routes.delete_session(full_id, user=ME, db=None), 404)
 
 finally:
     cv.set_pipeline(None)

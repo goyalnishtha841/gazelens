@@ -28,8 +28,10 @@ from .capture import (                       # noqa: E402
     DEFAULT_VIEWPORT,
     MAX_ELEMENTS,
     CaptureResult,
+    PrivateAddressBlocked,
     RenderUnavailable,
     capture_page,
+    private_address_reason,
     render_available,
 )
 from .classify import classify, classify_importance, classify_type   # noqa: E402
@@ -40,6 +42,8 @@ __all__ = [
     "capture_page",
     "CaptureResult",
     "RenderUnavailable",
+    "PrivateAddressBlocked",
+    "private_address_reason",
     "render_available",
     "classify",
     "classify_type",

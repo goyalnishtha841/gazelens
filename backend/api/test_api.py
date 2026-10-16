@@ -397,6 +397,7 @@ try:
 
     cal_session = generate_calibration_session(pattern=16, samples_per_point=12,
                                                participant_id="alice", seed=11)
+    cal_session.owner_id = alice_user.id
     store.save(cal_session)
 
     linked = run(session_routes.link_calibration(

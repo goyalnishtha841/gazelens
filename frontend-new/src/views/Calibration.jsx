@@ -89,7 +89,7 @@ function describeNote(note) {
 }
 
 export default function Calibration({ onComplete, onExit }) {
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const [status, setStatus] = useState("idle"); // idle | running | validating | done | error
   const [calibrationId, setCalibrationId] = useState(null);
   // currentIndex counts steps; order[step] is the grid cell shown at that step
@@ -176,7 +176,7 @@ export default function Calibration({ onComplete, onExit }) {
     }
 
     try {
-      const session = await startCalibration({
+      const session = await startCalibration(token, {
         participantId: user?.id || "unknown_participant",
         pattern: PATTERN,
         screenWidth: window.innerWidth,
@@ -191,7 +191,7 @@ export default function Calibration({ onComplete, onExit }) {
       setCameraError(err.message || "Couldn't start calibration.");
       streamRef.current?.getTracks().forEach((t) => t.stop());
     }
-  }, [user]);
+  }, [user, token]);
 
   const capturing = status === "running" || status === "validating";
 
@@ -240,7 +240,7 @@ export default function Calibration({ onComplete, onExit }) {
         let summary = null;
         try {
           if (frames.length > 0) {
-            summary = (await validateGaze(calibrationId, currentIndex, frames, targetX, targetY)).summary;
+            summary = (await validateGaze(token, calibrationId, currentIndex, frames, targetX, targetY)).summary;
           }
         } catch (err) {
           if (!cancelled) {
@@ -279,7 +279,7 @@ export default function Calibration({ onComplete, onExit }) {
 
       try {
         if (frames.length > 0) {
-          const result = await submitCalibrationSamples(calibrationId, order[currentIndex], frames, targetX, targetY);
+          const result = await submitCalibrationSamples(token, calibrationId, order[currentIndex], frames, targetX, targetY);
           if (!cancelled) {
             setPointFeedback({ accepted: result.accepted, rejected: result.rejected, note: result.note });
           }
@@ -298,7 +298,7 @@ export default function Calibration({ onComplete, onExit }) {
         setProgress(0);
       } else {
         try {
-          const result = await completeCalibration(calibrationId);
+          const result = await completeCalibration(token, calibrationId);
           if (!cancelled) {
             setQuality(result.quality);
             // Camera stays on: straight into the validation dots.

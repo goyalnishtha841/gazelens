@@ -19,12 +19,20 @@ positions, and this turns pupil positions into screen positions. For a real
 live session the two are better composed in-process (see estimator.
 estimate_frame_result) than over HTTP; these endpoints exist so the flow is
 callable from the frontend and testable in isolation.
+
+Auth: every route needs a logged-in user, and a model is visible only to the
+owner of the calibration session it was trained from (models are keyed by
+that id) -- anyone else gets 404, exactly as for a model that doesn't exist.
+See api/deps.owned_calibration.
 """
 
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session as DBSession
 
+from api.deps import get_current_user, get_db, owned_calibration, owned_calibration_ids
+from api.models import User
 from calibration.storage import SessionNotFound
 
 from .estimator import clear_estimator, get_estimator
@@ -78,7 +86,22 @@ def _append_validation_frames(session_id, payload, frames, points) -> None:
                 "predicted": pt.to_dict(),
             }) + "\n")
 
-router = APIRouter(prefix="/api/gaze", tags=["gaze estimation"])
+router = APIRouter(
+    prefix="/api/gaze",
+    tags=["gaze estimation"],
+    dependencies=[Depends(get_current_user)],
+)
+
+
+def _owned(session_id: str, user: User, db: DBSession) -> None:
+    """404 unless `user` owns the calibration this model is (or would be) trained from."""
+    try:
+        owned_calibration(session_id, user, db)
+    except HTTPException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no trained gaze model for session {session_id!r}",
+        ) from exc
 
 
 def _estimator(session_id: str, smoothing: float = 0.0):
@@ -103,7 +126,10 @@ def _to_pupil(p):
 
 @router.post("/models/{session_id}/train", response_model=TrainResponse)
 async def train(
-    session_id: str, payload: Optional[TrainRequest] = None
+    session_id: str,
+    payload: Optional[TrainRequest] = None,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
 ) -> TrainResponse:
     """Fit a per-session gaze model from that session's calibration data.
 
@@ -116,6 +142,13 @@ async def train(
     would build one instance at import time and share it across every request,
     which is a mutable process-wide object masquerading as a per-call default.
     """
+    try:
+        owned_calibration(session_id, user, db)
+    except HTTPException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no calibration session {session_id!r} -- calibrate first",
+        ) from exc
     payload = payload or TrainRequest()
     try:
         result = train_session(
@@ -161,13 +194,23 @@ async def train(
 
 
 @router.get("/models", response_model=List[ModelSummary])
-async def list_trained_models() -> List[ModelSummary]:
-    return [ModelSummary(**m) for m in list_models()]
+async def list_trained_models(
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+) -> List[ModelSummary]:
+    """The caller's own models only."""
+    mine = owned_calibration_ids(user, db)
+    return [ModelSummary(**m) for m in list_models() if m["session_id"] in mine]
 
 
 @router.get("/models/{session_id}", response_model=TrainResponse)
-async def get_model(session_id: str) -> TrainResponse:
+async def get_model(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+) -> TrainResponse:
     """A trained model's stored accuracy, without retraining it."""
+    _owned(session_id, user, db)
     if not has_model(session_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -198,7 +241,12 @@ async def get_model(session_id: str) -> TrainResponse:
 
 
 @router.delete("/models/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_trained_model(session_id: str) -> None:
+async def delete_trained_model(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+) -> None:
+    _owned(session_id, user, db)
     clear_estimator(session_id)
     if not delete_model(session_id):
         raise HTTPException(
@@ -208,8 +256,14 @@ async def delete_trained_model(session_id: str) -> None:
 
 
 @router.post("/models/{session_id}/estimate", response_model=EstimateResponse)
-async def estimate(session_id: str, payload: EstimateRequest) -> EstimateResponse:
+async def estimate(
+    session_id: str,
+    payload: EstimateRequest,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+) -> EstimateResponse:
     """One frame's pupil positions -> one screen coordinate."""
+    _owned(session_id, user, db)
     est = _estimator(session_id, payload.smoothing)
     point = est.estimate(
         left=_to_pupil(payload.left),
@@ -226,7 +280,10 @@ async def estimate(session_id: str, payload: EstimateRequest) -> EstimateRespons
 
 @router.post("/models/{session_id}/estimate/batch", response_model=EstimateBatchResponse)
 async def estimate_batch(
-    session_id: str, payload: EstimateBatchRequest
+    session_id: str,
+    payload: EstimateBatchRequest,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
 ) -> EstimateBatchResponse:
     """A burst of frames -> a slice of the gaze stream.
 
@@ -234,6 +291,7 @@ async def estimate_batch(
     can see where the gaps are -- a missing frame silently removed would read
     downstream as continuous attention.
     """
+    _owned(session_id, user, db)
     est = _estimator(session_id, payload.smoothing)
     points = est.estimate_batch([
         {
@@ -258,7 +316,12 @@ __all__ = ["router"]
 
 
 @router.post("/models/{session_id}/validate", response_model=ValidateResponse)
-def validate(session_id: str, payload: ValidateRequest) -> ValidateResponse:
+def validate(
+    session_id: str,
+    payload: ValidateRequest,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+) -> ValidateResponse:
     """Score the model on one fresh dot shown AFTER calibration.
 
     The one endpoint here that takes webcam frames rather than pupil
@@ -271,6 +334,14 @@ def validate(session_id: str, payload: ValidateRequest) -> ValidateResponse:
     on the event loop.
     """
     import cv
+
+    try:
+        owned_calibration(session_id, user, db)
+    except HTTPException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no calibration session {session_id!r} -- calibrate first",
+        ) from exc
 
     if not has_model(session_id):
         try:
