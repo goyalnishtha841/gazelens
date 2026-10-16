@@ -190,7 +190,7 @@ class GazeModel:
         """Features -> normalised screen coords, (n, 2), unclipped."""
         X = np.atleast_2d(np.asarray(X, dtype=float))
         A = design_matrix((X - self.mean) / self.scale, self.exponents)
-        return A @ self.coef
+        return apply_correction(A @ self.coef, self.metrics.get(CORRECTION_KEY))
 
     def predict_one(
         self,
@@ -285,6 +285,32 @@ class GazeModel:
     @classmethod
     def load(cls, path: Path) -> "GazeModel":
         return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
+
+
+# A small per-axis linear fix-up (x' = a*x + b, y' = a*y + b) learned from
+# the accuracy-check dots -- see validation.fit_correction. Stored inside
+# metrics so models saved before it existed load unchanged.
+CORRECTION_KEY = "correction"
+
+
+def apply_correction(pred: np.ndarray, correction: Optional[Dict]) -> np.ndarray:
+    if not correction:
+        return pred
+    out = np.array(pred, dtype=float, copy=True)
+    ax, bx = correction["x"]
+    ay, by = correction["y"]
+    out[:, 0] = ax * out[:, 0] + bx
+    out[:, 1] = ay * out[:, 1] + by
+    return out
+
+
+def undo_correction(x: float, y: float, correction: Optional[Dict]) -> Tuple[float, float]:
+    """Corrected -> raw model output (the correction is a plain affine map)."""
+    if not correction:
+        return x, y
+    ax, bx = correction["x"]
+    ay, by = correction["y"]
+    return (x - bx) / ax, (y - by) / ay
 
 
 def max_degree_for(feature_set: str, n_points: int) -> int:

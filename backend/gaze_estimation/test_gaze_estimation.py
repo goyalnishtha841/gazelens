@@ -774,6 +774,48 @@ finally:
     training_mod.MODEL_DIR = saved_model_dir
     shutil.rmtree(val_dir, ignore_errors=True)
 
+# ---------------------------------------------------------------------------
+print("\nvalidation -- bias correction from the accuracy-check dots")
+from gaze_estimation import validation as V                     # noqa: E402
+from gaze_estimation.model import apply_correction, undo_correction   # noqa: E402
+
+_m = GazeModel.__new__(GazeModel)
+_m.screen_width, _m.screen_height, _m.metrics = 1600, 900, {}
+_targets = [(0.5, 0.5), (0.3, 0.3), (0.7, 0.3), (0.3, 0.7), (0.7, 0.7)]
+# a model that reads every dot 8% of the screen too low, plus a little noise
+_rng = np.random.default_rng(3)
+_pts = {}
+for _i, (_tx, _ty) in enumerate(_targets):
+    _rx, _ry = _tx + _rng.normal(0, 0.005), _ty + 0.08 + _rng.normal(0, 0.005)
+    _pts[str(_i)] = {"usable": True, "target_x": _tx, "target_y": _ty, "raw_x": _rx, "raw_y": _ry,
+                     "predicted_x": _rx, "predicted_y": _ry,
+                     "error_px": float(np.hypot((_rx - _tx) * 1600, (_ry - _ty) * 900))}
+_corr, _held = V.fit_correction(_pts, _m)
+check("a consistent offset is learned", _corr is not None and abs(_corr["y"][1] + 0.08) < 0.03)
+check("held-out error drops well below the raw error",
+      _held is not None and _held < 0.5 * np.median([p["error_px"] for p in _pts.values()]))
+_m.metrics = {V.VALIDATION_KEY: {"points": dict(_pts)}}
+_m.metrics[V.VALIDATION_KEY]["points"].pop("4")
+_sum = V.record_point(_m, 4, _pts["4"])
+check("the correction is stored and reported as corrected", _sum.get("corrected") is True
+      and "correction" in _m.metrics and _sum["median_error_px"] < _sum["uncorrected_median_error_px"])
+_raw = np.array([[0.4, 0.62]])
+_fixed = apply_correction(_raw, _m.metrics["correction"])
+check("undo_correction inverts apply_correction",
+      np.allclose(undo_correction(float(_fixed[0, 0]), float(_fixed[0, 1]), _m.metrics["correction"]), (0.4, 0.62)))
+# noise only: no systematic bias, so nothing should be applied
+_noise = {}
+for _i, (_tx, _ty) in enumerate(_targets):
+    _rx, _ry = _tx + _rng.normal(0, 0.04), _ty + _rng.normal(0, 0.04)
+    _noise[str(_i)] = {"usable": True, "target_x": _tx, "target_y": _ty, "raw_x": _rx, "raw_y": _ry,
+                       "error_px": float(np.hypot((_rx - _tx) * 1600, (_ry - _ty) * 900))}
+_m2 = GazeModel.__new__(GazeModel)
+_m2.screen_width, _m2.screen_height = 1600, 900
+_m2.metrics = {V.VALIDATION_KEY: {"points": {k: v for k, v in _noise.items() if k != "4"}}}
+_s2 = V.record_point(_m2, 4, _noise["4"])
+check("pure noise is not 'corrected' unless it truly helps on held-out dots",
+      ("correction" not in _m2.metrics) or _s2["median_error_px"] < 0.9 * _s2["uncorrected_median_error_px"])
+
 print(f"\n{'=' * 40}\n{passed} passed, {failed} failed\n{'=' * 40}")
 
 if failed:

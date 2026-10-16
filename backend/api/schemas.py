@@ -242,6 +242,11 @@ class GazeFrameRequest(BaseModel):
                     "calibration targets were measured in); when the page sits "
                     "inside a smaller stage, gaze is remapped into it.",
     )
+    # How far the page inside the stage was scrolled when this frame was
+    # taken, in the captured page's CSS pixels. Needed for URL sessions on
+    # long pages -- see GazePointInput.scroll_y and pipeline.to_document_space.
+    scroll_x: float = Field(0.0, ge=0.0)
+    scroll_y: float = Field(0.0, ge=0.0)
 
 
 class GazeFrameResponse(BaseModel):
@@ -270,6 +275,7 @@ class ReportResponse(BaseModel):
     report_id: str
     status: str
     ui_page: Optional[str] = None
+    target_url: Optional[str] = None
 
     pipeline_result: Dict[str, Any]
     metrics: Dict[str, Any]

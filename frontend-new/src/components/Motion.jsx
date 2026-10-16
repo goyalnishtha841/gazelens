@@ -9,13 +9,17 @@ const EASE = [0.22, 1, 0.36, 1];
  * rather than firing only the first time. Use on sections below the fold.
  * For anything visible on load, use StaggerGroup/StaggerItem instead so it
  * doesn't wait for a scroll event that may never come.
+ *
+ * `once` keeps content visible after its first entrance -- the landing page
+ * uses it, since sections fading out behind a reader scrolling back up reads
+ * as a glitch on a marketing page.
  */
-export function Reveal({ children, delay = 0, y = 18, className = "" }) {
+export function Reveal({ children, delay = 0, y = 18, className = "", once = false }) {
   return (
     <motion.div
       initial={{ opacity: 0, y }}
       whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: false, margin: "-80px" }}
+      viewport={{ once, margin: "-80px" }}
       transition={{ duration: 0.55, delay, ease: EASE }}
       className={className}
     >

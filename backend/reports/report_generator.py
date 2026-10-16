@@ -32,7 +32,7 @@ def _build_narrative(pipeline_result: dict, ui_page: str) -> dict:
     issues = pipeline_result["issues"]
     quality = pipeline_result.get("quality") or {}
     label = _labeller(pipeline_result)
-    page_name = ui_page.replace("_", " ")
+    page_name = PAGE_NAMES.get(ui_page, ui_page.replace("_", " ")).replace("the ", "", 1)
 
     if quality.get("level") == "insufficient":
         reasons = "; ".join(quality.get("reasons") or []) or "the gaze data was unreliable"
@@ -58,16 +58,16 @@ def _build_narrative(pipeline_result: dict, ui_page: str) -> dict:
 
     sentences = []
     if behavior["first_noticed"]:
-        sentences.append(f"On the {page_name}, the first thing noticed was <strong>{label(behavior['first_noticed'])}</strong>.")
+        sentences.append(f"People noticed <strong>{label(behavior['first_noticed'])}</strong> first.")
     if behavior["ignored_important_elements"]:
         ignored = ", ".join(f"<strong>{label(e)}</strong>" for e in behavior["ignored_important_elements"])
-        sentences.append(f"{ignored} did not receive the attention expected for its importance.")
+        sentences.append(f"{ignored} {'was' if len(behavior['ignored_important_elements']) == 1 else 'were'} barely looked at, even though {'it matters' if len(behavior['ignored_important_elements']) == 1 else 'they matter'}.")
     if behavior["attention_scattered"]:
-        sentences.append("Gaze repeatedly jumped between the same elements, suggesting the layout may be causing confusion.")
+        sentences.append("Eyes kept jumping back and forth between the same parts, a sign the layout may be confusing.")
     if not issues:
-        sentences.append("Attention was distributed in line with expectations for this page.")
+        sentences.append("Attention went where you'd expect on this page.")
     if quality.get("level") == "limited":
-        sentences.append("Measurement quality was limited, so no finding is rated above Medium.")
+        sentences.append("Tracking accuracy was only fair, so no finding is rated above \"worth fixing\".")
 
     return {
         "banner_level": banner_level,
@@ -117,17 +117,40 @@ def _build_before_after(pipeline_result: dict) -> list[dict]:
     return rows
 
 
+PAGE_NAMES = {
+    "ecommerce_product_page": "the shop product page",
+    "form_page": "the sign-up form",
+    "dashboard_page": "the dashboard page",
+    "login_page": "the login page",
+    "article_page": "the news article page",
+    "captured_page": "your website",
+}
+
+
+def _clean(text: str) -> str:
+    """Drop the trailing "(Evidence: ...)" the agents append; the PDF shows
+    the evidence separately."""
+    import re
+    return re.sub(r"\s*\(Evidence:.*\)\s*$", "", text or "")
+
+
 def _render_html(pipeline_result: dict, ui_page: str, heatmap_path: str | None,
                  scanpath_path: str | None = None,
-                 dwell_chart_path: str | None = None) -> str:
+                 dwell_chart_path: str | None = None,
+                 page_name: str | None = None,
+                 attention: dict | None = None) -> str:
     env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)))
     env.filters["label"] = _labeller(pipeline_result)
+    env.filters["clean"] = _clean
+    env.filters["truncate_list"] = lambda items, n: list(items)[:n] + (["…"] if len(list(items)) > n else [])
     template = env.get_template("report_template.html.j2")
     narrative = _build_narrative(pipeline_result, ui_page)
 
     return template.render(
         session_id=pipeline_result["session_id"],
         ui_page=ui_page,
+        page_name=page_name or PAGE_NAMES.get(ui_page, ui_page.replace("_", " ")),
+        attention=attention,
         generated_at=datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
         behavior=pipeline_result["behavior_summary"],
         issues=pipeline_result["issues"],
@@ -156,7 +179,8 @@ def _html_to_pdf(html_path: Path, pdf_path: Path) -> str:
 
 
 def generate_report(pipeline_result: dict, ui_page: str, output_dir: str, heatmap_path: str | None = None,
-                    scanpath_path: str | None = None, dwell_chart_path: str | None = None) -> dict:
+                    scanpath_path: str | None = None, dwell_chart_path: str | None = None,
+                    page_name: str | None = None, attention: dict | None = None) -> dict:
     """
     pipeline_result: output of orchestrator.run_pipeline(session)
     ui_page:          which test UI this session was run against
@@ -174,7 +198,7 @@ def generate_report(pipeline_result: dict, ui_page: str, output_dir: str, heatma
     pdf_path = output_dir / f"{session_id}.pdf"
 
     html_content = _render_html(pipeline_result, ui_page, heatmap_path, scanpath_path,
-                                dwell_chart_path)
+                                dwell_chart_path, page_name=page_name, attention=attention)
     html_path.write_text(html_content, encoding="utf-8")
 
     # HTML is written first and unconditionally, so a machine that can't

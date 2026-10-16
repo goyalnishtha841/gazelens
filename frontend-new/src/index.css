@@ -6,23 +6,35 @@
    need `rgb(var(--x) / <alpha-value>)`, which only works with component
    values, not a single hex string. See tailwind.config.js. */
 :root {
-  --color-bg: 247 247 245;
+  /* Light: warm paper. Same brand ramp, darkened for contrast on white. */
+  --color-bg: 246 245 241;
   --color-surface: 255 255 255;
-  --color-text-primary: 17 17 17;
-  --color-text-secondary: 119 119 119;
-  --color-border: 231 231 228;
-  --color-accent: 108 99 255;
-  --color-accent-soft: #6c63ff1a;
+  --color-raised: 240 238 232;
+  --color-text-primary: 14 20 27;
+  --color-text-secondary: 94 107 122;
+  --color-border: 227 224 216;
+  --color-accent: 14 159 136;      /* iris teal */
+  --color-accent-soft: #0e9f881a;
+  --color-amber: 199 122 0;
+  --color-coral: 217 71 58;
+  --color-cool: 53 99 224;
 }
 
+/* GazeLens design system ("Precision Optic", from the Stitch export).
+   The accents are the gaze heatmap's own scale -- cool -> iris -> amber ->
+   coral -- so the interface and the reports share one colour language. */
 .dark {
-  --color-bg: 11 11 13;
-  --color-surface: 18 18 20;
-  --color-text-primary: 244 244 242;
-  --color-text-secondary: 133 133 140;
-  --color-border: 36 36 40;
-  --color-accent: 169 163 255;
-  --color-accent-soft: #a9a3ff26;
+  --color-bg: 10 14 20;            /* #0A0E14 deep ink */
+  --color-surface: 17 24 35;       /* #111823 */
+  --color-raised: 23 33 49;        /* #172131 */
+  --color-text-primary: 232 238 245;
+  --color-text-secondary: 138 155 176;
+  --color-border: 34 48 68;        /* #223044 */
+  --color-accent: 46 230 197;      /* #2EE6C5 iris teal */
+  --color-accent-soft: #2ee6c51f;
+  --color-amber: 255 181 71;       /* #FFB547 */
+  --color-coral: 255 107 90;       /* #FF6B5A */
+  --color-cool: 91 140 255;        /* #5B8CFF */
 }
 
 * {
@@ -40,7 +52,7 @@ html.dark {
 body {
   background-color: rgb(var(--color-bg));
   color: rgb(var(--color-text-primary));
-  font-family: "Inter", "SF Pro Display", system-ui, sans-serif;
+  font-family: "Outfit", "Inter", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -76,4 +88,26 @@ body {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Landing feature wall: columns drift up or down forever. The content is
+   rendered twice, so moving by exactly half loops without a seam. */
+@keyframes wall-up {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+@keyframes wall-down {
+  from { transform: translateY(-50%); }
+  to { transform: translateY(0); }
 }

@@ -84,7 +84,7 @@ function AuthenticatedApp() {
   if (openSessionId) {
     body = <SessionReport sessionId={openSessionId} onBack={() => setOpenSessionId(null)} />;
   } else if (view === "home") {
-    body = <Home onNavigate={setView} hasCalibration={!!calibrationSessionId} />;
+    body = <Home onNavigate={setView} onOpenSession={setOpenSessionId} hasCalibration={!!calibrationSessionId} />;
   } else if (view === "session") {
     body = (
       <LiveSession
@@ -108,13 +108,34 @@ function AuthenticatedApp() {
     );
   } else {
     const Active = VIEWS[view] ?? Dashboard;
-    body = <Active onNavigate={setView} />;
+    body = <Active onNavigate={setView} onOpenSession={setOpenSessionId} />;
   }
 
   return (
-    <div className="min-h-screen bg-bg text-text-primary">
+    <div className="relative isolate min-h-screen bg-bg text-text-primary">
+      <AppBackdrop />
       <Nav active={openSessionId ? null : view} onNavigate={(v) => { setOpenSessionId(null); setView(v); }} onLogout={logout} />
       <PageTransition viewKey={openSessionId ? `report-${openSessionId}` : view}>{body}</PageTransition>
+    </div>
+  );
+}
+
+/** The landing page's atmosphere for signed-in pages: a soft teal glow at
+ *  the top and a faint dot grid fading out downwards. Static on purpose --
+ *  nothing should move behind a recording or a report. */
+function AppBackdrop() {
+  return (
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10">
+      <div className="absolute inset-x-0 top-0 h-[520px]" style={{ background: "radial-gradient(55% 70% at 50% 0%, rgb(var(--color-accent) / 0.10), transparent 70%)" }} />
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundImage: "radial-gradient(rgb(var(--color-text-secondary) / 0.16) 1px, transparent 1px)",
+          backgroundSize: "30px 30px",
+          maskImage: "linear-gradient(to bottom, black, transparent 75%)",
+          WebkitMaskImage: "linear-gradient(to bottom, black, transparent 75%)",
+        }}
+      />
     </div>
   );
 }

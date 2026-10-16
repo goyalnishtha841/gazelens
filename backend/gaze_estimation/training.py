@@ -124,6 +124,14 @@ def pose_reference(rows: Sequence[Dict]) -> Dict[str, float]:
     return ref
 
 
+def per_dot_medians(dataset):
+    """One row per calibration dot: the median feature vector and its target."""
+    groups = np.unique(dataset.groups)
+    X = np.asarray([np.median(dataset.X[dataset.groups == g], axis=0) for g in groups])
+    y = np.asarray([dataset.y[dataset.groups == g][0] for g in groups])
+    return X, y
+
+
 def train_from_rows(
     rows: Sequence[Dict],
     session_id: str = "",
@@ -177,8 +185,18 @@ def train_from_rows(
 
     # Final model is fitted on ALL points; the error reported with it comes
     # from the leave-one-point-out run above, never from this fit.
+    #
+    # Degree-1 models are fitted on one median row per dot rather than on
+    # every frame. Frame-level noise in the eye features flattens a fitted
+    # slope (errors-in-variables), which showed up as gaze squashed towards
+    # the middle of the screen -- vertical gain ~0.65 on the accuracy-check
+    # dots. Per-dot medians remove most of that noise: check-dot error fell
+    # from 76 to 70px across the saved sessions (scripts/evaluate_gaze_sessions.py).
+    fit_X, fit_y = dataset.X, dataset.y
+    if chosen["degree"] == 1 and dataset.n_points >= 6:
+        fit_X, fit_y = per_dot_medians(dataset)
     model = GazeModel.fit(
-        dataset.X, dataset.y,
+        fit_X, fit_y,
         feature_set=chosen["feature_set"],
         degree=chosen["degree"],
         ridge=chosen["ridge"],

@@ -19,7 +19,7 @@ from typing import Dict, Optional, Sequence, Tuple
 import numpy as np
 
 from .estimator import GazePoint
-from .model import GazeModel
+from .model import CORRECTION_KEY, GazeModel, undo_correction
 
 # Thresholds as a fraction of the screen diagonal, so they mean the same
 # thing on a 13" laptop and a 27" monitor. On a 1694x840 screen these are
@@ -70,11 +70,16 @@ def score_point(
     xs = np.asarray([p.x for p in valid])
     ys = np.asarray([p.y for p in valid])
     px, py = float(np.median(xs)), float(np.median(ys))
+    # Keep the model's own (uncorrected) answer too: the bias correction is
+    # re-fitted from these, so they must not already include it.
+    raw_x, raw_y = undo_correction(px, py, model.metrics.get(CORRECTION_KEY))
     per_frame = np.hypot((xs - target_x) * w, (ys - target_y) * h)
     out.update(
         usable=True,
         predicted_x=px,
         predicted_y=py,
+        raw_x=float(raw_x),
+        raw_y=float(raw_y),
         error_px=float(np.hypot((px - target_x) * w, (py - target_y) * h)),
         per_frame_median_error_px=float(np.median(per_frame)),
     )
@@ -91,9 +96,74 @@ def record_point(model: GazeModel, point_index: int, result: Dict) -> Dict:
     points = dict(validation.get("points") or {})
     points[str(point_index)] = result
     validation["points"] = points
-    validation.update(summarise(points, model))
-    model.metrics = {**model.metrics, VALIDATION_KEY: validation}
+    summary = summarise(points, model)
+    correction, corrected = fit_correction(points, model)
+    metrics = dict(model.metrics)
+    if correction is not None and corrected is not None and summary.get("median_error_px") is not None \
+            and corrected < IMPROVEMENT_REQUIRED * summary["median_error_px"]:
+        # Report the HELD-OUT corrected error, so the number shown is honest.
+        diagonal = _diagonal(model)
+        frac = corrected / diagonal
+        summary.update(
+            uncorrected_median_error_px=summary["median_error_px"],
+            median_error_px=corrected,
+            median_error_pct_diagonal=100.0 * frac,
+            verdict=("good" if frac <= VALIDATION_GOOD_FRACTION
+                     else "fair" if frac <= VALIDATION_MAX_FRACTION else "poor"),
+            corrected=True,
+        )
+        metrics[CORRECTION_KEY] = correction
+    else:
+        summary["corrected"] = False
+        metrics.pop(CORRECTION_KEY, None)
+    validation.update(summary)
+    metrics[VALIDATION_KEY] = validation
+    model.metrics = metrics
     return validation
+
+
+# The correction is kept only if it beats the raw model by this margin on
+# dots it was not fitted to.
+IMPROVEMENT_REQUIRED = 0.9
+# Pull toward "no correction" (a=1, b=0); five dots is not much data.
+CORRECTION_SHRINK = 0.05
+MIN_CORRECTION_POINTS = 4
+
+
+def _fit_axis(raw: np.ndarray, target: np.ndarray) -> Tuple[float, float]:
+    """target ~ a*raw + b, ridge-shrunk toward a=1, b=0."""
+    A = np.column_stack([raw, np.ones_like(raw)])
+    lam = CORRECTION_SHRINK * len(raw)
+    # minimise |A w - t|^2 + lam |w - [1, 0]|^2
+    w = np.linalg.solve(A.T @ A + lam * np.eye(2), A.T @ target + lam * np.array([1.0, 0.0]))
+    a = float(np.clip(w[0], 0.6, 1.6))      # never flip or wildly stretch an axis
+    return a, float(w[1])
+
+
+def fit_correction(points: Dict[str, Dict], model: GazeModel):
+    """Learn a per-axis linear fix-up from the validation dots.
+
+    Webcam gaze models tend to carry a systematic bias (for example the top
+    of the screen read as lower than it is). The calibration fit can't see
+    that, but the accuracy-check dots can. Returns (correction, held-out
+    median error in px) -- the error is leave-one-dot-out, so the reported
+    accuracy is never measured on the dots the correction was fitted to.
+    """
+    usable = [p for p in points.values() if p.get("usable") and p.get("raw_x") is not None]
+    if len(usable) < MIN_CORRECTION_POINTS:
+        return None, None
+    rx = np.array([p["raw_x"] for p in usable]); ry = np.array([p["raw_y"] for p in usable])
+    tx = np.array([p["target_x"] for p in usable]); ty = np.array([p["target_y"] for p in usable])
+    w, h = model.screen_width, model.screen_height
+    held_out = []
+    for i in range(len(usable)):
+        keep = np.arange(len(usable)) != i
+        ax, bx = _fit_axis(rx[keep], tx[keep])
+        ay, by = _fit_axis(ry[keep], ty[keep])
+        held_out.append(float(np.hypot((ax * rx[i] + bx - tx[i]) * w, (ay * ry[i] + by - ty[i]) * h)))
+    ax, bx = _fit_axis(rx, tx)
+    ay, by = _fit_axis(ry, ty)
+    return {"x": [ax, bx], "y": [ay, by], "n_points": len(usable)}, float(np.median(held_out))
 
 
 def summarise(points: Dict[str, Dict], model: GazeModel) -> Dict:

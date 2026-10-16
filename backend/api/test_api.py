@@ -683,7 +683,7 @@ check("gaze heatmap and dwell chart both rendered",
       and Path(_rendered["heatmap_path"]).exists() and Path(_rendered["dwell_chart_path"]).exists())
 _html = Path(_rendered["html_path"]).read_text()
 check("report uses readable names", "Area A" in _html)
-check("report embeds the dwell chart", "_dwell.png" in _html)
+check("report shows per-element attention bars", "Share of attention" in _html and "bar-fill" in _html)
 
 print(f"\n{'=' * 40}\n{passed} passed, {failed} failed\n{'=' * 40}")
 

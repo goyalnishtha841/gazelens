@@ -1,78 +1,86 @@
-import Sidebar from "../components/Sidebar.jsx";
-import UiMockup from "../components/UiMockup.jsx";
-import { Card, Label, SectionLabel } from "../components/Primitives.jsx";
-import { elements, scanpath, overview } from "../data/mockData.js";
+import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useAuth } from "../context/AuthContext.jsx";
+import { useReports, namer, pageName } from "../lib/sessionData.js";
+import { PageShell, PageHeader, Loading, NoReports, ErrorNote, SessionPicker } from "../components/AppPage.jsx";
+import { VisualTabs, AttentionBars, FirstLookTimeline, EyePath } from "./SessionReport.jsx";
 
-const rankedElements = [...elements].sort((a, b) => b.dwellPct - a.dwellPct);
+/** Where people looked on one test: heatmap, eye path and per-element charts. */
+export default function GazeMap({ onNavigate, onOpenSession }) {
+  const { token } = useAuth();
+  const { loading, error, items } = useReports(token);
+  const [picked, setPicked] = useState(null);
+  const current = items.find((x) => x.session.id === picked) || items[0];
 
-export default function GazeMap({ onNavigate }) {
   return (
-    <div className="mx-auto flex max-w-[1400px] px-8 py-8">
-      <Sidebar active="gazemap" onNavigate={onNavigate} />
-      <main className="flex-1 pl-0 md:pl-10">
-        <div className="mb-8">
-          <Label>Attention field</Label>
-          <h1 className="mt-1 font-sans text-[22px] font-semibold text-text-primary">Gaze Map</h1>
-          <p className="mt-1 max-w-lg text-[13px] text-text-secondary">
-            Every fixation, in the order it happened, overlaid on the real element boxes from your
-            page: where attention landed, how long it stayed, and where it went next.
-          </p>
-        </div>
+    <PageShell wide>
+      <PageHeader
+        title="Gaze"
+        accent="map"
+        subtitle="See exactly where eyes went on a page: the hot spots, the order things were noticed, and what was missed."
+      >
+        {items.length > 0 && <SessionPicker items={items} value={current?.session.id} onChange={setPicked} />}
+      </PageHeader>
 
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_280px]">
-          <div>
-            <UiMockup elements={elements} scanpath={scanpath} heat className="aspect-[16/9]" />
-            <div className="mt-4 flex items-center gap-6">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-text-secondary" />
-                <Label>First fixation</Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-accent" />
-                <Label>Last fixation</Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-3 border-t border-dashed border-accent" />
-                <Label>Trajectory</Label>
-              </div>
+      {loading && <Loading />}
+      {error && <ErrorNote error={error} />}
+      {!loading && !error && items.length === 0 && <NoReports onNavigate={onNavigate} what="Your heatmaps" />}
+
+      <AnimatePresence mode="wait">
+        {current && (
+          <motion.div key={current.session.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }}>
+            <MapBody item={current} onOpenSession={onOpenSession} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </PageShell>
+  );
+}
+
+function MapBody({ item, onOpenSession }) {
+  const { session, report } = item;
+  const m = report.metrics || {};
+  const nameOf = namer(report);
+  const b = report.pipeline_result?.behavior_summary || {};
+  const ttff = m.ttff || {};
+  const seen = Object.keys(ttff).length;
+  const all = Object.keys(m.dwell_time || {}).length;
+  const fixations = Object.values(m.fixation_count || {}).reduce((a, c) => a + c, 0);
+
+  const facts = [
+    { label: "Noticed first", value: b.first_noticed ? nameOf(b.first_noticed) : "–" },
+    { label: "Most attention", value: b.most_attended ? nameOf(b.most_attended) : "–" },
+    { label: "Parts noticed", value: all ? `${seen} of ${all}` : "–" },
+    { label: "Times eyes paused", value: fixations || "–" },
+  ];
+
+  return (
+    <div className="mt-10 space-y-6">
+      <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+        <VisualTabs sessionId={session.id} />
+        <div className="flex flex-col gap-3">
+          {facts.map((f) => (
+            <div key={f.label} className="rounded-[20px] border border-white/10 bg-surface/60 p-5 backdrop-blur">
+              <div className="text-[13px] text-text-secondary">{f.label}</div>
+              <div className="mt-1 truncate text-[20px] font-semibold text-text-primary" title={String(f.value)}>{f.value}</div>
             </div>
-          </div>
-
-          <div className="space-y-6">
-            <Card>
-              <Label>Time to first focus</Label>
-              <div className="mt-2 font-sans text-[28px] font-semibold text-text-primary">
-                {overview.timeToFirstFocus}s
-              </div>
-            </Card>
-            <Card>
-              <Label>Fixation count</Label>
-              <div className="mt-2 font-sans text-[28px] font-semibold text-text-primary">
-                {overview.fixations}
-              </div>
-            </Card>
-            <Card>
-              <SectionLabel>Attention by element</SectionLabel>
-              <div className="space-y-3">
-                {rankedElements.map((el) => (
-                  <div key={el.id}>
-                    <div className="mb-1 flex items-center justify-between text-[12px]">
-                      <span className="text-text-primary">{el.label}</span>
-                      <span className="text-text-secondary">{el.dwellPct.toFixed(1)}%</span>
-                    </div>
-                    <div className="h-1 w-full overflow-hidden rounded-full bg-border">
-                      <div
-                        className="h-full rounded-full bg-accent transition-[width] duration-700"
-                        style={{ width: `${Math.max(el.dwellPct, 1.5)}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          </div>
+          ))}
+          <button
+            onClick={() => onOpenSession?.(session.id)}
+            className="mt-auto h-12 rounded-full border border-white/10 text-[15px] font-medium text-text-primary transition-colors hover:border-accent/50 hover:text-accent"
+          >
+            Open the full report →
+          </button>
         </div>
-      </main>
+      </div>
+
+      {m.scanpath?.length > 0 && <EyePath scanpath={m.scanpath} nameOf={nameOf} />}
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <AttentionBars metrics={m} nameOf={nameOf} />
+        <FirstLookTimeline metrics={m} nameOf={nameOf} />
+      </div>
+      <p className="text-center text-[13px] text-text-secondary">Showing {pageName(session)}. Pick another test from the menu above.</p>
     </div>
   );
 }

@@ -3,8 +3,10 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { startSession, linkCalibration, estimateGazeFrame, finalizeSession, listTestUis } from "../api/client.js";
 import { renderUrl } from "../api/render.js";
 import { CAMERA_CONSTRAINTS } from "../api/calibration.js";
-import { OneEuroFilter2D } from "../lib/oneEuroFilter.js";
-import { Label } from "../components/Primitives.jsx";
+import { GazeStabilizer } from "../lib/gazeStabilizer.js";
+import { motion } from "framer-motion";
+import { Reveal, StaggerGroup, StaggerItem } from "../components/Motion.jsx";
+import IrisMark from "../components/IrisMark.jsx";
 
 // Target spacing between frames. MUST stay under backend/attribution/
 // fixations.py's MAX_GAP (150ms) -- see frontend/src/views/LiveSession.jsx's
@@ -21,6 +23,21 @@ const NOTE_WARNINGS = {
 
 const TYPE_COLORS = { CTA: "rgb(var(--color-accent))", nav: "rgb(var(--color-text-secondary))", form_field: "rgb(var(--color-accent))" };
 
+const PAGES = {
+  ecommerce_product_page: { name: "Shop product page", body: "A product with photos, price and an Add to cart button." },
+  form_page: { name: "Sign-up form", body: "A form with several fields and a submit button." },
+  dashboard_page: { name: "Dashboard", body: "Charts, numbers and menus, like an admin screen." },
+  login_page: { name: "Login page", body: "Email, password and a Sign in button." },
+  article_page: { name: "News article", body: "A long read with headings, images and links." },
+};
+
+function pageInfo(id) {
+  if (!id) return { name: "", body: "" };
+  if (PAGES[id]) return PAGES[id];
+  const t = id.replace(/_/g, " ");
+  return { name: t.charAt(0).toUpperCase() + t.slice(1), body: "A sample page to test with." };
+}
+
 function formatClock(ms) {
   const totalSeconds = Math.floor(ms / 1000);
   const h = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
@@ -33,7 +50,7 @@ function formatClock(ms) {
  * frontend/src/views/LiveSession.jsx, restyled. Same API calls, same gaze
  * capture loop, same gating logic. */
 export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavigate }) {
-  const { user, token } = useAuth();
+  const { token } = useAuth();
   const [mode, setMode] = useState("fixed");
   const [testPages, setTestPages] = useState([]);
   const [selectedPage, setSelectedPage] = useState(null);
@@ -62,7 +79,10 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
   const sessionStartRef = useRef(null);
   const gazeTimerRef = useRef(null);
   const stageRef = useRef(null);
-  const smootherRef = useRef(new OneEuroFilter2D());
+  const areaRef = useRef(null);
+  const scrollerRef = useRef(null);
+  const [boxSize, setBoxSize] = useState(null);
+  const smootherRef = useRef(new GazeStabilizer());
 
   useEffect(() => {
     listTestUis(token)
@@ -116,6 +136,35 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
     };
   }, []);
 
+  // A captured page is one tall screenshot shown at the stage's width. The
+  // server needs the scroll in the page's own CSS pixels, so the on-screen
+  // offset is scaled by (captured width / shown width).
+  const pageScrollY = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el || !el.clientWidth) return 0;
+    const capturedWidth = renderedPage?.viewport?.[0] || el.clientWidth;
+    return el.scrollTop * (capturedWidth / el.clientWidth);
+  }, [renderedPage]);
+
+  // URL sessions: the stage keeps the captured window's shape (e.g. 1280x720)
+  // so one screen of the page on this monitor is one screen of it as captured
+  // -- that's what lets pipeline.to_document_space line gaze up with the boxes.
+  useEffect(() => {
+    if (!session || mode !== "url") return;
+    const area = areaRef.current;
+    if (!area) return;
+    const [vw, vh] = renderedPage?.viewport || [16, 9];
+    const fit = () => {
+      const { width, height } = area.getBoundingClientRect();
+      const w = Math.min(width, height * (vw / vh));
+      setBoxSize({ w, h: w * (vh / vw) });
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(area);
+    return () => ro.disconnect();
+  }, [session, mode, renderedPage]);
+
   useEffect(() => {
     if (!session) return;
     let stopped = false;
@@ -127,12 +176,13 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
       const frame = captureFrame();
       if (frame) {
         try {
-          const result = await estimateGazeFrame(token, session.id, frame, started / 1000, stageRect());
+          const result = await estimateGazeFrame(token, session.id, frame, started / 1000, stageRect(), pageScrollY());
           if (stopped) return;
           const g = result.gaze;
           if (g.valid) {
-            const p = smootherRef.current.filter(g.x, g.y, started / 1000);
-            setGazePoint({ x: p.x, y: p.y, onPage: g.in_bounds });
+            const r = stageRef.current?.getBoundingClientRect();
+            const p = smootherRef.current.push(g.x, g.y, r && r.height ? r.width / r.height : 16 / 9);
+            setGazePoint({ x: p.x, y: p.y, onPage: g.in_bounds, jumped: p.jumped });
           }
           setGazeWarning(NOTE_WARNINGS[g.note] ?? null);
         } catch (err) {
@@ -149,7 +199,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
       stopped = true;
       clearTimeout(gazeTimerRef.current);
     };
-  }, [session, token, captureFrame, stageRect]);
+  }, [session, token, captureFrame, stageRect, pageScrollY]);
 
   async function handlePreviewUrl() {
     if (!urlInput.trim()) return;
@@ -246,162 +296,194 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
     setNoteDraft("");
   }
 
-  const initials = (user?.email || "?").slice(0, 1).toUpperCase();
-  const pageLabel = mode === "url" ? (renderedPage?.url || urlInput).replace(/^https?:\/\//, "") : (selectedPage || "").replace(/_/g, " ");
+  const pageLabel = mode === "url" ? (renderedPage?.url || urlInput).replace(/^https?:\/\//, "") : pageInfo(selectedPage).name;
+  const btn = "rounded-full bg-accent font-semibold text-[#0A0E14] transition-shadow hover:shadow-[0_0_30px_-6px_rgb(var(--color-accent)/0.7)]";
+  const errorBox = "rounded-[16px] border border-coral/40 bg-coral/10 px-4 py-3 text-[15px] text-text-primary";
 
   if (!calibrationSessionId) {
     return (
-      <div className="flex min-h-[calc(100vh-73px)] items-center justify-center px-4">
-        <div className="w-full max-w-md text-center">
-          <Label>Live session</Label>
-          <h1 className="mt-4 font-sans text-[24px] font-semibold text-text-primary">Calibrate first</h1>
-          <p className="mt-3 text-[14px] leading-relaxed text-text-secondary">
-            A live session needs a gaze model trained from your calibration. Run it once, and you'll come
-            straight back here to record.
-          </p>
-          <button
-            onClick={() => onNavigate?.("calibration")}
-            className="mt-8 h-11 rounded-card bg-text-primary px-8 font-label-caps text-[13px] font-medium uppercase tracking-label text-bg transition-opacity hover:opacity-85"
-          >
-            Go to calibration
-          </button>
+      <div className="flex min-h-[calc(100vh-90px)] items-center justify-center px-4 py-12">
+        <div className="relative w-full max-w-lg overflow-hidden rounded-[28px] border border-white/10 bg-surface/70 p-10 text-center backdrop-blur-xl">
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(60% 70% at 50% 0%, rgb(var(--color-accent) / 0.14), transparent 70%)" }} />
+          <div className="relative">
+            <div className="mx-auto flex w-fit"><IrisMark size={56} wander /></div>
+            <h1 className="mt-6 text-[32px] font-bold tracking-tight text-text-primary">
+              Set up the <span className="font-serif font-normal italic text-accent">camera</span> first
+            </h1>
+            <p className="mt-3 text-[16px] leading-relaxed text-text-secondary">
+              GazeLens needs about a minute to learn how your eyes move. After that you'll come straight back here to run your test.
+            </p>
+            <button onClick={() => onNavigate?.("calibration")} className={`mt-8 h-12 px-8 text-[15px] ${btn}`}>
+              Start the setup
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
   if (!session) {
+    const canStart = !starting && !(mode === "url" && !renderedPage) && !(mode === "fixed" && !selectedPage);
     return (
-      <div className="flex min-h-[calc(100vh-73px)] items-center justify-center px-4 py-12">
-        <div className="w-full max-w-lg">
-          <Label>New session</Label>
-          <h1 className="mt-2 font-sans text-[24px] font-semibold text-text-primary">Choose what to evaluate</h1>
-          <p className="mt-2 text-[13px] leading-relaxed text-text-secondary">
-            Record against one of the built-in test pages, or point it at any live URL. Either way, your
-            webcam starts a real gaze-tracking session the moment you press start.
+      <div className="mx-auto max-w-[1100px] px-4 py-10 sm:px-8 sm:py-14">
+        <Reveal>
+          <h1 className="text-[40px] font-bold leading-[1.05] tracking-[-0.03em] text-text-primary sm:text-[52px]">
+            What do you want to <span className="font-serif font-normal italic text-accent">test?</span>
+          </h1>
+          <p className="mt-3 max-w-xl text-[17px] leading-relaxed text-text-secondary">
+            Pick one of our sample pages, or paste a link to your own site. When you press start, use the page the way a visitor would.
           </p>
+        </Reveal>
 
-          <div className="mt-6 flex w-fit rounded-card border border-border p-1">
+        <div className="mt-8 flex w-fit rounded-full border border-white/10 bg-surface/60 p-1 backdrop-blur">
+          {[["fixed", "Sample pages"], ["url", "My own website"]].map(([id, label]) => (
             <button
-              onClick={() => setMode("fixed")}
-              className={`rounded-md px-4 py-1.5 text-[13px] transition-colors ${mode === "fixed" ? "bg-text-primary text-bg" : "text-text-secondary"}`}
+              key={id}
+              onClick={() => setMode(id)}
+              className={`relative rounded-full px-5 py-2.5 text-[15px] font-medium transition-colors ${mode === id ? "text-[#0A0E14]" : "text-text-secondary hover:text-text-primary"}`}
             >
-              Test page
+              {mode === id && <motion.span layoutId="test-mode-pill" className="absolute inset-0 -z-10 rounded-full bg-accent" transition={{ type: "spring", stiffness: 380, damping: 32 }} />}
+              {label}
             </button>
-            <button
-              onClick={() => setMode("url")}
-              className={`rounded-md px-4 py-1.5 text-[13px] transition-colors ${mode === "url" ? "bg-text-primary text-bg" : "text-text-secondary"}`}
-            >
-              Any URL
-            </button>
+          ))}
+        </div>
+
+        {mode === "fixed" && (
+          <div className="mt-8">
+            {testPages.length === 0 && <p className="text-[15px] text-text-secondary">Loading sample pages…</p>}
+            <StaggerGroup className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {testPages.map((pageId) => {
+                const info = pageInfo(pageId);
+                const picked = selectedPage === pageId;
+                return (
+                  <StaggerItem key={pageId}>
+                    <button
+                      onClick={() => setSelectedPage(pageId)}
+                      className={`group relative block w-full overflow-hidden rounded-[22px] border bg-surface/60 p-3 text-left backdrop-blur transition-all duration-300 ${
+                        picked
+                          ? "border-accent/70 shadow-[0_20px_60px_-25px_rgb(var(--color-accent)/0.6)]"
+                          : "border-white/10 hover:-translate-y-0.5 hover:border-white/25"
+                      }`}
+                    >
+                      <div className="relative aspect-[16/10] overflow-hidden rounded-[14px] border border-white/10 bg-white">
+                        <iframe
+                          src={`/test-uis/${pageId}/index.html`}
+                          title={`${info.name} preview`}
+                          tabIndex={-1}
+                          loading="lazy"
+                          className="pointer-events-none absolute left-0 top-0 h-[400%] w-[400%] origin-top-left scale-[0.25] border-0"
+                        />
+                        {picked && (
+                          <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-accent text-[14px] font-bold text-[#0A0E14] shadow-lg">✓</span>
+                        )}
+                      </div>
+                      <div className="px-2 pb-2 pt-4">
+                        <div className={`text-[17px] font-semibold transition-colors ${picked ? "text-accent" : "text-text-primary"}`}>{info.name}</div>
+                        <div className="mt-1 text-[14px] leading-snug text-text-secondary">{info.body}</div>
+                      </div>
+                    </button>
+                  </StaggerItem>
+                );
+              })}
+            </StaggerGroup>
           </div>
+        )}
 
-          {mode === "fixed" && (
-            <div className="mt-6 space-y-2">
-              {testPages.length === 0 && <p className="text-[12px] text-text-secondary">Loading available pages…</p>}
-              {testPages.map((pageId) => (
-                <label
-                  key={pageId}
-                  className={`flex cursor-pointer items-center gap-3 rounded-card border px-4 py-3 text-[13px] transition-colors ${
-                    selectedPage === pageId ? "border-accent bg-accent-soft" : "border-border hover:border-text-secondary/40"
-                  }`}
-                >
-                  <input type="radio" name="test-page" checked={selectedPage === pageId} onChange={() => setSelectedPage(pageId)} className="accent-[rgb(var(--color-accent))]" />
-                  <span className="text-text-primary">{pageId.replace(/_/g, " ")}</span>
-                </label>
-              ))}
+        {mode === "url" && (
+          <div className="mt-8 rounded-[24px] border border-white/10 bg-surface/60 p-6 backdrop-blur sm:p-8">
+            <p className="text-[15px] leading-relaxed text-text-secondary">
+              We take a picture of your page and find the buttons, links and forms on it. You'll look at that picture during the test, so it won't scroll or click.
+            </p>
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+              <input
+                type="url"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handlePreviewUrl()}
+                placeholder="https://your-website.com"
+                className="h-12 flex-1 rounded-full border border-white/10 bg-bg/60 px-5 text-[15px] text-text-primary outline-none transition-all placeholder:text-text-secondary/60 focus:border-accent/70 focus:ring-4 focus:ring-accent/15"
+              />
+              <button onClick={handlePreviewUrl} disabled={rendering || !urlInput.trim()} className={`h-12 px-6 text-[15px] disabled:opacity-50 ${btn}`}>
+                {rendering ? "Loading…" : "Load page"}
+              </button>
             </div>
-          )}
 
-          {mode === "url" && (
-            <div className="mt-6">
-              <p className="mb-3 text-[12px] leading-relaxed text-text-secondary">
-                Renders a live screenshot and auto-detects interactive elements. Static snapshot, not interactive.
-              </p>
-              <div className="mb-3 flex gap-2">
-                <input
-                  type="url"
-                  value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
-                  placeholder="https://example.com"
-                  className="h-11 flex-1 rounded-card border border-border bg-surface px-3 text-[13px] text-text-primary outline-none transition-colors focus:border-accent"
-                />
-                <button
-                  onClick={handlePreviewUrl}
-                  disabled={rendering || !urlInput.trim()}
-                  className="rounded-card bg-text-primary px-4 font-label-caps text-[12px] font-medium uppercase tracking-label text-bg transition-opacity hover:opacity-85 disabled:opacity-50"
-                >
-                  {rendering ? "Rendering…" : "Preview"}
-                </button>
+            {renderError && <div className={`mt-4 ${errorBox}`}>{renderError}</div>}
+
+            {rendering && (
+              <div className="mt-5 flex flex-col items-center rounded-[18px] border border-white/10 bg-bg/40 py-12 text-center">
+                <IrisMark size={40} wander />
+                <p className="mt-3 text-[15px] text-text-secondary">Opening the page and finding what's clickable…</p>
               </div>
+            )}
 
-              {renderError && <div className="mb-3 rounded-card border border-accent/40 px-3 py-2 text-[13px] text-text-primary">{renderError}</div>}
-
-              {rendering && (
-                <div className="rounded-card border border-border py-10 text-center">
-                  <div className="mx-auto mb-2 h-2 w-2 animate-pulse rounded-full bg-accent" />
-                  <p className="text-[12px] text-text-secondary">Loading the page and detecting elements…</p>
+            {renderedPage && !rendering && (
+              <div className="mt-5">
+                <p className="mb-3 text-[14px] text-text-secondary">
+                  Found <span className="font-semibold text-accent">{renderedPage.elements.length}</span> things people can click or read. Each one is outlined below.
+                </p>
+                <div className="max-h-[520px] overflow-y-auto rounded-[18px] border border-white/10 bg-bg">
+                <div className="relative">
+                  {renderedPage.screenshot_base64 && (
+                    <img src={`data:image/png;base64,${renderedPage.screenshot_base64}`} alt="Your page" className="block w-full" />
+                  )}
+                  {renderedPage.elements.map((el) => (
+                    <div
+                      key={el.element_id}
+                      title={el.label}
+                      className="absolute rounded-[4px] border-2"
+                      style={{
+                        left: `${el.bbox_normalized.x * 100}%`,
+                        top: `${el.bbox_normalized.y * 100}%`,
+                        width: `${el.bbox_normalized.w * 100}%`,
+                        height: `${el.bbox_normalized.h * 100}%`,
+                        borderColor: TYPE_COLORS[el.element_type] || "rgb(var(--color-accent))",
+                      }}
+                    />
+                  ))}
                 </div>
-              )}
-
-              {renderedPage && !rendering && (
-                <div>
-                  <p className="mb-2 font-mono text-[11px] text-text-secondary">
-                    {renderedPage.elements.length} elements detected -- preview only.
+                </div>
+                {renderedPage.warnings?.length > 0 && (
+                  <p className="mt-3 text-[13px] text-text-secondary">
+                    Note: {renderedPage.kept < renderedPage.detected
+                      ? `this page is busy, so we kept the ${renderedPage.kept} biggest things to track.`
+                      : "parts of this page loaded slowly and may be missing."}
                   </p>
-                  <div
-                    className="relative overflow-hidden rounded-card border border-border bg-bg"
-                    style={{ aspectRatio: `${renderedPage.viewport?.[0] || 16} / ${renderedPage.viewport?.[1] || 9}` }}
-                  >
-                    {renderedPage.screenshot_base64 && (
-                      <img src={`data:image/png;base64,${renderedPage.screenshot_base64}`} alt="Rendered page preview" className="block w-full" />
-                    )}
-                    {renderedPage.elements.map((el) => (
-                      <div
-                        key={el.element_id}
-                        title={`${el.element_type} · ${el.element_importance} · ${el.label}`}
-                        className="absolute border-2"
-                        style={{
-                          left: `${el.bbox_normalized.x * 100}%`,
-                          top: `${el.bbox_normalized.y * 100}%`,
-                          width: `${el.bbox_normalized.w * 100}%`,
-                          height: `${el.bbox_normalized.h * 100}%`,
-                          borderColor: TYPE_COLORS[el.element_type] || "rgb(var(--color-accent))",
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
-          {cameraError && <div className="mt-4 rounded-card border border-accent/40 px-3 py-2 text-[13px] text-text-primary">{cameraError}</div>}
-          {startError && (
-            <div className="mt-4 rounded-card border border-accent/40 px-4 py-3 text-[13px] text-text-primary">
-              <p>{startError}</p>
-              {startErrorDetail && (
-                <details className="mt-2">
-                  <summary className="cursor-pointer text-[11px] uppercase tracking-wide text-text-secondary hover:text-text-primary">Technical detail</summary>
-                  <p className="mt-1 break-words font-mono text-[11px] text-text-secondary">{startErrorDetail}</p>
-                </details>
-              )}
-              {needsRecalibration && onNavigate && (
-                <button onClick={() => onNavigate("calibration")} className="mt-3 text-[11px] font-medium text-accent underline underline-offset-2 hover:opacity-80">
-                  Recalibrate now
-                </button>
-              )}
-            </div>
-          )}
+        {cameraError && <div className={`mt-6 ${errorBox}`}>{cameraError}</div>}
+        {startError && (
+          <div className={`mt-6 ${errorBox}`}>
+            <p>{startError}</p>
+            {startErrorDetail && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-[13px] text-text-secondary hover:text-text-primary">More detail</summary>
+                <p className="mt-1 break-words font-mono text-[12px] text-text-secondary">{startErrorDetail}</p>
+              </details>
+            )}
+            {needsRecalibration && onNavigate && (
+              <button onClick={() => onNavigate("calibration")} className={`mt-4 h-10 px-5 text-[14px] ${btn}`}>
+                Redo the camera setup
+              </button>
+            )}
+          </div>
+        )}
 
-          <button
-            onClick={handleStart}
-            disabled={starting || (mode === "url" && !renderedPage) || (mode === "fixed" && !selectedPage)}
-            className="mt-6 h-11 w-full rounded-card bg-text-primary font-label-caps text-[13px] font-medium uppercase tracking-label text-bg transition-opacity hover:opacity-85 disabled:opacity-50"
-          >
-            {starting ? "Starting…" : "Grant camera access and start"}
+        <div className="sticky bottom-4 z-20 mt-10 flex flex-col items-center justify-between gap-4 rounded-full border border-white/10 bg-surface/80 py-3 pl-6 pr-3 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.9)] backdrop-blur-xl sm:flex-row">
+          <div className="flex items-center gap-3 text-[15px]">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-accent shadow-[0_0_10px_rgb(var(--color-accent))]" />
+            <span className="text-text-secondary">Testing:</span>
+            <span className="truncate font-semibold text-text-primary">{pageLabel || "pick a page"}</span>
+          </div>
+          <button onClick={handleStart} disabled={!canStart} className={`h-12 w-full px-7 text-[15px] disabled:opacity-50 sm:w-auto ${btn}`}>
+            {starting ? "Starting…" : "Turn on camera and start"}
           </button>
         </div>
+
         <video ref={videoRef} muted playsInline style={{ position: "fixed", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
         <canvas ref={canvasRef} style={{ display: "none" }} />
       </div>
@@ -409,51 +491,50 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
   }
 
   return (
-    <div className="flex h-[calc(100vh-73px)] flex-col overflow-hidden">
-      <div className="flex items-center justify-between border-b border-border bg-surface px-6 py-3">
-        <div className="flex items-center gap-6">
-          <div>
-            <Label className="block">Active session</Label>
-            <span className="font-mono text-[12px] font-medium text-text-primary">{session.id}</span>
-          </div>
-          <span className="rounded-card bg-accent-soft px-3 py-1.5 font-mono text-[12px] text-accent">{pageLabel}</span>
+    <div className="flex h-[calc(100vh-90px)] flex-col gap-3 overflow-hidden px-3 pb-3 pt-3 sm:px-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-full border border-white/10 bg-surface/70 py-2 pl-5 pr-2 backdrop-blur-xl">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex items-center gap-2 rounded-full bg-coral/15 px-3 py-1.5 text-[14px] font-semibold text-coral">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-coral" />
+            Recording
+          </span>
+          <span className="font-mono text-[15px] tabular-nums text-text-primary">{formatClock(elapsedMs)}</span>
+          <span className="hidden truncate text-[15px] text-text-secondary sm:inline">· {pageLabel}</span>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 rounded-card border border-accent/40 px-3 py-1.5">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-            <span className="font-mono text-[12px] font-medium text-text-primary">REC {formatClock(elapsedMs)}</span>
-          </div>
-          <button
-            onClick={handleEnd}
-            className="rounded-card bg-text-primary px-5 py-2 font-label-caps text-[12px] font-medium uppercase tracking-label text-bg transition-opacity hover:opacity-85"
-          >
-            End session
-          </button>
-        </div>
+        <button onClick={handleEnd} className={`h-10 px-6 text-[14px] ${btn}`}>
+          Finish and see report
+        </button>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
-        <section className="relative flex-1 overflow-hidden bg-bg p-4">
-          <div ref={stageRef} className="relative h-full overflow-hidden rounded-card border border-border bg-surface">
+      <div className="flex flex-1 gap-3 overflow-hidden">
+        <section ref={areaRef} className="relative flex flex-1 items-center justify-center overflow-hidden">
+          <div
+            ref={stageRef}
+            className={`relative overflow-hidden rounded-[20px] border border-white/10 bg-surface ${mode === "url" ? "" : "h-full w-full"}`}
+            style={mode === "url" && boxSize ? { width: boxSize.w, height: boxSize.h } : undefined}
+          >
             {mode === "url" && renderedPage?.screenshot_base64 ? (
-              <img src={`data:image/png;base64,${renderedPage.screenshot_base64}`} alt="Evaluated page" className="h-full w-full object-cover object-top" />
+              <div ref={scrollerRef} className="h-full w-full overflow-y-auto overflow-x-hidden" style={{ scrollbarWidth: "none" }}>
+                <img src={`data:image/png;base64,${renderedPage.screenshot_base64}`} alt="Page being tested" className="block h-auto w-full" draggable={false} />
+              </div>
             ) : mode === "url" && renderedPage ? (
               <div className="flex h-full w-full items-center justify-center p-8 text-center">
-                <p className="text-[13px] text-text-secondary">
-                  Live page: <span className="font-mono">{renderedPage.url}</span>
-                  <br />
-                  No screenshot available from the API.
-                </p>
+                <p className="text-[15px] text-text-secondary">We couldn't get a picture of {renderedPage.url}.</p>
               </div>
             ) : (
-              <iframe key={selectedPage} src={`/test-uis/${selectedPage}/index.html`} title={`Test page: ${selectedPage}`} className="h-full w-full border-0" />
+              <iframe key={selectedPage} src={`/test-uis/${selectedPage}/index.html`} title={`Test page: ${pageLabel}`} className="h-full w-full border-0" />
+            )}
+            {mode === "url" && renderedPage?.screenshot_base64 && (
+              <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-bg/75 px-3 py-1 text-[12px] text-text-secondary backdrop-blur">
+                Scroll to see the rest of the page
+              </div>
             )}
 
             {gazePoint && (
               <div
                 className="pointer-events-none absolute z-20 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-accent transition-all ease-out"
                 style={{
-                  left: `${gazePoint.x * 100}%`, top: `${gazePoint.y * 100}%`, transitionDuration: "60ms",
+                  left: `${gazePoint.x * 100}%`, top: `${gazePoint.y * 100}%`, transitionDuration: gazePoint.jumped ? "90ms" : "320ms",
                   opacity: gazePoint.onPage ? 1 : 0.35,
                   boxShadow: "0 0 16px 2px rgb(var(--color-accent) / 0.4)",
                 }}
@@ -462,98 +543,64 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
               </div>
             )}
             {gazeWarning && (
-              <div className="absolute left-3 top-3 z-30 max-w-xs rounded-card border border-accent/40 bg-surface px-3 py-1.5 text-[11px] text-text-primary">
+              <div className="absolute left-3 top-3 z-30 max-w-xs rounded-[14px] border border-amber/40 bg-surface/90 px-4 py-2 text-[14px] text-text-primary backdrop-blur">
                 {gazeWarning}
               </div>
             )}
-
-            <div className="absolute bottom-4 right-4 aspect-video w-52 overflow-hidden rounded-card border border-border shadow-lg">
-              <div className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-full bg-bg/80 px-2 py-0.5 backdrop-blur-sm">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-                <span className="font-mono text-[9px] uppercase tracking-wide text-text-primary">Live</span>
-              </div>
-              <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
-              <canvas ref={canvasRef} style={{ display: "none" }} />
-            </div>
           </div>
         </section>
 
-        <aside className="flex w-[320px] shrink-0 flex-col border-l border-border bg-surface">
-          <div className="flex border-b border-border">
-            {["Insights", "Heatmap", "Logs"].map((label) => {
-              const id = label.toLowerCase();
-              return (
-                <button
-                  key={id}
-                  onClick={() => setTab(id)}
-                  className={`flex-1 py-3 font-mono text-[11px] uppercase tracking-wide transition-colors ${
-                    tab === id ? "border-b-2 border-accent text-text-primary" : "text-text-secondary hover:text-text-primary"
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
+        <aside className="flex w-[240px] shrink-0 flex-col gap-3 overflow-y-auto lg:w-[300px]">
+          <div className="overflow-hidden rounded-[20px] border border-white/10 bg-surface/70 backdrop-blur">
+            <div className="relative aspect-video">
+              <video ref={videoRef} autoPlay muted playsInline className="h-full w-full -scale-x-100 object-cover" />
+              <span className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-bg/70 px-2.5 py-1 text-[12px] font-medium text-text-primary backdrop-blur">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" /> Your camera
+              </span>
+            </div>
+            <div className="flex items-center justify-between px-4 py-3 text-[14px]">
+              <span className="text-text-secondary">Eye tracking</span>
+              <span className={`font-semibold ${!gazePoint ? "text-text-secondary" : gazePoint.onPage ? "text-accent" : "text-amber"}`}>
+                {!gazePoint ? "Starting…" : gazePoint.onPage ? "On the page" : "Looking away"}
+              </span>
+            </div>
           </div>
 
-          <div className="flex-1 space-y-4 overflow-y-auto p-5">
-            {tab === "insights" && (
-              <div className="rounded-card border border-border p-4">
-                <Label>Gaze metrics</Label>
-                <div className="mt-4 grid grid-cols-2 gap-4">
-                  <div>
-                    <span className="block text-[10px] text-text-secondary">Avg fixation</span>
-                    <p className="font-mono text-[18px] font-semibold text-text-primary">--</p>
-                  </div>
-                  <div>
-                    <span className="block text-[10px] text-text-secondary">Saccade freq.</span>
-                    <p className="font-mono text-[18px] font-semibold text-text-primary">--</p>
-                  </div>
-                </div>
-                {mode === "url" && renderedPage && (
-                  <p className="mt-3 border-t border-border pt-3 text-[11px] text-text-secondary">
-                    {renderedPage.elements.length} elements auto-detected on this page.
-                  </p>
-                )}
-              </div>
-            )}
-            {tab === "heatmap" && (
-              <div className="rounded-card border border-border py-12 text-center">
-                <p className="text-[13px] text-text-secondary">Heatmap renders once session metrics are computed.</p>
-              </div>
-            )}
-            {tab === "logs" && (
-              <div className="rounded-card border border-border py-12 text-center">
-                <p className="text-[13px] text-text-secondary">No log entries yet.</p>
-              </div>
-            )}
+          <div className="rounded-[20px] border border-white/10 bg-surface/70 p-5 backdrop-blur">
+            <div className="text-[16px] font-semibold text-text-primary">Tips for a good test</div>
+            <ul className="mt-3 space-y-2.5 text-[14px] leading-snug text-text-secondary">
+              {["Sit where you sat during setup", "Use the page like a real visitor", "About a minute is plenty", "Press Finish when you're done"].map((t) => (
+                <li key={t} className="flex gap-2.5"><span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />{t}</li>
+              ))}
+            </ul>
+          </div>
 
-            <div className="rounded-card border border-border p-4">
-              <Label>Researcher notes</Label>
-              <textarea
-                value={noteDraft}
-                onChange={(e) => setNoteDraft(e.target.value)}
-                placeholder="Add time-stamped observation…"
-                className="mt-3 h-28 w-full resize-none rounded-card border border-border bg-bg p-3 text-[13px] text-text-primary outline-none transition-colors focus:border-accent"
-              />
-              <div className="mt-2 flex justify-end">
-                <button onClick={handleSaveNote} className="rounded-card bg-text-primary px-3 py-1.5 font-mono text-[10px] uppercase tracking-wide text-bg">
-                  Save note
-                </button>
-              </div>
-              {notes.length > 0 && (
-                <div className="mt-3 space-y-2">
-                  {notes.map((n, i) => (
-                    <div key={i} className="border-t border-border pt-2 text-[12px] text-text-secondary">
-                      <span className="font-mono text-text-primary">{n.at}</span> · {n.text}
-                    </div>
-                  ))}
-                </div>
-              )}
+          <div className="rounded-[20px] border border-white/10 bg-surface/70 p-5 backdrop-blur">
+            <div className="text-[16px] font-semibold text-text-primary">Notes</div>
+            <textarea
+              value={noteDraft}
+              onChange={(e) => setNoteDraft(e.target.value)}
+              placeholder="Jot down anything you notice…"
+              className="mt-3 h-24 w-full resize-none rounded-[14px] border border-white/10 bg-bg/60 p-3 text-[14px] text-text-primary outline-none transition-all placeholder:text-text-secondary/60 focus:border-accent/70 focus:ring-4 focus:ring-accent/15"
+            />
+            <div className="mt-2 flex justify-end">
+              <button onClick={handleSaveNote} className="rounded-full border border-white/10 px-4 py-1.5 text-[13px] font-medium text-text-primary hover:border-accent/50 hover:text-accent">
+                Save note
+              </button>
             </div>
+            {notes.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {notes.map((n, i) => (
+                  <div key={i} className="border-t border-white/10 pt-2 text-[13px] text-text-secondary">
+                    <span className="font-mono text-text-primary">{n.at}</span> · {n.text}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </aside>
       </div>
+      <canvas ref={canvasRef} style={{ display: "none" }} />
     </div>
   );
 }

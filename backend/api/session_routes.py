@@ -26,6 +26,7 @@ browser and give the frontend nothing to show. The session goes to
 "processing" immediately and /report answers 202 until it's done.
 """
 
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -138,11 +139,14 @@ async def create_session(
         # Done inline rather than in the background because the session cannot
         # proceed without a layout, and the client is already showing a
         # spinner on "start session".
-        capture = pipeline.capture_page(payload.target_url)
+        # Kept so the report's heatmap can be drawn over the real page.
+        shot = DATA_DIR / "captures" / f"{uuid.uuid4().hex}.png"
+        capture = pipeline.capture_page(payload.target_url, screenshot_path=shot)
 
         if capture.get("ok"):
             ui_page = "captured_page"
-            layout = capture["layout"]
+            layout = pipeline.label_captured_layout(
+                capture["layout"], capture.get("classification"))
             is_placeholder = False
             capture_meta = {
                 k: capture.get(k) for k in
@@ -427,6 +431,10 @@ def estimate_gaze_frame(
             detail=f"no trained gaze model for this session's calibration: {exc}",
         ) from exc
 
+    if payload.scroll_x or payload.scroll_y:
+        point["scroll_x"] = payload.scroll_x
+        point["scroll_y"] = payload.scroll_y
+
     path = pipeline.gaze_path_for(DATA_DIR, session.id)
     pipeline.append_gaze(path, [point])
 
@@ -586,6 +594,7 @@ async def get_report(
         report_id=report.id,
         status=session.status,
         ui_page=session.ui_page,
+        target_url=session.target_url,
         pipeline_result=report.pipeline_result,
         metrics=report.metrics,
         html_path=report.html_path,
@@ -656,7 +665,7 @@ async def get_report_pdf(
     report response tells the caller the HTML version still exists.
     """
     return _report_file(
-        session_id, user, db, "pdf_path", "application/pdf", filename=f"fixation-report-{session_id}.pdf"
+        session_id, user, db, "pdf_path", "application/pdf", filename=f"gazelens-report-{session_id}.pdf"
     )
 
 
