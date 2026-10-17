@@ -104,9 +104,10 @@ export default function Nav({ active, onNavigate, onSignIn, onLogout, loggedOut 
 }
 
 /**
- * Landing-page navigation: a frosted capsule floating just below the top of
- * the screen. It firms up once the page scrolls, highlights the section in
- * view with a sliding pill, and folds into a menu on phones.
+ * Landing-page navigation: a full-width bar with no edge of its own, so it
+ * blends into the hero. Once the page scrolls it picks up a soft blur and a
+ * hairline, marks the section in view with a sliding dot, and folds into a
+ * menu on phones.
  */
 function PublicNav({ onSignIn }) {
   const [scrolled, setScrolled] = useState(false);
@@ -140,43 +141,44 @@ function PublicNav({ onSignIn }) {
   }, []);
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 px-3 pt-3 sm:px-5 sm:pt-4">
-      <div
-        className={`mx-auto flex max-w-[1120px] items-center justify-between gap-3 rounded-full border py-2 pl-4 pr-2 transition-all duration-300 sm:pl-5 ${
-          scrolled
-            ? "border-white/10 bg-surface/75 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.7)] backdrop-blur-xl"
-            : "border-white/[0.07] bg-surface/30 backdrop-blur-md"
-        }`}
-      >
+    <header
+      className={`fixed inset-x-0 top-0 z-50 border-b transition-[background-color,border-color,backdrop-filter] duration-300 ${
+        scrolled || open
+          ? "border-white/[0.06] bg-bg/70 backdrop-blur-xl"
+          : "border-transparent bg-transparent"
+      }`}
+    >
+      {/* Full-width and borderless at the top, so it melts into the hero;
+          a soft blur and hairline appear only once the page scrolls. */}
+      <div className="mx-auto flex h-[72px] max-w-[1240px] items-center justify-between gap-6 px-5 sm:px-8">
         <button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} aria-label="GazeLens home" className="shrink-0">
           <Wordmark large />
         </button>
 
-        <nav className="hidden items-center gap-1 rounded-full lg:flex" aria-label="Sections">
-          {PUBLIC_LINKS.map((l) => (
-            <a
-              key={l.href}
-              href={l.href}
-              className={`relative rounded-full px-4 py-2 font-display text-[15px] font-medium transition-colors ${
-                current === l.href ? "text-text-primary" : "text-text-secondary hover:text-text-primary"
-              }`}
-            >
-              {current === l.href && (
-                <motion.span
-                  layoutId="public-nav-pill"
-                  className="absolute inset-0 -z-10 rounded-full bg-white/[0.07] ring-1 ring-white/10"
-                  transition={{ type: "spring", stiffness: 380, damping: 32 }}
-                />
-              )}
-              {l.label}
-            </a>
-          ))}
-        </nav>
-
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
+          <nav className="mr-3 hidden items-center gap-1 lg:flex" aria-label="Sections">
+            {PUBLIC_LINKS.map((l) => (
+              <a
+                key={l.href}
+                href={l.href}
+                className={`relative px-3.5 py-2 font-display text-[15px] font-medium transition-colors ${
+                  current === l.href ? "text-text-primary" : "text-text-secondary hover:text-text-primary"
+                }`}
+              >
+                {l.label}
+                {current === l.href && (
+                  <motion.span
+                    layoutId="public-nav-dot"
+                    className="absolute bottom-0 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-accent shadow-[0_0_8px_rgb(var(--color-accent))]"
+                    transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                  />
+                )}
+              </a>
+            ))}
+          </nav>
           <button
             onClick={onSignIn}
-            className="hidden rounded-full px-4 py-2 font-display text-[15px] font-medium text-text-primary transition-colors hover:bg-white/[0.07] sm:inline"
+            className="hidden rounded-full px-4 py-2 font-display text-[15px] font-medium text-text-primary transition-colors hover:text-accent sm:inline"
           >
             Sign in
           </button>
@@ -203,7 +205,7 @@ function PublicNav({ onSignIn }) {
         <motion.nav
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mx-auto mt-2 max-w-[1120px] rounded-[22px] border border-white/10 bg-surface/90 p-2 backdrop-blur-xl lg:hidden"
+          className="mx-auto max-w-[1240px] px-3 pb-3 lg:hidden"
           aria-label="Sections"
         >
           {PUBLIC_LINKS.map((l) => (
