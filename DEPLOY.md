@@ -1,7 +1,15 @@
-# Deploying GazeLens (free, no card)
+# Deploying GazeLens
 
-Frontend on **Vercel**, API on a **Hugging Face Docker Space**. Both are free and
-need no payment details, and neither needs Docker on your machine.
+Frontend on **Vercel**, API on a **Hugging Face Docker Space** (or Render, see the
+end). Neither needs Docker on your machine.
+
+> **Status (October 2026): not hosted yet.** Everything below is set up and the
+> deploy workflow pushes successfully, but Hugging Face set our account's free CPU
+> quota to 0, so the Space won't start ("Quota exceeded for flavor cpu-basic …
+> limit=0"; some new accounts get this). To actually host it, either use Hugging
+> Face PRO (paid) for the same Space, or Render with [`render.yaml`](render.yaml)
+> (paid instance + disk). The steps below are unchanged either way. Until then,
+> GazeLens runs locally (README, *Getting started*).
 
 ```
 browser ──HTTPS──► Vercel  (frontend-new, static)
@@ -15,9 +23,10 @@ Both halves are HTTPS, which browsers require for webcam access. The frontend
 calls the API directly: its URL is a Vercel setting (`VITE_API_BASE_URL`) and the
 API allows the frontend's origin (`GAZELENS_CORS_ORIGINS`).
 
-**Why a Space for the API:** the free CPU tier gives 2 vCPU and 16 GB RAM, which is
-enough for MediaPipe plus headless Chromium. Vercel functions are too small for
-them (250 MB limit), and Render's free tier has 512 MB of RAM and no disk.
+**Why a Space for the API:** the CPU tier gives 2 vCPU and 16 GB RAM, which is
+enough for MediaPipe plus headless Chromium, and is free on accounts that have the
+free quota. Vercel functions are too small for them (250 MB limit), and Render's
+free tier has 512 MB of RAM and no disk.
 
 ## The catch: free storage is temporary
 
@@ -33,7 +42,7 @@ code change.
 
 ## 1. API on Hugging Face (one-time setup, ~10 min)
 
-1. Sign up at **huggingface.co**. It's free and no card is needed.
+1. Sign up at **huggingface.co** and verify your email.
 2. Click **New → Space**:
    - Space name: `gazelens-api`
    - SDK: **Docker** → *Blank*

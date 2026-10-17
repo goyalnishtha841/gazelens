@@ -11,7 +11,8 @@ Built on **GazeUX-Agent**, a multi-agent framework for gaze-driven UI/UX evaluat
 ![FastAPI](https://img.shields.io/badge/FastAPI-backend-009688?logo=fastapi&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![MediaPipe](https://img.shields.io/badge/MediaPipe-iris%20landmarks-0097A7)
-![Tests](https://img.shields.io/badge/tests-707%20passing-2EE6C5)
+![Tests](https://img.shields.io/badge/tests-841%20passing-2EE6C5)
+[![CI](https://github.com/goyalnishtha841/gazelens/actions/workflows/ci.yml/badge.svg)](https://github.com/goyalnishtha841/gazelens/actions/workflows/ci.yml)
 ![LLM](https://img.shields.io/badge/LLM-Groq%20%7C%20Claude%20(optional)-8A63D2)
 
 <img src="docs/screenshots/landing.png" alt="GazeLens landing page" width="900">
@@ -23,6 +24,7 @@ Built on **GazeUX-Agent**, a multi-agent framework for gaze-driven UI/UX evaluat
 ## Contents
 
 - [What GazeLens does](#what-gazelens-does)
+- [Project status](#project-status)
 - [Screenshots](#screenshots)
 - [How it works](#how-it-works)
 - [Measured results](#measured-results)
@@ -74,7 +76,27 @@ metrics and throws out anything it can't confirm.
 | 🔥 **Report visuals** | Heatmap over the real page (blur = measured error), an eye path built from real fixations, attention bars and a first-look timeline |
 | 📄 **PDF reports** | Branded, print-ready PDF with the verdict, visuals, problems, fixes and a "how we checked" audit |
 | 📈 **Analytics across tests** | Problems per test, urgency breakdown, recurring design principles, key-element coverage and accuracy trend |
-| 🔐 **Accounts** | Sign-up and sign-in (bcrypt + JWT); every session and report is scoped to its owner |
+| 🔐 **Accounts and security** | Sign-up and sign-in (bcrypt + JWT), login required on every API route, failed-login rate limiting; sessions, reports, calibrations and gaze models are visible only to their owner |
+| ♻️ **Crash-safe analysis** | A report interrupted by a crash or restart is marked failed with a clear message and can be retried, instead of spinning forever |
+
+---
+
+## Project status
+
+*As of October 2026.*
+
+| Area | State |
+|---|---|
+| End-to-end app (calibrate → test → report → PDF) | ✅ Works locally (API + web app on one machine) |
+| Gaze accuracy | ✅ ~65 px median on held-out dots, **measured on one participant**; multi-participant pilot not yet run |
+| Tests and CI | ✅ 841 backend tests in 9 suites, ruff, frontend build and API image build run on every push and PR (GitHub Actions) |
+| Security | ✅ Login on every route, owner-scoped data, login rate limiting, private-address blocking for URL capture (including redirects) |
+| Agents | ✅ Rule-based findings with optional LLM wording that the critic re-verifies. A fixed four-step chain, not yet tool-using or iterative |
+| Hosting | ⏳ Deploy config is ready (API image, Vercel config, [DEPLOY.md](DEPLOY.md)) but nothing is hosted: the API needs ~2 GB RAM, which free tiers don't offer |
+| Product features | ⏳ One person tests at a time; no studies, shareable participant links or aggregated results yet |
+
+What's next is in the [Roadmap](#roadmap); research items with exact steps are in
+[OPEN_ITEMS.md](OPEN_ITEMS.md).
 
 ---
 
@@ -153,7 +175,8 @@ time to first fixation, fixation and revisit counts, and the scanpath.
 The heatmap is gaze density over the page screenshot, blurred by the measured error
 and with the hottest spots numbered. The eye path groups real fixations into areas,
 sized by time and numbered by first visit. The HTML report renders to PDF through
-WeasyPrint, or headless Chromium as a fallback.
+WeasyPrint (run in a separate process, so a native-library crash can't take the API
+down), or headless Chromium as a fallback.
 
 ---
 
@@ -235,6 +258,7 @@ Precision stays high everywhere; recall drops most with glasses (0.784 → 0.278
 | Reports | Jinja2, Matplotlib, WeasyPrint / Chromium PDF |
 | Agents | Rule engine + optional LLM (Groq `openai/gpt-oss-120b` or Anthropic Claude) |
 | Detector research | Ultralytics YOLOv8, torchvision SSD300 / Faster R-CNN |
+| CI and deployment | GitHub Actions, Docker (API image), Vercel config for the web app |
 
 ---
 
@@ -259,6 +283,10 @@ gazelens/
 ├── scripts/              model asset fetchers, gaze evaluation, API client generator
 ├── evaluation/, training/, configs/   detector training and benchmark
 ├── docs/screenshots/     images used in this README
+├── deploy/huggingface/   Space config used by the optional Hugging Face deploy
+├── .github/workflows/    CI (tests, lint, build) and the Hugging Face deploy
+├── requirements*.txt     full research install / API server only / server + test tools
+├── DEPLOY.md             hosting guide (Vercel + an API host) and every setting
 └── OPEN_ITEMS.md         open research items with concrete next steps
 ```
 
@@ -325,9 +353,11 @@ All settings are optional environment variables.
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `FIXATION_SECRET_KEY` | JWT signing key (set this for any deployment) | generated into `backend/api/.secret_key` |
+| `GAZELENS_SECRET_KEY` | JWT signing key; required when `GAZELENS_ENV=production` (`FIXATION_SECRET_KEY` still works) | generated into `backend/api/.secret_key` |
 | `FIXATION_TOKEN_TTL_MINUTES` | Login session length | `720` |
 | `FIXATION_DATA_DIR` | Where gaze streams, captures and reports are stored | `backend/api/session_data` |
+| `GAZELENS_ANALYSIS_TIMEOUT_SECONDS` | How long a report may stay "processing" before it counts as failed and can be retried | `600` |
+| `GAZELENS_LOGIN_MAX_FAILURES` / `GAZELENS_LOGIN_WINDOW_SECONDS` | Failed logins allowed per IP per window before `429` | `10` / `900` |
 | `GROQ_API_KEY` | Enables LLM writing via Groq (free tier) | off |
 | `ANTHROPIC_API_KEY` | Enables LLM writing via Claude | off |
 | `GAZELENS_LLM_PROVIDER` | `groq` or `anthropic` when both keys are set | Claude if both set |
@@ -337,7 +367,7 @@ All settings are optional environment variables.
 | `FIXATION_PUPIL_SOURCE` | `iris` (default), `fused` or `yolo`, for the detector ablation | `iris` |
 | `FIXATION_PUPIL_WEIGHTS` | Path to custom detector weights | `models/pupil_yolo_final.pt` |
 
-Deployment settings (CORS origins, login rate limit, storage paths) are listed in
+Deployment settings (CORS origins, storage paths, frontend API URL) are listed in
 [DEPLOY.md](DEPLOY.md) and [.env.example](.env.example).
 
 **LLM mode.** Both clients are in `requirements.txt`; set a key and restart the API. Agents 1–3 then write their text with the LLM, and each
@@ -396,20 +426,27 @@ Each backend module documents its own contract in its `CONTRACT.md`.
 
 ## Testing
 
-The backend has **707 tests** across 8 suites. None needs a webcam, model weights or
+The backend has **841 tests** across 9 suites. None needs a webcam, model weights or
 an API key: the detector is stubbed, gaze models train on synthetic sessions and the
 LLM is faked. Each suite runs from its own folder:
 
 ```bash
 cd backend/agents          && python test_agents.py           #  89  agents, gate, consolidation
 cd backend/agents          && python test_llm_agents.py       #  37  LLM mode + critic rejections
-cd backend/api             && python test_api.py              # 141  full session lifecycle
+cd backend/api             && python test_api.py              # 168  full session lifecycle, crash recovery, config
+cd backend/api             && python test_route_auth.py       #  68  login + owner checks on every route
 cd backend/attribution     && python test_attribution.py      #  95  fixations → metrics
-cd backend/calibration     && python test_calibration.py      #  76  capture + quality
+cd backend/calibration     && python test_calibration.py      #  87  capture + quality
 cd backend/cv              && python test_cv.py               #  73  landmarks + pupil
-cd backend/gaze_estimation && python test_gaze_estimation.py  # 141  models, selection, accuracy check
-cd backend/render          && python test_render.py           #  55  URL capture (local fixture)
+cd backend/gaze_estimation && python test_gaze_estimation.py  # 149  models, selection, accuracy check
+cd backend/render          && python test_render.py           #  75  URL capture, private-address blocking
+ruff check backend/ scripts/ --select F,E9,B,A
 ```
+
+(`cv` runs 3 extra detector tests when torch is installed, as with `requirements.txt`.)
+
+[CI](.github/workflows/ci.yml) runs all of these, ruff, the frontend build and the
+API Docker image build on every push to `main` and on every pull request.
 
 ---
 
@@ -456,12 +493,19 @@ Model weights and datasets are kept out of git:
   moved, and recalibrating fixes it.
 - **Captured websites are static snapshots**, and their element types are inferred
   from the DOM rather than designed. Reports say how much was guessed.
-- **Not yet deployed.** Deployment config is ready (Vercel + Hugging Face Spaces, free; see [DEPLOY.md](DEPLOY.md));
-  webcam access needs HTTPS in production.
+- **One person per test.** There are no studies, shareable participant links or
+  results aggregated across people yet.
+- **The agents follow a fixed chain.** Rules decide every finding and severity; an LLM,
+  when enabled, only writes the wording, and the critic checks it.
+- **Not hosted.** It runs locally. The deploy config is ready ([DEPLOY.md](DEPLOY.md)),
+  but the API needs ~2 GB RAM, so it needs a paid host. Webcam access needs HTTPS
+  anywhere except `localhost`.
 
 ---
 
 ## Roadmap
+
+**Done**
 
 - [x] Webcam gaze pipeline with calibration, accuracy check and quality gate
 - [x] Gaze-to-element attribution and metrics
@@ -470,9 +514,18 @@ Model weights and datasets are kept out of git:
 - [x] Arbitrary-URL testing with full-page scrolling
 - [x] Heatmap, eye path and branded PDF reports
 - [x] Web app: landing, sessions, report, gaze map, analytics, AI insights
+- [x] CI, API Docker image and deploy configuration
+- [x] Login on every API route, owner-scoped data, login rate limiting
+- [x] Crash-safe report generation with retry
+
+**Next, in order**
+
 - [ ] Multi-participant pilot study and results
-- [ ] Multi-participant studies in the app (aggregate several people on one page)
-- [ ] Deployment (HTTPS hosting), Docker and CI
+- [ ] Studies: shareable participant links, consent, tasks, results aggregated across people
+- [ ] Gaze tracking in the browser (MediaPipe in WebAssembly), so webcam frames never leave the device
+- [ ] Agentic analysis: tool-using agents, a critic → revise loop, a vision model on the page and heatmap, memory across participants
+- [ ] Chrome extension: test live pages with exact element positions and recorded clicks
+- [ ] Production hosting: HTTPS host, Postgres, job queue, error tracking, backups
 - [ ] Head-movement compensation during sessions
 - [ ] Password reset, account settings and "delete my data"
 

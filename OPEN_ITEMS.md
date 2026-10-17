@@ -1,186 +1,133 @@
 # Open items
 
-Everything here needs something I cannot do from a terminal: a file that lives
-in Drive, a human sitting in front of a webcam, or a decision that belongs to
-the team. Each has the exact steps to close it.
+What's still open, ordered by what blocks the paper and the demo. Each item says
+what it blocks and the exact steps to close it. Product and engineering work beyond
+these is in the README's [Roadmap](README.md#roadmap).
 
-Ordered by what blocks the paper.
-
----
-
-## 1. The real detector weights — `models/pupil_yolo_final.pt`
-
-**Blocks:** every accuracy number in the README's benchmark table, and any
-real gaze measurement.
-
-The file is gitignored and kept in Drive. Nothing in the repo can fetch it,
-and the Google Drive connector is not authorised in this environment (and a
-non-interactive session cannot run an OAuth flow).
-
-**To close it, either:**
-
-1. **Authorise Drive** — claude.ai → Settings → Connectors → Google Drive.
-   Once connected, I can pull the file into `models/` directly.
-2. **Copy it manually** — drop `pupil_yolo_final.pt` into `models/`. Nothing
-   else changes: `backend/cv` resolves weights in the order
-   *explicit argument → `$FIXATION_PUPIL_WEIGHTS` → `pupil_yolo_final.pt` →
-   smoke-test stand-in*, so it is picked up automatically.
-
-**Verify it took:**
-```bash
-curl -s localhost:8000/health          # weights_present: true
-cd backend/cv && python3 test_cv.py    # prints "using pupil_yolo_final.pt (real LPW detector)"
-```
-
-Until then the pipeline runs on `models/pupil_smoketest.pt`, trained on drawn
-ellipses by `scripts/make_smoketest_detector.py`. **Nothing from it belongs in
-the paper** — `PupilDetector.is_smoketest` flags when it's in use.
+*Last reviewed: October 2026.*
 
 ---
 
-## 2. No real participant has ever used this
+## 1. Multi-participant pilot study
 
-**Blocks:** every claim in the paper.
+**Blocks:** every accuracy claim in the paper.
 
-Everything is validated against synthetic data: synthetic calibration
-sessions, scripted gaze streams, hand-written HTML fixtures. That proves the
-plumbing is correct and proves **nothing** about accuracy on a real face.
+The ~65 px median gaze error in the README is measured on **one participant**
+(4 calibrations, 20 held-out accuracy-check dots, one 1694×840 laptop screen).
+That proves the pipeline works on a real face. It doesn't show how it varies
+across people, glasses, lighting and laptops.
 
-**No webcam is reachable from this machine** — OpenCV finds no capture device
-on indices 0–2 (`VIDEOIO(DSHOW): backend is generally available but can't be
-used to capture by index`). So this cannot be closed here at all, by me or by
-a script: it needs a camera and a person. Run the checklist below on a laptop
-with a working webcam.
+**To close it:** 10–20 participants, a mix of glasses / no glasses, lighting and
+screen sizes. For each one:
 
-The specific numbers that are currently model-derived and need real
-measurement:
+1. **Calibrate.** 16 dots, then the 5-dot accuracy check. Note the verdict and the
+   median error the app shows. If it's refused (over 15% of the screen diagonal),
+   fix the lighting or seating and redo it; record how many tries it took.
+2. **Run one sample page for ~60 s**, telling the participant to look at a few
+   named elements at known moments. That gives ground truth for attribution.
+3. **Finish and open the report.** Check that the heatmap matches what the
+   participant says they looked at, and note the report's tracked % and the share
+   of gaze that hit no element (a high share means boxes and page don't line up).
+4. After the cohort, run `python scripts/evaluate_gaze_sessions.py` to score every
+   saved calibration on its own accuracy-check dots.
 
-| Claim | Current basis | How to measure it for real |
+Numbers that should be re-derived from the cohort rather than from one person:
+
+| Setting | Where | Current basis |
 |---|---|---|
-| ~40px gaze error | synthetic calibration, `gaze_estimation` LOPO CV | Run §3 below; read `median_error_px` from a real session |
-| dispersion threshold 0.06 | derived from that 40px figure | Re-derive once real error is known; `attribution/fixations.py` |
-| fixations ≈ 0.3s | I-DT on synthetic streams | Compare against the participant's real fixation durations |
-| detector precision/recall | LPW, train == val | Needs a real held-out split — see §4 |
+| Fixation dispersion threshold | `backend/attribution/fixations.py` | one participant's error |
+| Quality-gate thresholds | `backend/agents/quality_gate.py` | one participant's error |
+| Cursor stabiliser radius | `frontend-new/src/lib/gazeStabilizer.js` | replay of 4 calibrations |
 
-### First-participant checklist
-
-```bash
-cd backend && python -m api.init_db --demo-user
-uvicorn api.main:app --port 8000
-```
-
-1. **Calibrate** — 16 points. Check `quality.usable` is `true` and
-   `detection_rate` > 0.8 before continuing. If not, fix the lighting and
-   redo; a bad calibration poisons everything downstream.
-2. **Train** — `POST /api/sessions/{id}/calibration`. Record
-   `median_error_px` and `per_frame_median_error_px`. **This is the number
-   the paper needs.** If it is far from 40px, retune the dispersion threshold.
-3. **Record** — one fixed test page, ~60s, participant told where to look at
-   known moments. That gives ground truth to check attribution against.
-4. **Finalise and read the report.** Check `tracked_pct` (how much of the
-   session had usable gaze) and `background_pct` (gaze that hit no element).
-   A high `background_pct` means the bounding boxes don't match what was on
-   screen.
-5. **Sanity-check by eye**: does the heatmap put attention where the
-   participant said they were looking?
-
-Run this with **one** person before recruiting a cohort. Everything above is
-plumbing verification; step 2's number is the first real result this project
-has produced.
+Calibration recordings are participant data: they stay out of git
+(`backend/calibration/calibration_data/` is gitignored) and need consent.
 
 ---
 
-## 3. `frontend/` has never been pushed
+## 2. Hosting
 
-**Blocks:** nothing on the backend; blocks anyone actually using the system.
+**Blocks:** anyone using GazeLens without running it on their own machine.
 
-`frontend/src/api/client.js` was the stated source of truth for the session
-API contract, so that contract was defined server-side instead.
+The deploy config is done: API image (`backend/Dockerfile`), Vercel config
+(`frontend-new/vercel.json`), CI building the image, and [DEPLOY.md](DEPLOY.md).
+What's missing is a host. The API needs ~1.5–2 GB RAM (MediaPipe + headless
+Chromium), and the free options tried don't provide it:
 
-**To close it:**
-```bash
-python scripts/generate_api_client.py
-# writes frontend/src/api/openapi.json + client.generated.js
-```
-Then **diff `client.generated.js` against the real `client.js`**. That diff is
-the actual list of mismatches — it cannot be produced by describing the API in
-prose. Everything provisional is confined to `backend/api/schemas.py` and the
-router prefixes; see `backend/api/CONTRACT.md` for the field-by-field notes.
+- **Hugging Face Spaces (free CPU):** the deploy workflow pushes the code fine, but
+  the team account's free CPU quota is 0, so the Space never starts.
+- **Render free tier:** 512 MB RAM and no persistent disk.
 
-The generator never overwrites `client.js`.
-
----
-
-## 4. The detector benchmark is measured on training data
-
-**Status: the split now exists and the inflation has been measured.**
-See §4b for what still needs the real weights.
-
-`configs/lpw.yaml` pointed `train` and `val` at the same folder, so every
-figure in the README's table was measured on data the models had seen.
-
-**Done:**
-```bash
-python scripts/make_lpw_split.py            # subject-wise split
-python scripts/evaluate_split_gap.py        # measures the inflation
-```
-
-LPW is 22 subjects × 3 videos. A random *frame* split would barely help —
-consecutive frames are near-duplicates, so it puts frame 500 in train and 501
-in val. `make_lpw_split.py` splits by **subject** (16 train / 3 val / 3 test,
-disjoint, verified), which is the only split that answers the question the
-paper asks. `configs/lpw.yaml` now carries a warning; quote
-`configs/lpw_subject_split.yaml`.
-
-`evaluate_split_gap.py` evaluates one set of weights twice — on its own
-training data and on held-out subjects — so the gap is attributable to the
-split alone, not to a different model or image size.
-
-### 4b. Re-running it for the *published* model
-
-**Done for YOLO.** `pupil_yolo_final.pt` was retrained on the subject-disjoint
-split and evaluated held-out, including a per-condition breakdown (indoor/
-outdoor, natural/artificial light, glasses/no glasses) — see the README's
-detector benchmark section, sourced from `yolo_eval.csv` / `yolo_conditions.csv`.
-Headline: recall 0.683 overall, dropping to 0.278 with glasses and 0.427
-outdoors. Precision stays high (0.79–0.96) throughout — false positives
-aren't the problem, missed detections in harder conditions are.
-
-**Still open for Faster R-CNN and SSD** — the README's comparison table still
-carries their original training-data numbers from §4. They need the same
-`evaluate_split_gap.py` treatment before the three-way comparison is fair;
-right now it's an honest YOLO number next to two inflated ones.
+**To close it:** pick one of
+- a paid host: Render with [`render.yaml`](render.yaml) (persistent disk), or
+  Hugging Face PRO for the existing Space;
+- for demos only: run the API on a laptop and expose it over HTTPS with a free
+  Cloudflare tunnel. Not set up yet; Vite would also need to allow the tunnel's
+  host name (`server.allowedHosts`).
 
 ---
 
-## 5. `test_uis/` — the 5 real test pages
+## 3. Detector benchmark: Faster R-CNN and SSD still on training data
 
-**Blocks:** the pilot study protocol.
+**Blocks:** the three-way detector comparison in the paper.
 
-Interim layouts live in `backend/api/layouts.py` (3 pages, geometry from
-`reports/heatmap_stub.DEMO_LAYOUTS`). They describe pages that don't exist.
+`configs/lpw.yaml` originally pointed train and val at the same folder, so the
+first benchmark numbers were measured on data the models had seen. A
+subject-disjoint split now exists (`scripts/make_lpw_split.py`,
+`configs/lpw_subject_split.yaml`: 16 train / 3 val / 3 test subjects), and
+**YOLOv8n has been retrained and re-evaluated on it**, including per-condition
+results (README, *Pupil detector benchmark*).
 
-**To close it:** build the pages, and put each one's element config *next to
-its HTML* so the boxes and the markup can't drift apart. `layouts.layout_for()`
-is the only function that changes.
+**Still open:** retrain Faster R-CNN and SSD on the same split and evaluate them
+held-out (`python evaluation/evaluate.py --model frcnn|ssd ...`, then
+`python evaluation/compare_models.py`). Until then the README's table puts an
+honest YOLO number next to two inflated ones, and says so.
+
+This is research-only: the live pipeline uses MediaPipe iris landmarks, not a
+pupil detector.
 
 ---
 
-## 6. Smaller things
+## 4. Detector weights for the ablation — `models/pupil_yolo_final.pt`
 
-**~~`heatmap_stub.py` lint~~** — fixed. `zip(..., strict=True)`; the repo now
-lints clean end to end (`ruff check backend/ scripts/ --select F,E9,B,A`).
+**Blocks:** only the iris-vs-detector ablation (`FIXATION_PUPIL_SOURCE=fused|yolo`)
+and re-running the YOLO benchmark. Live gaze does **not** need it.
 
-**Alembic** — there are no migrations. The schema changes by editing
-`models.py` and recreating the database. Add Alembic **the moment the study
-has collected participant data worth migrating rather than regenerating** —
-that will be during the pilot, not after it.
+The file is gitignored and kept in the team Drive. To use it, copy it into
+`models/`; `backend/cv` picks it up automatically (order: explicit argument →
+`$FIXATION_PUPIL_WEIGHTS` → `pupil_yolo_final.pt` → smoke-test stand-in).
+`GET /health` then reports `weights_present: true`.
 
-**`FIXATION_SECRET_KEY`** — a key is auto-generated into
-`backend/api/.secret_key` (gitignored) so tokens survive restarts. For
-anything deployed beyond a study laptop, set the environment variable
-explicitly and delete that file.
+Never report numbers from `models/pupil_smoketest.pt`: it was trained on drawn
+ellipses, and `PupilDetector.is_smoketest` flags it.
 
-**SSRF on `/api/render/capture`** — private and loopback addresses are
-refused, but that is a guardrail, not a boundary (DNS rebinding defeats it).
-Keep the API off the public internet.
+---
+
+## 5. Smaller things
+
+- **Database migrations.** There is no Alembic. New nullable columns are added on
+  startup by `backend/api/db.py` (`_add_missing_columns`), which is enough for now.
+  Add Alembic the first time a change needs a backfill or a non-nullable column,
+  which will likely be during the pilot.
+- **Signing key.** Without `GAZELENS_SECRET_KEY`, a key is generated into
+  `backend/api/.secret_key` (gitignored) so logins survive restarts. Anything
+  deployed must set the variable (the API refuses to start in production without
+  it).
+- **URL capture is a guardrail, not a boundary.** It now requires login, and
+  private/loopback addresses are refused for the URL, every redirect hop and every
+  subresource. DNS tricks can still get around checks like this, so keep the API
+  off networks with sensitive internal services.
+
+---
+
+## Closed
+
+- **Frontend pushed.** `frontend-new/` is the app; the old `frontend/` prototype was removed.
+- **The 5 test pages.** `test_uis/` has all five pages, each with its element boxes
+  in `elements.json` next to its HTML; `backend/api/layouts.py` loads them.
+- **Lint.** `ruff check backend/ scripts/ --select F,E9,B,A` is clean and runs in CI.
+- **First real participant.** Calibrated and measured (the README's accuracy table).
+- **Unprotected API routes.** Calibration, gaze-model, attribution and render routes
+  now require login and are owner-scoped.
+- **Reports stuck on "Building your report".** Interrupted analyses are marked
+  failed and can be retried; WeasyPrint runs in a separate process so it can't
+  crash the API.
