@@ -11,7 +11,7 @@ Built on **GazeUX-Agent**, a multi-agent framework for gaze-driven UI/UX evaluat
 ![FastAPI](https://img.shields.io/badge/FastAPI-backend-009688?logo=fastapi&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![MediaPipe](https://img.shields.io/badge/MediaPipe-iris%20landmarks-0097A7)
-![Tests](https://img.shields.io/badge/tests-841%20passing-2EE6C5)
+![Tests](https://img.shields.io/badge/tests-867%20passing-2EE6C5)
 [![CI](https://github.com/goyalnishtha841/gazelens/actions/workflows/ci.yml/badge.svg)](https://github.com/goyalnishtha841/gazelens/actions/workflows/ci.yml)
 ![LLM](https://img.shields.io/badge/LLM-Groq%20%7C%20Claude%20(optional)-8A63D2)
 
@@ -358,6 +358,9 @@ All settings are optional environment variables.
 | `FIXATION_DATA_DIR` | Where gaze streams, captures and reports are stored | `backend/api/session_data` |
 | `GAZELENS_ANALYSIS_TIMEOUT_SECONDS` | How long a report may stay "processing" before it counts as failed and can be retried | `600` |
 | `GAZELENS_LOGIN_MAX_FAILURES` / `GAZELENS_LOGIN_WINDOW_SECONDS` | Failed logins allowed per IP per window before `429` | `10` / `900` |
+| `GAZELENS_ADMIN_PASSWORD` | Turns on the private admin page and sets its password | off (admin routes return 404) |
+| `GAZELENS_ADMIN_MAX_FAILURES` / `GAZELENS_ADMIN_WINDOW_SECONDS` | Wrong admin passwords allowed per IP per window | `5` / `900` |
+| `VITE_ADMIN_PATH` (frontend, build time) | URL of the admin page | `/admin` |
 | `GROQ_API_KEY` | Enables LLM writing via Groq (free tier) | off |
 | `ANTHROPIC_API_KEY` | Enables LLM writing via Claude | off |
 | `GAZELENS_LLM_PROVIDER` | `groq` or `anthropic` when both keys are set | Claude if both set |
@@ -397,6 +400,24 @@ rejections (`pipeline_result["llm"]`), shown under *How we checked* in the PDF.
 
 ---
 
+### Admin page
+
+A private, read-only page listing every user and their activity: totals,
+tests per day, each user's tests, problems found and camera setups, and a
+feed of recent sign-ups, tests and reports. Nothing in the app links to it.
+
+1. Start the API with an admin password (separate from every user account):
+   ```bash
+   GAZELENS_ADMIN_PASSWORD='choose-a-long-password' uvicorn api.main:app --port 8000
+   ```
+2. Open `http://localhost:5180/admin` and enter that password.
+
+Without `GAZELENS_ADMIN_PASSWORD` the admin routes answer 404, so the feature is
+off by default. Admin logins last 2 hours, live only in that browser tab, and
+5 wrong passwords lock that address out for 15 minutes. To hide the page
+behind a less guessable address, build the frontend with
+`VITE_ADMIN_PATH=/your-secret-path`.
+
 ## API overview
 
 Interactive docs at <http://localhost:8000/docs> once the API is running.
@@ -414,6 +435,7 @@ Interactive docs at <http://localhost:8000/docs> once the API is running.
 | `POST /api/sessions/{id}/finalize` | Run attribution, agents and report rendering |
 | `GET /api/sessions/{id}/report`, `/heatmap`, `/scanpath`, `/pdf` | Report data and files |
 | `GET /api/sessions`, `DELETE /api/sessions/{id}` | List and delete tests |
+| `POST /api/admin/login`, `GET /api/admin/overview`, `GET /api/admin/users/{id}` | Private admin view (off unless `GAZELENS_ADMIN_PASSWORD` is set) |
 | `GET /health` | Service and model status |
 
 Everything except signup, login and `/health` requires
@@ -426,7 +448,7 @@ Each backend module documents its own contract in its `CONTRACT.md`.
 
 ## Testing
 
-The backend has **841 tests** across 9 suites. None needs a webcam, model weights or
+The backend has **867 tests** across 10 suites. None needs a webcam, model weights or
 an API key: the detector is stubbed, gaze models train on synthetic sessions and the
 LLM is faked. Each suite runs from its own folder:
 
@@ -435,6 +457,7 @@ cd backend/agents          && python test_agents.py           #  89  agents, gat
 cd backend/agents          && python test_llm_agents.py       #  37  LLM mode + critic rejections
 cd backend/api             && python test_api.py              # 168  full session lifecycle, crash recovery, config
 cd backend/api             && python test_route_auth.py       #  68  login + owner checks on every route
+cd backend/api             && python test_admin.py            #  26  admin page access + data
 cd backend/attribution     && python test_attribution.py      #  95  fixations → metrics
 cd backend/calibration     && python test_calibration.py      #  87  capture + quality
 cd backend/cv              && python test_cv.py               #  73  landmarks + pupil

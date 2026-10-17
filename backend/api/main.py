@@ -54,6 +54,7 @@ from gaze_estimation import router as gaze_router             # noqa: E402
 from render import router as render_router                    # noqa: E402
 
 from .auth_routes import router as auth_router                # noqa: E402
+from .admin_routes import router as admin_router                  # noqa: E402
 from .db import SessionLocal, init_db                         # noqa: E402
 from .session_routes import recover_interrupted_sessions      # noqa: E402
 from .session_routes import router as session_router          # noqa: E402
@@ -106,6 +107,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(admin_router)
 app.include_router(session_router)
 app.include_router(calibration_router)
 app.include_router(gaze_router)

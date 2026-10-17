@@ -104,6 +104,8 @@ All configuration is environment variables. See [`.env.example`](.env.example).
 | `GAZELENS_CORS_ORIGIN_REGEX` | Space variable | none | Extra origins by regex, e.g. Vercel previews |
 | `GAZELENS_LOGIN_MAX_FAILURES` | Space variable | `10` | Failed logins per client IP per window before `429` |
 | `GAZELENS_LOGIN_WINDOW_SECONDS` | Space variable | `900` | That window |
+| `GAZELENS_ADMIN_PASSWORD` | Space secret | none | Turns on the private admin page (`/admin`) and sets its password. Unset = admin routes return 404 |
+| `VITE_ADMIN_PATH` | Vercel env var (build time) | `/admin` | Address of the admin page; set a less guessable path for production |
 | `GROQ_API_KEY` / `ANTHROPIC_API_KEY` | Space secret | none | Optional LLM writing for the report agents |
 | `GAZELENS_ENV` | set in the image | `production` | Refuses to start without a secret key |
 | `FIXATION_DATABASE_URL`, `FIXATION_DATA_DIR`, `GAZELENS_CALIBRATION_DIR`, `GAZELENS_GAZE_MODEL_DIR` | set in the image | everything under `/data` | Storage locations |
