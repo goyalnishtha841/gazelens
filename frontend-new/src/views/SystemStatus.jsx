@@ -85,10 +85,14 @@ export default function SystemStatus({ hasCalibration, onNavigate }) {
         <div className={panel}>
           <h2 className="text-[19px] font-semibold text-text-primary">Your camera setup</h2>
           <div className="mt-3">
-            <StatusRow label="Calibration" value={hasCalibration ? "Done" : "Not yet"} tone={hasCalibration ? "good" : "bad"} />
+            <StatusRow
+              label="Calibration"
+              value={hasCalibration ? "Ready" : hasCalibration === false ? "Needed for new tests" : "Checking…"}
+              tone={hasCalibration ? "good" : hasCalibration === false ? "bad" : undefined}
+            />
           </div>
           <p className="mt-4 text-[14px] leading-relaxed text-text-secondary">
-            The setup is tied to where you sit, your lighting and your camera, so it resets each time you sign in. Redo it whenever any of those change.
+            Your latest setup is reused across sign-ins as long as it passed the accuracy check and this window is the same size. It's tied to where you sit, your lighting and your camera, so redo it whenever any of those change. Viewing sessions and reports never needs the camera.
           </p>
           <button
             onClick={() => onNavigate?.("calibration")}

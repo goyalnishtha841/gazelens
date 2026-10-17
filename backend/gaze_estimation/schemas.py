@@ -141,6 +141,12 @@ class TrainResponse(BaseModel):
     usable_for_attribution: bool
     warnings: List[str] = Field(default_factory=list)
 
+    # The post-calibration accuracy check (validation.summarise plus the
+    # per-dot results), or null when none was run. `metrics` can't carry it:
+    # ErrorMetrics would drop the key. The app reads `verdict` here to decide
+    # whether a saved calibration can be reused after a reload.
+    validation_pass: Optional[Dict] = None
+
 
 class ModelSummary(BaseModel):
     session_id: str

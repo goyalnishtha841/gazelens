@@ -48,24 +48,25 @@ export default function Home({ onNavigate, onOpenSession, hasCalibration }) {
         <div aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(60% 90% at 0% 0%, rgb(var(--color-accent) / 0.16), transparent 60%), radial-gradient(45% 80% at 100% 100%, rgb(var(--color-cool) / 0.12), transparent 60%)" }} />
         <div className="relative grid grid-cols-1 items-center gap-10 p-7 sm:p-10 lg:grid-cols-[1fr_380px]">
           <div>
-            <span className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[13px] font-medium ${hasCalibration ? "border-accent/30 bg-accent/10 text-accent" : "border-amber/30 bg-amber/10 text-amber"}`}>
-              <span className={`h-2 w-2 rounded-full ${hasCalibration ? "bg-accent" : "bg-amber"}`} />
-              {hasCalibration ? "Camera calibrated and ready" : "Calibration needed"}
+            {/* hasCalibration is null while App is still looking for a saved setup */}
+            <span className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[13px] font-medium ${hasCalibration ? "border-accent/30 bg-accent/10 text-accent" : hasCalibration === false ? "border-amber/30 bg-amber/10 text-amber" : "border-white/10 bg-white/[0.04] text-text-secondary"}`}>
+              <span className={`h-2 w-2 rounded-full ${hasCalibration ? "bg-accent" : hasCalibration === false ? "bg-amber" : "animate-pulse bg-text-secondary"}`} />
+              {hasCalibration ? "Camera calibrated and ready" : hasCalibration === false ? "Camera setup needed for new tests" : "Checking your camera setup"}
             </span>
             <h1 className="mt-5 text-[40px] font-bold leading-[1.05] tracking-[-0.025em] text-text-primary sm:text-[54px]">
               {name ? <>Hi {name}, ready to <span className="font-serif font-normal italic text-accent">see</span> more?</> : <>Ready to <span className="font-serif font-normal italic text-accent">see</span> more?</>}
             </h1>
             <p className="mt-4 max-w-[520px] text-[17px] leading-relaxed text-text-secondary">
-              {hasCalibration
-                ? "Start a test on any page. When you finish, your report shows where people looked and what to fix."
-                : "Do the one-minute setup first, so GazeLens can follow your eyes accurately."}
+              {hasCalibration === false
+                ? "Your sessions and reports are all here. To run a new test, GazeLens first needs a one-minute camera setup on this screen, and it starts when you do."
+                : "Start a test on any page. When you finish, your report shows where people looked and what to fix."}
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <button
-                onClick={() => onNavigate(hasCalibration ? "session" : "calibration")}
+                onClick={() => onNavigate("session")}
                 className="group inline-flex items-center gap-2 rounded-full bg-accent px-7 py-3.5 text-[16px] font-semibold text-[#0A0E14] transition-shadow hover:shadow-[0_0_36px_-4px_rgb(var(--color-accent)/0.7)]"
               >
-                {hasCalibration ? "Start a test" : "Set up my camera"}
+                {hasCalibration === false ? "Set up and start a test" : "Start a test"}
                 <span className="transition-transform group-hover:translate-x-1">→</span>
               </button>
               {latest && (
