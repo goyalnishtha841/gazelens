@@ -53,6 +53,37 @@ jobs:
             echo "::endgroup::"
           done
 
+  e2e:
+    name: end-to-end (API + web app)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend-new/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgles2 libegl1
+          pip install -r requirements-dev.txt
+          playwright install --with-deps chromium
+          npm ci --prefix frontend-new
+
+      # Starts its own API + web app on throwaway data, runs every flow
+      # (sample page, live URLs, PDF, security, crash recovery), shuts down.
+      - name: Run end-to-end check
+        run: python scripts/e2e_check.py --web
+
   lint:
     runs-on: ubuntu-latest
     steps:

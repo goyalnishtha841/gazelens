@@ -445,8 +445,27 @@ ruff check backend/ scripts/ --select F,E9,B,A
 
 (`cv` runs 3 extra detector tests when torch is installed, as with `requirements.txt`.)
 
-[CI](.github/workflows/ci.yml) runs all of these, ruff, the frontend build and the
-API Docker image build on every push to `main` and on every pull request.
+### End-to-end check
+
+`scripts/e2e_check.py` runs the whole app over real HTTP: it starts its own API
+(and, with `--web`, the web app) on throwaway data, then checks accounts and login,
+that every route needs login, a real face photo through MediaPipe, the full flow on a
+sample page and on live websites (calibration → gaze model → analysis → report →
+heatmap, eye path, PDF), cross-user isolation, URL-capture safety, crash recovery
+including a real server restart, and the login lockout. Real accounts and
+participant data are never touched.
+
+```bash
+python scripts/e2e_check.py --web       # 93 checks; --offline skips the live-website ones
+```
+
+The calibration's eye features are synthetic (there's no webcam in an automated
+run), so it proves the app works end to end, not how accurate gaze is; that needs a
+person (see [OPEN_ITEMS.md](OPEN_ITEMS.md)).
+
+[CI](.github/workflows/ci.yml) runs all of these, the end-to-end check, ruff, the
+frontend build and the API Docker image build on every push to `main` and on every
+pull request.
 
 ---
 
