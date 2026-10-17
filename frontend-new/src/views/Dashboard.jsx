@@ -111,7 +111,7 @@ export default function Dashboard({ onNavigate, onOpenSession, hasCalibration })
             Every test you've run lives here. Open one to see its heatmap and the list of things to fix.
           </p>
         </div>
-        <button onClick={() => onNavigate?.(hasCalibration ? "session" : "calibration")} className={`h-12 px-6 text-[15px] ${btn}`}>
+        <button onClick={() => onNavigate?.("session")} className={`h-12 px-6 text-[15px] ${btn}`}>
           + New test
         </button>
       </Reveal>
@@ -183,7 +183,7 @@ export default function Dashboard({ onNavigate, onOpenSession, hasCalibration })
                   </div>
                 ))}
               </div>
-              <button onClick={() => onNavigate?.(hasCalibration ? "session" : "calibration")} className={`mt-10 h-12 px-7 text-[15px] ${btn}`}>
+              <button onClick={() => onNavigate?.("session")} className={`mt-10 h-12 px-7 text-[15px] ${btn}`}>
                 {hasCalibration ? "Run your first test" : "Set up the camera"}
               </button>
             </div>

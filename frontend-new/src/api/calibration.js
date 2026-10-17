@@ -69,6 +69,58 @@ export async function getCalibrationSession(token, sessionId) {
   return handleResponse(res);
 }
 
+/** The caller's own calibration sessions (summaries, no screen size). */
+export async function listCalibrationSessions(token) {
+  const res = await fetch(`${BASE}/sessions`, { headers: authHeaders(token) });
+  return handleResponse(res);
+}
+
+/** A trained model's stored accuracy; validation_pass holds the accuracy
+ *  check's verdict (null if none ran). 404 when it was never trained. */
+export async function getGazeModel(token, sessionId) {
+  const res = await fetch(apiUrl(`/api/gaze/models/${sessionId}`), { headers: authHeaders(token) });
+  return handleResponse(res);
+}
+
+// Same 2% as backend/api/session_routes.py SCREEN_MATCH_TOLERANCE: linking a
+// calibration recorded on a differently sized window is refused there.
+const SCREEN_MATCH_TOLERANCE = 0.02;
+
+export function screenMatches(width, height, current = { width: window.innerWidth, height: window.innerHeight }) {
+  if (!width || !height) return false;
+  return Math.abs(current.width - width) / width <= SCREEN_MATCH_TOLERANCE
+    && Math.abs(current.height - height) / height <= SCREEN_MATCH_TOLERANCE;
+}
+
+/**
+ * The newest calibration a live session would accept right now: completed,
+ * recorded on a window this size, and whose accuracy check passed (good or
+ * fair -- the same verdicts Calibration lets you continue with). Returns
+ * { id, screenWidth, screenHeight } or null. Only checks the few newest, so a
+ * long history doesn't turn sign-in into dozens of requests.
+ */
+export async function findUsableCalibration(token, { maxChecked = 5 } = {}) {
+  const sessions = await listCalibrationSessions(token);
+  const candidates = sessions
+    .filter((s) => s.session_id && s.status === "complete" && s.usable !== false)
+    .sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0))
+    .slice(0, maxChecked);
+
+  for (const s of candidates) {
+    try {
+      const detail = await getCalibrationSession(token, s.session_id);
+      if (!screenMatches(detail.screen_width, detail.screen_height)) continue;
+      const model = await getGazeModel(token, s.session_id);
+      const verdict = model.validation_pass?.verdict;
+      if (verdict !== "good" && verdict !== "fair") continue;
+      return { id: s.session_id, screenWidth: detail.screen_width, screenHeight: detail.screen_height };
+    } catch {
+      // never trained (404) or since deleted -- try the next one
+    }
+  }
+  return null;
+}
+
 /**
  * One validation dot (backend/gaze_estimation/routes.py validate): frames
  * captured while a NEW dot was on screen, after calibration. The server

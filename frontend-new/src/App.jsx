@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { findUsableCalibration, screenMatches } from "./api/calibration.js";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
 import Nav from "./components/Nav.jsx";
 import PageTransition from "./components/PageTransition.jsx";
@@ -24,9 +25,10 @@ const VIEWS = {
   reports: Reports,
 };
 
-// Ported from frontend/src/App.jsx's gating pattern: logged-out visitors see
-// the marketing area; a logged-in user with no calibration on file sees
-// Calibration immediately (not buried in navigation) before anything else.
+// Logged-out visitors see the marketing area. Signed-in users land on Home
+// and can browse every past session and report without a camera; only
+// starting a new test needs a usable calibration, and that is restored from
+// the server on load rather than forgotten on every refresh.
 function PublicArea() {
   const [authView, setAuthView] = useState("landing"); // landing | signin | signup
 
@@ -49,33 +51,80 @@ function PublicArea() {
 }
 
 function AuthenticatedApp() {
-  const { logout } = useAuth();
+  const { logout, token } = useAuth();
   const [view, setView] = useState("home");
-  const [calibrationSessionId, setCalibrationSessionId] = useState(null);
+  // { id, screenWidth, screenHeight } -- the screen it was recorded on, since
+  // a live session refuses a calibration from a differently sized window.
+  const [calibration, setCalibration] = useState(null);
+  // Where Calibration goes when it finishes (next) or is left (back).
+  const [calibrationFlow, setCalibrationFlow] = useState({ next: "home", back: "home" });
   // A real session whose report is open -- distinct from `view`, since it
   // can be reached either by clicking a row in Dashboard or by finishing a
   // Live Session recording, and should show over whatever view was active.
   const [openSessionId, setOpenSessionId] = useState(null);
+  const restoring = useRef(null);
+  const [restoreDone, setRestoreDone] = useState(false);
+  const [, setWindowSize] = useState(null);
 
-  if (!calibrationSessionId) {
-    return (
-      <Calibration
-        onComplete={(id) => {
-          setCalibrationSessionId(id);
-          setView("home");
-        }}
-      />
-    );
-  }
+  // Pick up the latest calibration that would still work here, so a reload
+  // or a fresh sign-in doesn't mean sitting through the setup again.
+  useEffect(() => {
+    let cancelled = false;
+    restoring.current = findUsableCalibration(token)
+      .catch(() => null)
+      .then((found) => {
+        if (!cancelled) {
+          if (found) setCalibration((current) => current ?? found);
+          setRestoreDone(true);
+        }
+        return found;
+      });
+    return () => { cancelled = true; };
+  }, [token]);
+
+  // Resizing the window can make the calibration unusable (or usable again).
+  useEffect(() => {
+    const onResize = () => setWindowSize(`${window.innerWidth}x${window.innerHeight}`);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const usable = (c) => !!c && screenMatches(c.screenWidth, c.screenHeight);
+  const hasCalibration = usable(calibration);
+  // For Home / System status copy: null while the restore is still running.
+  const calibrationStatus = hasCalibration ? true : restoreDone ? false : null;
+
+  const openCalibration = (next, back) => {
+    setCalibrationFlow({ next, back });
+    setView("calibration");
+  };
+
+  const navigate = async (target) => {
+    setOpenSessionId(null);
+    if (target === "calibration") {
+      const from = view === "calibration" ? "home" : view;
+      openCalibration(from, from);
+      return;
+    }
+    if (target === "session" && !hasCalibration) {
+      // The restore may still be in flight right after sign-in.
+      const restored = calibration ?? (await restoring.current);
+      if (!usable(restored)) {
+        openCalibration("session", view === "session" ? "home" : view);
+        return;
+      }
+    }
+    setView(target);
+  };
 
   if (view === "calibration") {
     return (
       <Calibration
         onComplete={(id) => {
-          setCalibrationSessionId(id);
-          setView("home");
+          setCalibration({ id, screenWidth: window.innerWidth, screenHeight: window.innerHeight });
+          setView(calibrationFlow.next);
         }}
-        onExit={() => setView("home")}
+        onExit={() => setView(calibrationFlow.back === "session" ? "home" : calibrationFlow.back)}
       />
     );
   }
@@ -84,12 +133,12 @@ function AuthenticatedApp() {
   if (openSessionId) {
     body = <SessionReport sessionId={openSessionId} onBack={() => setOpenSessionId(null)} />;
   } else if (view === "home") {
-    body = <Home onNavigate={setView} onOpenSession={setOpenSessionId} hasCalibration={!!calibrationSessionId} />;
+    body = <Home onNavigate={navigate} onOpenSession={setOpenSessionId} hasCalibration={calibrationStatus} />;
   } else if (view === "session") {
     body = (
       <LiveSession
-        calibrationSessionId={calibrationSessionId}
-        onNavigate={setView}
+        calibrationSessionId={hasCalibration ? calibration.id : null}
+        onNavigate={navigate}
         onSessionEnd={(sessionId) => {
           setOpenSessionId(sessionId);
           setView("dashboard");
@@ -97,24 +146,24 @@ function AuthenticatedApp() {
       />
     );
   } else if (view === "status") {
-    body = <SystemStatus hasCalibration={!!calibrationSessionId} onNavigate={setView} />;
+    body = <SystemStatus hasCalibration={calibrationStatus} onNavigate={navigate} />;
   } else if (view === "dashboard") {
     body = (
       <Dashboard
-        onNavigate={setView}
+        onNavigate={navigate}
         onOpenSession={setOpenSessionId}
-        hasCalibration={!!calibrationSessionId}
+        hasCalibration={hasCalibration}
       />
     );
   } else {
     const Active = VIEWS[view] ?? Dashboard;
-    body = <Active onNavigate={setView} onOpenSession={setOpenSessionId} />;
+    body = <Active onNavigate={navigate} onOpenSession={setOpenSessionId} />;
   }
 
   return (
     <div className="relative isolate min-h-screen bg-bg text-text-primary">
       <AppBackdrop />
-      <Nav active={openSessionId ? null : view} onNavigate={(v) => { setOpenSessionId(null); setView(v); }} onLogout={logout} />
+      <Nav active={openSessionId ? null : view} onNavigate={navigate} onLogout={logout} />
       <PageTransition viewKey={openSessionId ? `report-${openSessionId}` : view}>{body}</PageTransition>
     </div>
   );

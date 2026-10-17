@@ -590,6 +590,8 @@ try:
           stored.metrics.median_error_px > 0)
     check("a stored model reports training_metrics as null, not a copy of "
           "the held-out ones", stored.training_metrics is None)
+    check("a model never put through the accuracy check has no validation_pass",
+          stored.validation_pass is None)
 
     print("\nAPI -- another user's model is a 404, not a 403")
     expect_http("someone else fetches the model", routes.get_model(sid, user=SOMEONE_ELSE, db=None), 404)
@@ -755,6 +757,9 @@ try:
           stored.metrics[VALIDATION_KEY]["n_points"] == 2
           and stored.metrics["validation"] == "leave_one_point_out")
     check("gate passes a good validation", validation_gate(stored)[0] is True)
+    fetched = run(routes.get_model("cal_valtest", user=ME, db=None))
+    check("GET /models/{id} exposes the accuracy check's verdict",
+          fetched.validation_pass is not None and fetched.validation_pass["verdict"] == "good")
 
     # participant looks somewhere else entirely: redo point 1 as a miss
     stub.aim_at(0.9, 0.1)

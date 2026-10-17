@@ -340,9 +340,7 @@ export default function Calibration({ onComplete, onExit }) {
   // GazeLens is dark-only, so there is no theme control to place here.
   const themeCorner = null;
 
-  // Signing out has to be reachable even when calibration is forced (first
-  // login, or any reload -- calibrationSessionId isn't persisted, so this
-  // screen can be the ONLY thing rendered, with no Nav anywhere in reach).
+  // Signing out stays reachable here: this screen renders without the Nav.
   // Left off the "running" state on purpose -- mid-capture isn't where you
   // want a stray click ending the session.
   const signOutLink = (

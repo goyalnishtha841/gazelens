@@ -59,7 +59,7 @@ from .training import (
     train_session,
     validation_frames_path_for,
 )
-from .validation import record_point, score_point
+from .validation import VALIDATION_KEY, record_point, score_point
 
 
 def _append_validation_frames(session_id, payload, frames, points) -> None:
@@ -237,6 +237,7 @@ async def get_model(
         trained_in_ms=0.0,
         usable_for_attribution=median <= POOR_FIT_PX_FRACTION * diagonal,
         warnings=[],
+        validation_pass=model.metrics.get(VALIDATION_KEY),
     )
 
 
