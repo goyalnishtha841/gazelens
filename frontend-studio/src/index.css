@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* RGB triplets (not hex) -- Tailwind's opacity modifiers (bg-accent/20 etc.)
+   need `rgb(var(--x) / <alpha-value>)`, which only works with component
+   values, not a single hex string. See tailwind.config.js. */
+:root {
+  /* Light: warm paper. Same brand ramp, darkened for contrast on white. */
+  --color-bg: 246 245 241;
+  --color-surface: 255 255 255;
+  --color-raised: 240 238 232;
+  --color-text-primary: 14 20 27;
+  --color-text-secondary: 94 107 122;
+  --color-border: 227 224 216;
+  --color-accent: 14 159 136;      /* iris teal */
+  --color-accent-soft: #0e9f881a;
+  --color-amber: 199 122 0;
+  --color-coral: 217 71 58;
+  --color-cool: 53 99 224;
+}
+
+/* GazeLens design system ("Precision Optic", from the Stitch export).
+   The accents are the gaze heatmap's own scale -- cool -> iris -> amber ->
+   coral -- so the interface and the reports share one colour language. */
+.dark {
+  --color-bg: 10 14 20;            /* #0A0E14 deep ink */
+  --color-surface: 17 24 35;       /* #111823 */
+  --color-raised: 23 33 49;        /* #172131 */
+  --color-text-primary: 232 238 245;
+  --color-text-secondary: 138 155 176;
+  --color-border: 34 48 68;        /* #223044 */
+  --color-accent: 46 230 197;      /* #2EE6C5 iris teal */
+  --color-accent-soft: #2ee6c51f;
+  --color-amber: 255 181 71;       /* #FFB547 */
+  --color-coral: 255 107 90;       /* #FF6B5A */
+  --color-cool: 91 140 255;        /* #5B8CFF */
+}
+
+* {
+  border-color: rgb(var(--color-border));
+}
+
+html {
+  color-scheme: light;
+  scroll-behavior: smooth;
+}
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  background-color: rgb(var(--color-bg));
+  color: rgb(var(--color-text-primary));
+  font-family: "Outfit", "Inter", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Theme transition: applied only while the toggle is mid-flight (see
+   ThemeContext) so ordinary hover/focus states don't inherit a 500ms lag. */
+.theme-transitioning,
+.theme-transitioning * {
+  transition: background-color 500ms ease, color 500ms ease, border-color 500ms ease,
+    fill 500ms ease, stroke 500ms ease !important;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+}
+
+@keyframes gaze-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes count-up-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Landing feature wall: columns drift up or down forever. The content is
+   rendered twice, so moving by exactly half loops without a seam. */
+@keyframes wall-up {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+@keyframes wall-down {
+  from { transform: translateY(-50%); }
+  to { transform: translateY(0); }
+}
