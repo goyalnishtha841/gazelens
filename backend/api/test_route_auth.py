@@ -80,7 +80,7 @@ try:
 
         def signup(email):
             r = client.post("/api/auth/signup",
-                            json={"email": email, "password": "correct-horse-1"})
+                            json={"email": email, "full_name": "Test User", "password": "Correct-Horse-1"})
             assert r.status_code == 201, r.text
             body = r.json()
             return {"Authorization": f"Bearer {body['access_token']}"}, body["user"]["id"]

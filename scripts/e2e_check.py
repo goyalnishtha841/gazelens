@@ -245,19 +245,19 @@ def run_checks(stack: Stack, frame_b64, args):
 
     # ------------------------------------------------------------ accounts
     section("accounts and login")
-    r = c.post("/api/auth/signup", json={"email": "alice@example.com", "password": "alice-password-1"})
+    r = c.post("/api/auth/signup", json={"email": "alice@example.com", "full_name": "Alice", "password": "Garden-Lamp-41"})
     check("sign up", r.status_code == 201, r.text[:200])
     A = {"Authorization": f"Bearer {r.json()['access_token']}"}
     check("duplicate sign-up refused (409)",
-          c.post("/api/auth/signup", json={"email": "ALICE@example.com", "password": "x-password-1"}).status_code == 409)
+          c.post("/api/auth/signup", json={"email": "ALICE@example.com", "full_name": "Alice", "password": "Garden-Lamp-41"}).status_code == 409)
     check("short password refused (422)",
-          c.post("/api/auth/signup", json={"email": "carol@example.com", "password": "short"}).status_code == 422)
+          c.post("/api/auth/signup", json={"email": "carol@example.com", "full_name": "Carol", "password": "short"}).status_code == 422)
     check("login works",
-          c.post("/api/auth/login", json={"email": "alice@example.com", "password": "alice-password-1"}).status_code == 200)
+          c.post("/api/auth/login", json={"email": "alice@example.com", "password": "Garden-Lamp-41"}).status_code == 200)
     me = c.get("/api/auth/me", headers=A).json()
     check("/me returns the user", me.get("email") == "alice@example.com")
     check("garbage token refused (401)", c.get("/api/auth/me", headers={"Authorization": "Bearer nope"}).status_code == 401)
-    r = c.post("/api/auth/signup", json={"email": "bob@example.com", "password": "bob-password-12"})
+    r = c.post("/api/auth/signup", json={"email": "bob@example.com", "full_name": "Bob", "password": "River-Stone-82"})
     B = {"Authorization": f"Bearer {r.json()['access_token']}"}
 
     section("routes refuse anonymous callers")
@@ -483,7 +483,7 @@ def run_checks(stack: Stack, frame_b64, args):
     codes = [c.post("/api/auth/login", json={"email": "alice@example.com", "password": "wrong-pass-1"}).status_code
              for _ in range(MAX_LOGIN_FAILURES)]
     check("wrong passwords -> 401", codes == [401] * MAX_LOGIN_FAILURES, str(codes))
-    blocked = c.post("/api/auth/login", json={"email": "alice@example.com", "password": "alice-password-1"})
+    blocked = c.post("/api/auth/login", json={"email": "alice@example.com", "password": "Garden-Lamp-41"})
     check("then 429 with Retry-After, even with the right password",
           blocked.status_code == 429 and blocked.headers.get("retry-after"))
 

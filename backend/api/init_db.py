@@ -67,7 +67,7 @@ def main() -> int:
             if db.query(User).filter(User.email == email).first():
                 print(f"demo user already exists: {email}")
             else:
-                db.add(User(email=email,
+                db.add(User(email=email, full_name="Demo User",
                             password_hash=hash_password("demo-password-123")))
                 db.commit()
                 print(f"demo user created: {email} / demo-password-123")

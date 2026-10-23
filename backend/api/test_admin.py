@@ -53,7 +53,7 @@ try:
     client = TestClient(app)
 
     def signup(email):
-        r = client.post("/api/auth/signup", json={"email": email, "password": "correct-horse-1"})
+        r = client.post("/api/auth/signup", json={"email": email, "full_name": "Test User", "password": "Correct-Horse-1"})
         return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
     alice = signup("alice@example.com")

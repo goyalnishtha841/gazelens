@@ -29,6 +29,20 @@ from .security import MIN_PASSWORD_LENGTH
 class SignupRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=MIN_PASSWORD_LENGTH, max_length=200)
+    # Shown in the app ("Hi Nishtha"), so it is required rather than guessed
+    # from the email. Strength rules for the password live in
+    # security.validate_new_password, applied by the signup route.
+    full_name: str = Field(..., max_length=80)
+
+    @field_validator("full_name")
+    @classmethod
+    def _clean_name(cls, v: str) -> str:
+        name = " ".join(v.split())
+        if len(name) < 2:
+            raise ValueError("enter your name (at least 2 characters)")
+        if not any(c.isalpha() for c in name):
+            raise ValueError("your name must contain letters")
+        return name
 
 
 class LoginRequest(BaseModel):
@@ -47,6 +61,7 @@ class TokenResponse(BaseModel):
 class UserResponse(BaseModel):
     id: str
     email: str
+    full_name: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

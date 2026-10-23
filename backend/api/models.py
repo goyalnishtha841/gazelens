@@ -69,6 +69,9 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True,
                                     default=lambda: _new_id("usr"))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    # Required at sign-up; nullable only because accounts made before it was
+    # collected have none (the app then falls back to the email).
+    full_name: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
                                                  default=_utcnow)
