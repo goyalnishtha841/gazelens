@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from .layouts import AVAILABLE_TEST_UIS
-from .models import MODE_TEST_UI, SESSION_MODES, SESSION_STATUSES
+from .models import MODE_IMAGE, MODE_TEST_UI, SESSION_MODES, SESSION_STATUSES
 from .security import MIN_PASSWORD_LENGTH
 
 
@@ -45,6 +45,18 @@ class SignupRequest(BaseModel):
         return name
 
 
+class GoogleLoginRequest(BaseModel):
+    """The ID token Google Identity Services gave the browser."""
+
+    credential: str = Field(..., min_length=20, max_length=8000)
+
+
+class AuthConfigResponse(BaseModel):
+    """What sign-in options this server offers, for the web app to show."""
+
+    google_client_id: Optional[str] = None
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=1, max_length=200)
@@ -62,6 +74,7 @@ class UserResponse(BaseModel):
     id: str
     email: str
     full_name: Optional[str] = None
+    has_google: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -71,10 +84,59 @@ class UserResponse(BaseModel):
 # sessions
 
 
+ELEMENT_TYPES = ("CTA", "text", "image", "nav", "non-interactive")
+IMPORTANCE_LEVELS = ("high", "medium", "low")
+
+
+class DrawnElement(BaseModel):
+    """One box the tester drew on an uploaded image (mode="image")."""
+
+    label: str = Field(..., max_length=60)
+    # The same vocabularies backend/agents branches on (attribution.elements).
+    type: str
+    importance: str
+    # [x, y, w, h] as fractions of the whole image, top-left origin.
+    bbox: List[float] = Field(..., min_length=4, max_length=4)
+
+    @field_validator("label")
+    @classmethod
+    def _label(cls, v: str) -> str:
+        v = " ".join(v.split())
+        if not v:
+            raise ValueError("every box needs a name")
+        return v
+
+    @field_validator("type")
+    @classmethod
+    def _type(cls, v: str) -> str:
+        if v not in ELEMENT_TYPES:
+            raise ValueError(f"type must be one of {list(ELEMENT_TYPES)}")
+        return v
+
+    @field_validator("importance")
+    @classmethod
+    def _importance(cls, v: str) -> str:
+        if v not in IMPORTANCE_LEVELS:
+            raise ValueError(f"importance must be one of {list(IMPORTANCE_LEVELS)}")
+        return v
+
+    @field_validator("bbox")
+    @classmethod
+    def _bbox(cls, v: List[float]) -> List[float]:
+        x, y, w, h = v
+        eps = 1e-3
+        if not (w > 0 and h > 0 and x >= -eps and y >= -eps
+                and x + w <= 1 + eps and y + h <= 1 + eps):
+            raise ValueError("box must lie inside the image")
+        x, y = max(x, 0.0), max(y, 0.0)
+        return [x, y, min(w, 1.0 - x), min(h, 1.0 - y)]
+
+
 class CreateSessionRequest(BaseModel):
     """Start a session.
 
-    mode="test_ui" needs ui_page; mode="url" needs target_url. Enforced here
+    mode="test_ui" needs ui_page; mode="url" needs target_url; mode="image"
+    needs image_base64 and the drawn elements. Enforced here
     rather than in the route so an invalid combination is a 422 with a field
     path, not a 500 three modules deep.
     """
@@ -90,6 +152,10 @@ class CreateSessionRequest(BaseModel):
     # Reuse a calibration the participant already completed, instead of
     # recalibrating for every session in a sitting.
     calibration_session_id: Optional[str] = Field(None, max_length=40)
+    # mode="image": the uploaded picture (base64 or a data: URL; size and
+    # format are checked in api/uploads.py) and the boxes drawn on it.
+    image_base64: Optional[str] = Field(None, max_length=15_000_000)
+    elements: Optional[List[DrawnElement]] = Field(None, max_length=60)
 
     @field_validator("mode")
     @classmethod
@@ -114,6 +180,11 @@ class CreateSessionRequest(BaseModel):
                     f"unknown ui_page {self.ui_page!r}; "
                     f"available: {list(AVAILABLE_TEST_UIS)}"
                 )
+        elif self.mode == MODE_IMAGE:
+            if not self.image_base64:
+                raise ValueError("image_base64 is required when mode='image'")
+            if not self.elements:
+                raise ValueError("draw at least one box on the image")
         else:
             if not self.target_url:
                 raise ValueError("target_url is required when mode='url'")

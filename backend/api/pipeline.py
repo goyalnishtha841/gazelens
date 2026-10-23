@@ -744,7 +744,10 @@ def analyse_session(
         screenshot_path=page_screenshot(ui_page, capture_meta, page_px, output_dir, session_id),
         page_px=page_px,
         gaze_error_px=error_px,
-        page_name=(capture_meta or {}).get("final_url", "").replace("https://", "").replace("http://", "").rstrip("/") or None,
+        page_name=((capture_meta or {}).get("final_url", "").replace("https://", "").replace("http://", "").rstrip("/")
+                   # an uploaded screenshot is named by the tester
+                   or ((capture_meta or {}).get("title") if (capture_meta or {}).get("source") == "upload" else "")
+                   or None),
     )
 
     from dataclasses import asdict

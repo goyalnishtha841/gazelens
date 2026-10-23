@@ -28,6 +28,7 @@ RUN apt-get update \
 
 COPY requirements-server.txt ./
 RUN pip install -r requirements-server.txt \
+ && pip install --no-deps rapidocr-onnxruntime==1.4.4 \
  && playwright install --with-deps chromium \
  && rm -rf /var/lib/apt/lists/*
 

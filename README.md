@@ -11,7 +11,7 @@ Built on **GazeUX-Agent**, a multi-agent framework for gaze-driven UI/UX evaluat
 ![FastAPI](https://img.shields.io/badge/FastAPI-backend-009688?logo=fastapi&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![MediaPipe](https://img.shields.io/badge/MediaPipe-iris%20landmarks-0097A7)
-![Tests](https://img.shields.io/badge/tests-867%20passing-2EE6C5)
+![Tests](https://img.shields.io/badge/tests-938%20passing-2EE6C5)
 [![CI](https://github.com/goyalnishtha841/gazelens/actions/workflows/ci.yml/badge.svg)](https://github.com/goyalnishtha841/gazelens/actions/workflows/ci.yml)
 ![LLM](https://img.shields.io/badge/LLM-Groq%20%7C%20Claude%20(optional)-8A63D2)
 
@@ -47,15 +47,17 @@ Built on **GazeUX-Agent**, a multi-agent framework for gaze-driven UI/UX evaluat
 Lab eye trackers are expensive, and even with gaze data someone still has to work
 out *why* a design failed. GazeLens does both jobs with an ordinary laptop webcam:
 
-1. **Calibrate in about a minute.** The user follows 16 dots, then a 5-dot accuracy
-   check measures how far off the tracking is. A setup that's too inaccurate is
-   refused rather than trusted.
-2. **Test any page.** Pick one of five built-in sample pages, or paste a link to any
-   website. GazeLens screenshots the page and finds its buttons, links, images and
-   forms automatically.
-3. **Use it normally.** A live gaze cursor follows the user's eyes while they browse.
-   Long pages scroll, and the scroll position is recorded with every frame.
-4. **Get a report.** Gaze is matched to page elements, then four agents analyse it.
+1. **Sign in** with email and a strong password, or with Google.
+2. **Calibrate in about a minute.** The camera turns on only after the user agrees.
+   They follow 16 dots, then a 5-dot precision check measures how far off the
+   tracking is. A setup that isn't precise enough is refused rather than trusted.
+3. **Test any page.** Pick one of five built-in sample pages, paste a link to any
+   website, or upload a screenshot or design mock-up. GazeLens finds the buttons,
+   links, fields, images and text automatically.
+4. **Use it normally.** Before the test starts, GazeLens checks the user is still
+   sitting where they calibrated. A live gaze cursor then follows their eyes. Long
+   pages scroll, and the scroll position is recorded with every frame.
+5. **Get a report.** Gaze is matched to page elements, then four agents analyse it.
    The report has a verdict, a heatmap, an eye path, per-element charts, what to fix
    and how, and a downloadable PDF.
 
@@ -67,16 +69,20 @@ metrics and throws out anything it can't confirm.
 
 | | |
 |---|---|
-| 🎯 **Webcam gaze tracking** | MediaPipe iris + eyelid + head-pose features, per-session ridge model, 16-point calibration and a 5-dot accuracy check |
+| 🎯 **Webcam gaze tracking** | MediaPipe iris + eyelid + head-pose features, per-session ridge model, 16-point calibration and a 5-dot precision check |
 | 🧭 **Steady live cursor** | Fixation-locked smoothing holds still while the eyes rest and follows real eye movements within ~0.3 s |
 | 🌐 **Any website** | Playwright captures the full page and detects elements; gaze is mapped through scrolling to the whole document |
+| 🖼️ **Screenshots and mock-ups** | Upload an image; OCR (RapidOCR) reads its text and OpenCV finds its shapes, so buttons, fields, menus, images and text are boxed and named automatically for the tester to check. Found 30 of 32 hand-labelled elements (94%) on the five sample pages |
 | 📊 **Per-element metrics** | Dwell time, time to first look, fixation count, revisits and scanpath for every element |
 | 🤖 **Four-agent analysis** | Behaviour → Evaluation → Recommendation → Critic, with optional LLM writing (Groq or Claude) that the critic must verify |
 | 🛡️ **Honest by design** | A quality gate blocks findings when tracking is unreliable, and elements smaller than the measured error are flagged as indicative |
 | 🔥 **Report visuals** | Heatmap over the real page (blur = measured error), an eye path built from real fixations, attention bars and a first-look timeline |
 | 📄 **PDF reports** | Branded, print-ready PDF with the verdict, visuals, problems, fixes and a "how we checked" audit |
-| 📈 **Analytics across tests** | Problems per test, urgency breakdown, recurring design principles, key-element coverage and accuracy trend |
-| 🔐 **Accounts and security** | Sign-up and sign-in (bcrypt + JWT), login required on every API route, failed-login rate limiting; sessions, reports, calibrations and gaze models are visible only to their owner |
+| 📈 **Analytics across tests** | Problems per test, urgency breakdown, recurring design principles, key-element coverage and eye-tracking precision trend |
+| 🔐 **Accounts and security** | Sign-up with a required name and a strong password (checked live and by the API), bcrypt + JWT, login required on every API route, failed-login rate limiting; sessions, reports, calibrations and gaze models are visible only to their owner |
+| 🔑 **Sign in with Google** | One button signs in or creates an account; Google's ID token is verified server-side with Google's own library (signature, audience, issuer, expiry, verified email) |
+| 📷 **Camera consent** | GazeLens asks in its own dialog, explaining what is sent and stored, before the browser's camera prompt; nothing touches the camera until the user agrees |
+| 🪑 **Position check** | Before each test, about a second of frames is compared with the head pose from calibration; a user who has turned, leaned in or sat back is asked to recalibrate |
 | ♻️ **Crash-safe analysis** | A report interrupted by a crash or restart is marked failed with a clear message and can be retried, instead of spinning forever |
 
 ---
@@ -88,9 +94,10 @@ metrics and throws out anything it can't confirm.
 | Area | State |
 |---|---|
 | End-to-end app (calibrate → test → report → PDF) | ✅ Works locally (API + web app on one machine) |
-| Gaze accuracy | ✅ ~65 px median on held-out dots, **measured on one participant**; multi-participant pilot not yet run |
-| Tests and CI | ✅ 841 backend tests in 9 suites, ruff, frontend build and API image build run on every push and PR (GitHub Actions) |
-| Security | ✅ Login on every route, owner-scoped data, login rate limiting, private-address blocking for URL capture (including redirects) |
+| Eye-tracking precision | ✅ ~65 px median on held-out dots, **measured on one participant**; multi-participant pilot not yet run |
+| Tests and CI | ✅ 938 backend tests in 10 suites and an end-to-end check over real HTTP; ruff, frontend build and API image build run on every push and PR (GitHub Actions) |
+| Security | ✅ Login on every route (password or Google), strong-password rules, owner-scoped data, login rate limiting, private-address blocking for URL capture (including redirects), camera consent |
+| What can be tested | ✅ Five sample pages, any live website, and uploaded screenshots or mock-ups with automatic element detection |
 | Agents | ✅ Rule-based findings with optional LLM wording that the critic re-verifies. A fixed four-step chain, not yet tool-using or iterative |
 | Hosting | ⏳ Deploy config is ready (API image, Vercel config, [DEPLOY.md](DEPLOY.md)) but nothing is hosted: the API needs ~2 GB RAM, which free tiers don't offer |
 | Product features | ⏳ One person tests at a time; no studies, shareable participant links or aggregated results yet |
@@ -122,7 +129,7 @@ flowchart LR
     B --> C[Per-session gaze model<br/>ridge regression]
     C --> D[Live cursor<br/>fixation-locked smoothing]
     C --> E[Gaze stream<br/>+ scroll offset]
-    P[Page<br/>sample page or captured URL] --> F
+    P[Page<br/>sample page · captured URL ·<br/>uploaded screenshot] --> F
     E --> F[Attribution<br/>fixations → elements]
     F --> G[Quality gate]
     G --> H1[1 · Behaviour]
@@ -139,12 +146,16 @@ are compared: iris position relative to the eye corners, eyelid openness, MediaP
 `eyeLook*` blendshapes and head pose. Model degree and ridge strength are chosen by
 leave-one-point-out cross-validation. Degree-1 models are fitted on one median row
 per dot, which removes the frame noise that otherwise squashes gaze towards the
-screen's centre. A 5-dot accuracy check then measures the error on *new* points.
+screen's centre. A 5-dot precision check then measures the error on *new* points.
 A per-axis bias correction is kept only if it beats the raw model by 10% on held-out
 dots, and calibrations over 15% of the screen diagonal are refused.
 
 **2. Live session** (`backend/api`, `frontend-new/src/views/LiveSession.jsx`).
-Each webcam frame goes to the server, which returns a gaze point remapped into the
+The camera starts only after the user agrees in GazeLens's own consent dialog
+(`components/CameraConsent.jsx`). A one-second position check then compares the
+head pose with the one saved at calibration (more than 8° of turn or tilt, or 15%
+closer or farther, asks for a recalibration;
+`POST /api/gaze/models/{id}/position-check`). Each webcam frame goes to the server, which returns a gaze point remapped into the
 page area. The cursor uses a fixation-locked stabiliser
 (`frontend-new/src/lib/gazeStabilizer.js`). The server stores the raw stream, because
 fixation detection needs real saccade timing.
@@ -154,6 +165,18 @@ Playwright captures a full-page screenshot and detects interactive and content
 elements with heuristic classification. Every capture reports how much was guessed.
 Gaze points carry the page's scroll offset and are translated into document
 coordinates, so long pages work.
+
+**3b. Uploaded screenshots** (`backend/api/uploads.py`, `backend/render/image_detect.py`).
+An image has no DOM, so elements are found from pixels. RapidOCR (an ONNX text
+reader on the CPU) reads every line of text; OpenCV finds solid shapes (buttons,
+photos) and outlined ones (input fields). Each box is then classified by what is
+inside it: a solid shape with a short label is a button, a light box with a small
+label or grey placeholder is a field, a row of short words at the top is the menu,
+a large area with little text is an image, and the rest is text named from its
+first line. The tester sees these as editable suggestions, each with the reason it
+was proposed, before the test starts. The image is re-encoded as PNG and stored in
+the same shape as a website capture, so attribution, agents and reports need no
+changes.
 
 **4. Attribution** (`backend/attribution`).
 Dispersion-based fixation detection, then hit-testing against element boxes with a
@@ -184,10 +207,15 @@ down), or headless Chromium as a fallback.
 
 All numbers below are reproducible from data and scripts in this repository.
 
-### Gaze accuracy (webcam, held-out accuracy-check dots)
+### Eye-tracking precision (webcam, held-out precision-check dots)
+
+*Eye-tracking precision* is how far, on average, GazeLens's estimate of where someone
+looked is from where they really looked, in screen pixels (lower is better). It
+describes the eye tracking, not how correct a report is. The app shows it as
+"Eye-tracking precision: Good · 52 px off".
 
 Measured with `scripts/evaluate_gaze_sessions.py`, which retrains each saved
-calibration and scores it on that sitting's 5 accuracy-check dots. These dots are
+calibration and scores it on that sitting's 5 precision-check dots. These dots are
 never used for training.
 
 | Model | Median error | p90 error | Vertical gain* |
@@ -202,13 +230,32 @@ is reproduced. Basis: 4 calibrations, 20 check dots, one participant, on a
 
 ### Live cursor stability
 
-Replaying recorded accuracy-check frames through each smoothing method:
+Replaying recorded precision-check frames through each smoothing method:
 
 | Method | Average movement while holding still | Worst 5% | Frames to follow a real move |
 |---|---|---|---|
 | Raw | 118 px | 260 px | 0 |
 | One-Euro filter (previous) | 44 px | 97 px | 2 |
 | **Fixation-locked stabiliser (current)** | **14 px** | **38 px** | **3 (~0.3 s)** |
+
+### Screenshot element detection
+
+Measured with the five sample pages: each was screenshotted at 1280×720 and the
+suggested boxes were compared with its hand-labelled `elements.json` (a match is
+IoU ≥ 0.3).
+
+| Page | Elements found | Type agrees with the hand label | Suggestions that are real elements |
+|---|---|---|---|
+| Shop product | 4 / 4 | 4 / 4 | 4 / 4 |
+| Sign-up form | 5 / 5 | 4 / 5 | 5 / 5 |
+| Login | 7 / 7 | 6 / 7 | 7 / 7 |
+| Dashboard | 7 / 8 | 5 / 7 | 7 / 7 |
+| News article | 7 / 8 | 6 / 7 | 7 / 8 |
+| **All** | **30 / 32 (94%)** | **25 / 30** | **30 / 31** |
+
+Most type disagreements are judgment calls (an advert box called "image" where the
+hand label says "decoration"). Detection takes 0.5–4 s per page on a laptop CPU.
+The sample pages are simple wireframes, so real, busier designs will score lower.
 
 ### Pupil detector benchmark (research component)
 
@@ -252,7 +299,9 @@ Precision stays high everywhere; recall drops most with glasses (0.784 → 0.278
 |---|---|
 | Frontend | React 18, Vite 5, Tailwind CSS 3, Framer Motion |
 | API | FastAPI, Pydantic, SQLAlchemy + SQLite, bcrypt + JWT |
+| Sign in with Google | Google Identity Services (browser), `google-auth` ID-token verification (server) |
 | Computer vision | MediaPipe Face Landmarker (iris, blendshapes, head pose), OpenCV |
+| Screenshot detection | RapidOCR (ONNX Runtime) for text, OpenCV for shapes |
 | Gaze model | NumPy ridge regression with LOPO model selection |
 | Page capture | Playwright (headless Chromium) |
 | Reports | Jinja2, Matplotlib, WeasyPrint / Chromium PDF |
@@ -267,13 +316,15 @@ Precision stays high everywhere; recall drops most with glasses (0.784 → 0.278
 ```
 gazelens/
 ├── backend/
-│   ├── api/              FastAPI app: auth, sessions, live gaze, reports (CONTRACT.md)
+│   ├── api/              FastAPI app: auth (password + Google), sessions, uploads,
+│   │                     live gaze, reports (CONTRACT.md)
 │   ├── calibration/      16-point capture, per-point quality, storage (CONTRACT.md)
 │   ├── cv/               MediaPipe landmarking, iris pupil, optional YOLO fusion
-│   ├── gaze_estimation/  feature sets, ridge model, LOPO selection, accuracy check,
+│   ├── gaze_estimation/  feature sets, ridge model, LOPO selection, precision check,
 │   │                     bias correction, offline evaluation (CONTRACT.md)
 │   ├── attribution/      fixations → per-element metrics (CONTRACT.md)
-│   ├── render/           URL capture + element detection (CONTRACT.md)
+│   ├── render/           URL capture + element detection, and element detection
+│   │                     on uploaded screenshots (OCR + OpenCV) (CONTRACT.md)
 │   ├── agents/           quality gate, 4 agents, consolidation, LLM client
 │   └── reports/          heatmap, eye path, HTML/PDF report template
 ├── frontend-new/         the web app (landing, auth, calibration, live test,
@@ -286,6 +337,7 @@ gazelens/
 ├── deploy/huggingface/   Space config used by the optional Hugging Face deploy
 ├── .github/workflows/    CI (tests, lint, build) and the Hugging Face deploy
 ├── requirements*.txt     full research install / API server only / server + test tools
+├── .env.example          every setting the project reads (copy to .env)
 ├── DEPLOY.md             hosting guide (Vercel + an API host) and every setting
 └── OPEN_ITEMS.md         open research items with concrete next steps
 ```
@@ -313,14 +365,22 @@ source .venv/bin/activate                 # Windows: .venv\Scripts\activate
 # CPU-only torch keeps the install small
 pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
 pip install -r requirements.txt
+pip install --no-deps rapidocr-onnxruntime==1.4.4   # text reader for screenshot uploads
 
 python scripts/fetch_face_landmarker.py   # models/face_landmarker.task (needed for live gaze)
 playwright install chromium               # URL capture + PDF rendering
 
+cp .env.example .env                      # settings; all optional locally (see Configuration)
+
 cd backend
 python -m api.init_db --demo-user         # creates demo@example.com / demo-password-123
+set -a && source ../.env && set +a        # load .env into this shell
 uvicorn api.main:app --reload --port 8000
 ```
+
+The API does not read `.env` by itself; the `source` line loads it. If port 8000 is
+taken, use another (e.g. `--port 8010`) and point the web app at it with
+`VITE_PROXY_TARGET` in `frontend-new/.env.local`.
 
 Run the API from `backend/` as `uvicorn api.main:app`, not from inside `backend/api`.
 Several packages define a `schemas.py`, and running from inside would shadow them.
@@ -334,7 +394,8 @@ npm install
 npm run dev                               # http://localhost:5180
 ```
 
-The dev server proxies `/api` and `/health` to `localhost:8000`.
+The dev server proxies `/api` and `/health` to `localhost:8000`, or to
+`VITE_PROXY_TARGET` if `frontend-new/.env.local` sets it.
 
 ### 3. Try it
 
@@ -342,14 +403,30 @@ Open <http://localhost:5180>, sign in with `demo@example.com` / `demo-password-1
 (or create an account), complete the camera setup, and run a test.
 
 > Use Chrome or Edge and allow camera access. Sit about an arm's length from the
-> screen with even light on your face and keep your head still. The accuracy check
+> screen with even light on your face and keep your head still. The precision check
 > tells you if a second try is needed.
+
+### 4. Optional: Sign in with Google
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), open **Google Auth
+   Platform → Clients → Create client**, type **Web application**.
+2. Under **Authorized JavaScript origins** add `http://localhost:5180` and
+   `http://localhost` (and the deployed site's `https://` address later). No
+   redirect URI and no client secret are needed.
+3. Under **Audience**: while the app is in *Testing*, only the listed **Test users**
+   can sign in; **Publish app** to allow any Google account (no review is needed for
+   the basic name/email scopes, unless you upload a logo). If the user type is
+   *Internal*, only accounts in your Google Workspace domain can sign in.
+4. Put the client ID in `.env` as `GOOGLE_CLIENT_ID=…` and restart the API. The
+   button appears on the sign-in and sign-up pages.
 
 ---
 
 ## Configuration
 
-All settings are optional environment variables.
+All settings are optional environment variables. **[`.env.example`](.env.example)
+lists every one** with its default and an explanation; copy it to `.env` (gitignored)
+and fill in what you use. The ones you are most likely to set:
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -359,7 +436,12 @@ All settings are optional environment variables.
 | `GAZELENS_ANALYSIS_TIMEOUT_SECONDS` | How long a report may stay "processing" before it counts as failed and can be retried | `600` |
 | `GAZELENS_LOGIN_MAX_FAILURES` / `GAZELENS_LOGIN_WINDOW_SECONDS` | Failed logins allowed per IP per window before `429` | `10` / `900` |
 | `GAZELENS_ADMIN_PASSWORD` | Turns on the private admin page and sets its password | off (admin routes return 404) |
+| `GOOGLE_CLIENT_ID` | Turns on "Sign in with Google" (OAuth client ID from Google Cloud; see `.env.example`) | off (button hidden) |
 | `GAZELENS_ADMIN_MAX_FAILURES` / `GAZELENS_ADMIN_WINDOW_SECONDS` | Wrong admin passwords allowed per IP per window | `5` / `900` |
+| `GAZELENS_CORS_ORIGINS` / `GAZELENS_CORS_ORIGIN_REGEX` | Browser origins allowed to call the API when the web app is on another address (deployed) | local web app addresses |
+| `FIXATION_DATABASE_URL`, `GAZELENS_CALIBRATION_DIR`, `GAZELENS_GAZE_MODEL_DIR` | Database and storage paths; point at a persistent disk when deployed | inside `backend/` |
+| `VITE_API_BASE_URL` (frontend, build time) | The deployed API's address | unset (dev proxy) |
+| `VITE_PROXY_TARGET` (frontend, dev only) | Where `npm run dev` sends `/api` | `http://localhost:8000` |
 | `VITE_ADMIN_PATH` (frontend, build time) | URL of the admin page | `/admin` |
 | `GROQ_API_KEY` | Enables LLM writing via Groq (free tier) | off |
 | `ANTHROPIC_API_KEY` | Enables LLM writing via Claude | off |
@@ -370,8 +452,10 @@ All settings are optional environment variables.
 | `FIXATION_PUPIL_SOURCE` | `iris` (default), `fused` or `yolo`, for the detector ablation | `iris` |
 | `FIXATION_PUPIL_WEIGHTS` | Path to custom detector weights | `models/pupil_yolo_final.pt` |
 
-Deployment settings (CORS origins, storage paths, frontend API URL) are listed in
-[DEPLOY.md](DEPLOY.md) and [.env.example](.env.example).
+Backend settings go in `.env` locally and in the API host's settings when deployed.
+`VITE_*` settings belong to the web app: `frontend-new/.env.local` locally, Vercel's
+environment variables when deployed (baked in at build time). Where each one goes
+when deploying is in [DEPLOY.md](DEPLOY.md).
 
 **LLM mode.** Both clients are in `requirements.txt`; set a key and restart the API. Agents 1–3 then write their text with the LLM, and each
 piece of text includes structured claims. The critic recomputes every claim and every
@@ -386,11 +470,12 @@ rejections (`pipeline_result["llm"]`), shown under *How we checked* in the PDF.
 
 | Page | What it's for |
 |---|---|
+| **Sign in / Sign up** | Email and password (name required, password strength checked as you type) or Google |
 | **Home** | Calibration status, recent report, quick actions |
-| **New test** | Choose a sample page (live previews) or load your own website |
-| **Calibration** | 16 dots + 5-dot accuracy check, with plain-language results |
+| **New test** | Choose a sample page (live previews), load your own website, or upload a screenshot; detected elements can be renamed, retyped, deleted or drawn by hand |
+| **Calibration** | 16 dots + 5-dot precision check, with plain-language results |
 | **Live recording** | The page with the live gaze cursor, a camera preview and notes |
-| **Report** | Verdict, accuracy ring, heatmap / eye path, attention and first-look charts, problems, fixes, reliability, PDF download |
+| **Report** | Verdict, eye-tracking precision ring, heatmap / eye path, attention and first-look charts, problems, fixes, reliability, PDF download |
 | **Sessions** | Every test, its status and number of problems |
 | **Gaze Map** | Heatmap, eye path and per-element charts for any finished test |
 | **Analytics** | Trends across all tests |
@@ -424,12 +509,14 @@ Interactive docs at <http://localhost:8000/docs> once the API is running.
 
 | Endpoint | Description |
 |---|---|
-| `POST /api/auth/signup`, `POST /api/auth/login`, `GET /api/auth/me` | Accounts |
+| `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/google`, `GET /api/auth/config`, `GET /api/auth/me` | Accounts (email + password, or Google) |
 | `POST /api/calibration/sessions`, `…/{id}/samples`, `…/{id}/complete` | Calibration capture |
-| `POST /api/gaze/models/{id}/train`, `…/validate`, `…/estimate` | Train, accuracy check, estimate |
+| `POST /api/gaze/models/{id}/train`, `…/validate`, `…/estimate` | Train, precision check, estimate |
+| `POST /api/gaze/models/{id}/position-check` | Before a test: has the user moved since calibrating? |
 | `POST /api/render/capture` | Screenshot a URL and detect its elements |
+| `POST /api/render/detect-image` | Suggest element boxes for an uploaded screenshot (nothing stored) |
 | `GET /api/sessions/meta/test-uis` | List the sample pages |
-| `POST /api/sessions` | Create a test (sample page or URL) |
+| `POST /api/sessions` | Create a test (sample page, URL, or uploaded image with its boxes) |
 | `POST /api/sessions/{id}/calibration` | Link a calibration and train the gaze model |
 | `POST /api/sessions/{id}/gaze/frame` | One webcam frame → one gaze point (with scroll offset) |
 | `POST /api/sessions/{id}/finalize` | Run attribution, agents and report rendering |
@@ -438,7 +525,7 @@ Interactive docs at <http://localhost:8000/docs> once the API is running.
 | `POST /api/admin/login`, `GET /api/admin/overview`, `GET /api/admin/users/{id}` | Private admin view (off unless `GAZELENS_ADMIN_PASSWORD` is set) |
 | `GET /health` | Service and model status |
 
-Everything except signup, login and `/health` requires
+Everything except signup, login (password or Google), `/api/auth/config` and `/health` requires
 `Authorization: Bearer <token>`. Calibrations and gaze models, like sessions,
 are visible only to the user who created them.
 
@@ -448,21 +535,21 @@ Each backend module documents its own contract in its `CONTRACT.md`.
 
 ## Testing
 
-The backend has **867 tests** across 10 suites. None needs a webcam, model weights or
-an API key: the detector is stubbed, gaze models train on synthetic sessions and the
-LLM is faked. Each suite runs from its own folder:
+The backend has **938 tests** across 10 suites. None needs a webcam, model weights or
+an API key: the detector is stubbed, gaze models train on synthetic sessions, the
+LLM and Google's token check are faked, and screenshot detection runs on a drawn page. Each suite runs from its own folder:
 
 ```bash
 cd backend/agents          && python test_agents.py           #  89  agents, gate, consolidation
 cd backend/agents          && python test_llm_agents.py       #  37  LLM mode + critic rejections
-cd backend/api             && python test_api.py              # 168  full session lifecycle, crash recovery, config
-cd backend/api             && python test_route_auth.py       #  68  login + owner checks on every route
+cd backend/api             && python test_api.py              # 211  sessions, uploads, Google sign-in, sign-up rules, crash recovery, config
+cd backend/api             && python test_route_auth.py       #  72  login + owner checks on every route
 cd backend/api             && python test_admin.py            #  26  admin page access + data
 cd backend/attribution     && python test_attribution.py      #  95  fixations → metrics
 cd backend/calibration     && python test_calibration.py      #  87  capture + quality
 cd backend/cv              && python test_cv.py               #  73  landmarks + pupil
-cd backend/gaze_estimation && python test_gaze_estimation.py  # 149  models, selection, accuracy check
-cd backend/render          && python test_render.py           #  75  URL capture, private-address blocking
+cd backend/gaze_estimation && python test_gaze_estimation.py  # 162  models, selection, precision check, position check
+cd backend/render          && python test_render.py           #  86  URL capture, private-address blocking, screenshot detection
 ruff check backend/ scripts/ --select F,E9,B,A
 ```
 
@@ -473,17 +560,18 @@ ruff check backend/ scripts/ --select F,E9,B,A
 `scripts/e2e_check.py` runs the whole app over real HTTP: it starts its own API
 (and, with `--web`, the web app) on throwaway data, then checks accounts and login,
 that every route needs login, a real face photo through MediaPipe, the full flow on a
-sample page and on live websites (calibration → gaze model → analysis → report →
+sample page, an uploaded tall screenshot (including scroll mapping and automatic
+detection) and live websites (calibration → gaze model → analysis → report →
 heatmap, eye path, PDF), cross-user isolation, URL-capture safety, crash recovery
 including a real server restart, and the login lockout. Real accounts and
 participant data are never touched.
 
 ```bash
-python scripts/e2e_check.py --web       # 93 checks; --offline skips the live-website ones
+python scripts/e2e_check.py --web       # 120 checks; --offline (76) skips the web app and live websites
 ```
 
 The calibration's eye features are synthetic (there's no webcam in an automated
-run), so it proves the app works end to end, not how accurate gaze is; that needs a
+run), so it proves the app works end to end, not how precise the eye tracking is; that needs a
 person (see [OPEN_ITEMS.md](OPEN_ITEMS.md)).
 
 [CI](.github/workflows/ci.yml) runs all of these, the end-to-end check, ruff, the
@@ -495,7 +583,7 @@ pull request.
 ## Developer tools
 
 ```bash
-# Compare gaze model variants on every saved calibration's accuracy-check dots
+# Compare gaze model variants on every saved calibration's precision-check dots
 python scripts/evaluate_gaze_sessions.py
 
 # Re-render existing reports after changing the visuals or the PDF template
@@ -526,15 +614,20 @@ Model weights and datasets are kept out of git:
 
 ## Limitations
 
-- **Accuracy is webcam-grade.** ~65 px median error is enough to tell which button,
+- **Eye-tracking precision is webcam-grade.** ~65 px median error is enough to tell which button,
   image or heading someone looked at, not which word. Findings on elements smaller
   than the measured error are marked as indicative.
-- **The accuracy figures come from one participant.** A multi-participant pilot study
+- **The precision figures come from one participant.** A multi-participant pilot study
   is the next step; see [OPEN_ITEMS.md](OPEN_ITEMS.md).
-- **Head movement after calibration lowers accuracy.** The app warns when you've
-  moved, and recalibrating fixes it.
+- **Head movement after calibration lowers precision.** A position check before each
+  test asks for a recalibration if you've turned, tilted or changed distance, and the
+  live view warns if you move during a test. Sliding sideways at the same distance
+  isn't caught yet, because calibration doesn't save the sideways position.
 - **Captured websites are static snapshots**, and their element types are inferred
   from the DOM rather than designed. Reports say how much was guessed.
+- **Uploaded screenshots have no page code**, so elements are found from pixels
+  (OCR + shape detection) and shown as suggestions the tester confirms. Text in
+  very small or stylised fonts can be misread; any box can be renamed or redrawn.
 - **One person per test.** There are no studies, shareable participant links or
   results aggregated across people yet.
 - **The agents follow a fixed chain.** Rules decide every finding and severity; an LLM,
@@ -549,7 +642,7 @@ Model weights and datasets are kept out of git:
 
 **Done**
 
-- [x] Webcam gaze pipeline with calibration, accuracy check and quality gate
+- [x] Webcam gaze pipeline with calibration, precision check and quality gate
 - [x] Gaze-to-element attribution and metrics
 - [x] Four-agent analysis with a deterministic critic
 - [x] Optional LLM writing (Groq / Claude) verified by the critic
@@ -559,6 +652,11 @@ Model weights and datasets are kept out of git:
 - [x] CI, API Docker image and deploy configuration
 - [x] Login on every API route, owner-scoped data, login rate limiting
 - [x] Crash-safe report generation with retry
+- [x] Required name and strong-password rules at sign-up
+- [x] Sign in with Google (ID token verified server-side)
+- [x] Camera consent dialog before the webcam turns on
+- [x] Position check before each test (recalibrate if the user has moved)
+- [x] Screenshot and mock-up testing with automatic element detection (OCR + OpenCV)
 
 **Next, in order**
 

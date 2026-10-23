@@ -1,7 +1,8 @@
 """
 routes.py
 
-    POST /api/render/capture    screenshot + detect elements for a URL
+    POST /api/render/capture        screenshot + detect elements for a URL
+    POST /api/render/detect-image   detect elements on an uploaded screenshot
 
 Thin, same as the other routers. The session API calls `capture_page()`
 in-process rather than over HTTP; this endpoint exists so a URL's detected
@@ -130,6 +131,48 @@ async def capture(payload: CaptureRequest) -> CaptureResponse:
     data = result.to_dict()
     data.pop("screenshot_path", None)
     return CaptureResponse(**data, screenshot_base64=screenshot_b64)
+
+
+
+class DetectImageRequest(BaseModel):
+    image_base64: str = Field(..., max_length=15_000_000,
+                              description="PNG/JPEG/WebP, raw base64 or a data: URL")
+
+
+class DetectImageResponse(BaseModel):
+    width: int
+    height: int
+    elements: List[dict]       # label, type, importance, bbox [x,y,w,h] 0-1, confidence, why
+    seconds: float
+
+
+@router.post("/detect-image", response_model=DetectImageResponse)
+def detect_image(payload: DetectImageRequest) -> DetectImageResponse:
+    """Suggest element boxes for an uploaded screenshot (see image_detect.py).
+
+    Nothing is stored: the image is checked and decoded exactly as a real
+    upload would be (api/uploads.decode_image), searched, and dropped. The
+    web app shows the result as editable boxes. Plain `def`: OCR and OpenCV
+    are CPU work and run in the threadpool, off the event loop.
+    """
+    import time
+
+    from api.uploads import UploadError, decode_image
+
+    from .image_detect import detect_from_png
+
+    try:
+        png, (width, height) = decode_image(payload.image_base64)
+    except UploadError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    t0 = time.perf_counter()
+    try:
+        elements = detect_from_png(png)
+    except ImportError as exc:     # pragma: no cover - OCR model not installed
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail=f"automatic detection is unavailable: {exc}") from exc
+    return DetectImageResponse(width=width, height=height, elements=elements,
+                               seconds=round(time.perf_counter() - t0, 2))
 
 
 __all__ = ["router"]

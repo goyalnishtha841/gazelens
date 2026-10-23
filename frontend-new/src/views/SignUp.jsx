@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 import AuthLayout, { Field } from "../components/AuthLayout.jsx";
+import GoogleSignIn from "../components/GoogleSignIn.jsx";
 
 // Mirrors backend/api/security.py (PASSWORD_RULES, validate_new_password).
 // The API enforces these too; this list only shows them as the user types.
@@ -91,6 +92,7 @@ export default function SignUp({ onSwitchToSignin, onBackToHome }) {
           {submitting ? "Creating account…" : "Create account"}
         </button>
       </form>
+      <GoogleSignIn mode="signup" onError={setError} />
     </AuthLayout>
   );
 }

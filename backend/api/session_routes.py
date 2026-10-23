@@ -50,7 +50,9 @@ from . import pipeline
 from .db import DATA_DIR, SessionLocal, get_db
 from .deps import get_current_user, owned_calibration, owned_session
 from .layouts import AVAILABLE_TEST_UIS, UnknownTestUI, layout_for
+from .uploads import UploadError, decode_image, save_upload
 from .models import (
+    MODE_IMAGE,
     MODE_URL,
     STATUS_CALIBRATED,
     STATUS_COMPLETE,
@@ -212,7 +214,20 @@ async def create_session(
 
     capture_meta = None
 
-    if payload.mode == MODE_URL:
+    if payload.mode == MODE_IMAGE:
+        # An uploaded screenshot with hand-drawn boxes, stored in the same
+        # shape as a URL capture so everything downstream treats it as one.
+        try:
+            png, size = decode_image(payload.image_base64)
+            layout, capture_meta = save_upload(
+                png, size, [e.model_dump() for e in payload.elements], DATA_DIR,
+                title=payload.label or "Uploaded screenshot")
+        except UploadError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            ) from exc
+        ui_page, is_placeholder = "uploaded_image", False
+    elif payload.mode == MODE_URL:
         # Screenshot the page and auto-detect its elements via backend/render.
         # Done inline rather than in the background because the session cannot
         # proceed without a layout, and the client is already showing a
@@ -674,6 +689,12 @@ async def get_report(
             "Element boxes are a PLACEHOLDER, not detected from the page"
             + (f" ({reason})" if reason else "")
             + ". Per-element metrics in this report do not describe real UI elements."
+        )
+    elif session.mode == MODE_IMAGE:
+        warnings.append(
+            "This test used an uploaded screenshot. Element boxes, names and "
+            "types were drawn by the tester, so findings are only as accurate "
+            "as those boxes."
         )
     elif session.mode == MODE_URL:
         # Auto-detected labels are heuristics over tags and class names, not

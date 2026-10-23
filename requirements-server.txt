@@ -22,6 +22,15 @@ pydantic[email]>=2
 sqlalchemy>=2
 PyJWT
 bcrypt
+google-auth
+# Screenshot element detection; RapidOCR itself: pip install --no-deps
+# rapidocr-onnxruntime==1.4.4 (see requirements.txt for why --no-deps).
+onnxruntime
+pyclipper
+shapely
+six
+PyYAML
+tqdm
 
 # Optional LLM writing for agents 1-3; only imported when GROQ_API_KEY or
 # ANTHROPIC_API_KEY is set (backend/agents/llm_client.py).

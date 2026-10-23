@@ -387,6 +387,87 @@ def run_checks(stack: Stack, frame_b64, args):
         flagged = {i.get("element_id") for i in rep["pipeline_result"].get("issues", [])}
         check("report flags the ignored Submit button", "submit_button" in flagged, str(flagged))
 
+    # ------------------------------------------------------------ uploaded screenshot
+    # A tall 1200x2400 image shown in a 1200x675 window, as the web app does.
+    # "Reviews" is only visible after scrolling, so it collects gaze only if
+    # the scroll offset is mapped onto the image; "Buy now" is never looked at.
+    import base64 as _b64
+    import io as _io
+    import struct as _struct
+
+    from PIL import Image as _Image, ImageDraw as _Draw
+
+    IMG_W, IMG_H, VIEW_H = 1200, 2400, 675
+    drawn = [
+        {"label": "Hero photo", "type": "image", "importance": "medium", "bbox": [0.05, 0.06, 0.45, 0.15]},
+        {"label": "Buy now", "type": "CTA", "importance": "high", "bbox": [0.55, 0.10, 0.30, 0.05]},
+        {"label": "Product details", "type": "text", "importance": "medium", "bbox": [0.05, 0.40, 0.90, 0.10]},
+        {"label": "Reviews", "type": "text", "importance": "medium", "bbox": [0.05, 0.75, 0.90, 0.10]},
+    ]
+    shot = _Image.new("RGB", (IMG_W, IMG_H), (244, 244, 244))
+    pen = _Draw.Draw(shot)
+    for b in drawn:
+        x, y, w, h = b["bbox"]
+        pen.rectangle([x * IMG_W, y * IMG_H, (x + w) * IMG_W, (y + h) * IMG_H], fill=(170, 180, 200))
+    buf = _io.BytesIO()
+    shot.save(buf, format="JPEG")
+    shot_b64 = "data:image/jpeg;base64," + _b64.b64encode(buf.getvalue()).decode()
+
+    def scrolled_gaze(sid):
+        """Look at each box except Buy now, scrolling so each is mid-window."""
+        pts, t = [], 2000.0
+        for b in drawn:
+            if b["label"] == "Buy now":
+                continue
+            x, y, w, h = b["bbox"]
+            cy_px = (y + h / 2) * IMG_H
+            scroll = min(max(cy_px - VIEW_H / 2, 0), IMG_H - VIEW_H)
+            for _ in range(int(2.5 * 30)):
+                py = cy_px + rnd.gauss(0, h * IMG_H * 0.12)
+                pts.append({"timestamp": round(t, 3),
+                            "x": min(1, max(0, x + w / 2 + rnd.gauss(0, w * 0.12))),
+                            "y": min(1, max(0, (py - scroll) / VIEW_H)),
+                            "valid": True, "confidence": 0.9, "scroll_x": 0, "scroll_y": scroll})
+                t += 1 / 30
+        return pts
+
+    sid, rep = run_flow("full flow: uploaded screenshot with hand-drawn boxes (tall, scrolled)",
+                        {"mode": "image", "label": "e2e checkout mock-up",
+                         "image_base64": shot_b64, "elements": drawn},
+                        scrolled_gaze)
+    if rep:
+        flagged = {i.get("element_id") for i in rep["pipeline_result"].get("issues", [])}
+        check("report flags the ignored Buy now button", "buy_now" in flagged, str(flagged))
+        dwell = (rep.get("metrics") or {}).get("dwell_time") or {}
+        check(f"below-the-fold Reviews got gaze via scroll mapping ({dwell.get('reviews', 0):.1f}s)",
+              dwell.get("reviews", 0) > 1.0, str(dwell))
+        labels = rep["pipeline_result"].get("element_labels") or {}
+        check("report uses the names drawn on the image",
+              labels.get("buy_now") == "Buy now" and labels.get("reviews") == "Reviews", str(labels))
+        check("report says the boxes were drawn by the tester",
+              any("drawn by the tester" in w for w in rep.get("warnings") or []), str(rep.get("warnings")))
+        heat = c.get(f"/api/sessions/{sid}/heatmap", headers=A).content
+        hw, hh = _struct.unpack(">II", heat[16:24])
+        check(f"heatmap drawn over the tall uploaded image ({hw}x{hh})", hh > 1.5 * hw)
+        listed = [s for s in c.get("/api/sessions", headers=A).json().get("sessions", []) if s["id"] == sid]
+        check("dashboard lists it under its own name",
+              bool(listed) and listed[0].get("label") == "e2e checkout mock-up" and listed[0].get("mode") == "image")
+    check("a non-image upload is refused (422)",
+          c.post("/api/sessions", headers=A, json={"mode": "image", "elements": drawn,
+                 "image_base64": _b64.b64encode(b"not an image").decode()}).status_code == 422)
+    check("an upload with no boxes is refused (422)",
+          c.post("/api/sessions", headers=A, json={"mode": "image", "image_base64": shot_b64}).status_code == 422)
+    r = c.post("/api/render/detect-image", headers=A, json={"image_base64": shot_b64})
+    found_boxes = r.json().get("elements", []) if r.status_code == 200 else []
+    check(f"automatic detection suggests boxes for the upload ({len(found_boxes)})",
+          r.status_code == 200 and len(found_boxes) >= 3
+          and all(e["type"] in ("CTA", "text", "image", "nav", "non-interactive") for e in found_boxes),
+          r.text[:200])
+    check("automatic detection needs login (401)",
+          c.post("/api/render/detect-image", json={"image_base64": shot_b64}).status_code == 401)
+    check("upload needs login (401)",
+          c.post("/api/sessions", json={"mode": "image", "image_base64": shot_b64, "elements": drawn}).status_code == 401)
+
     # ------------------------------------------------------------ live websites
     if not args.offline:
         def look_at_all(sid):

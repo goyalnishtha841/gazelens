@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "../context/AuthContext.jsx";
 import { listSessions } from "../api/client.js";
+import { pageName } from "../lib/sessionData.js";
 import { useCountUp } from "../components/Primitives.jsx";
 import { Reveal } from "../components/Motion.jsx";
 import IrisMark from "../components/IrisMark.jsx";
@@ -17,7 +18,7 @@ const ACTIONS = [
     icon: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M9 9v11" /></>,
   },
   {
-    id: "calibration", title: "Recalibrate", body: "Moved your laptop or changed the lighting? A one-minute setup keeps results accurate.",
+    id: "calibration", title: "Recalibrate", body: "Moved your laptop or changed the lighting? A one-minute setup keeps the eye tracking precise.",
     icon: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /></>,
   },
 ];
@@ -103,7 +104,7 @@ export default function Home({ onNavigate, onOpenSession, hasCalibration }) {
             <div className="flex min-w-0 items-center gap-4">
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-accent/10 text-accent"><IrisMark size={26} /></span>
               <div className="min-w-0">
-                <div className="truncate text-[18px] font-semibold capitalize text-text-primary">{(latest.ui_page || latest.mode || "Session").replace(/_/g, " ")}</div>
+                <div className="truncate text-[18px] font-semibold text-text-primary">{pageName(latest) || "Session"}</div>
                 <div className="mt-0.5 text-[14px] text-text-secondary">
                   {new Date(latest.created_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
                   {latest.issue_count != null && <> · {latest.issue_count} {latest.issue_count === 1 ? "problem" : "problems"} found</>}

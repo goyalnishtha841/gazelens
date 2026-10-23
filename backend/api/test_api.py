@@ -204,6 +204,84 @@ try:
                 login(LoginRequest(email="ghost@example.com",
                                    password="whatever-1"), db), 401)
 
+    print("\nauth -- sign in with Google")
+    from api import google_auth                                    # noqa: E402
+    from api.auth_routes import auth_config, google_login          # noqa: E402
+    from api.schemas import GoogleLoginRequest                     # noqa: E402
+
+    def _g(cred):
+        return GoogleLoginRequest(credential=cred.ljust(20, "."))
+
+    os.environ.pop("GOOGLE_CLIENT_ID", None)
+    check("Google sign-in is off without a client id",
+          run(auth_config()).google_client_id is None)
+    expect_http("Google sign-in when it isn't configured", lambda: google_login(_g("tok"), db), 404)
+
+    CID = "1234-test.apps.googleusercontent.com"
+    os.environ["GOOGLE_CLIENT_ID"] = CID
+    check("config hands the web app the client id", run(auth_config()).google_client_id == CID)
+
+    _tokens = {
+        "new": {"iss": "https://accounts.google.com", "aud": CID, "sub": "g-111",
+                "email": "Gita@Gmail.com", "email_verified": True, "name": "Gita  Rao"},
+        "alice": {"iss": "accounts.google.com", "aud": CID, "sub": "g-222",
+                  "email": "alice@example.com", "email_verified": True, "name": "Alice G"},
+        "alice_other": {"iss": "accounts.google.com", "aud": CID, "sub": "g-999",
+                        "email": "alice@example.com", "email_verified": True},
+        "unverified": {"iss": "accounts.google.com", "aud": CID, "sub": "g-333",
+                       "email": "x@example.com", "email_verified": False},
+        "wrong_aud": {"iss": "accounts.google.com", "aud": "someone-else", "sub": "g-444",
+                      "email": "y@example.com", "email_verified": True},
+        "wrong_iss": {"iss": "evil.example.com", "aud": CID, "sub": "g-555",
+                      "email": "z@example.com", "email_verified": True},
+    }
+
+    def _fake_verify(token, audience):
+        claims = _tokens.get(token.rstrip("."))
+        if claims is None:
+            raise ValueError("bad signature")
+        return claims
+
+    google_auth.set_verifier(_fake_verify)
+    try:
+        g_new = google_login(_g("new"), db)
+        check("an unknown Google account becomes a new account",
+              g_new.user.email == "gita@gmail.com" and g_new.user.full_name == "Gita Rao"
+              and g_new.user.has_google and g_new.access_token)
+        _gita = db.query(User).filter(User.email == "gita@gmail.com").one()
+        check("a Google-only account has no usable password",
+              _gita.password_hash == "" and not verify_password("", _gita.password_hash))
+        expect_http("password login to a Google-only account",
+                    login(LoginRequest(email="gita@gmail.com", password="anything-1"), db), 401)
+        g_again = google_login(_g("new"), db)
+        check("signing in again finds the same account", g_again.user.id == g_new.user.id)
+        g_alice = google_login(_g("alice"), db)
+        check("an existing password account is linked, not duplicated",
+              g_alice.user.id == alice.user.id and g_alice.user.has_google
+              and g_alice.user.full_name == "Alice Smith")
+        check("the linked account keeps its password",
+              run(login(LoginRequest(email="alice@example.com", password="Garden-Lamp-41"),
+                        db)).user.id == alice.user.id)
+        expect_http("the same email from a different Google account",
+                    lambda: google_login(_g("alice_other"), db), 409)
+        for name in ("unverified", "wrong_aud", "wrong_iss", "forged"):
+            expect_http(f"Google token refused ({name})", lambda n=name: google_login(_g(n), db), 401)
+    finally:
+        google_auth.set_verifier(None)
+
+    # The real verifier (Google's library): a token signed by anyone but
+    # Google fails its signature check. Offline it fails fetching Google's
+    # keys instead -- refused either way, never accepted.
+    import base64 as _b64j
+    import json as _jsonj
+    _seg = lambda d: _b64j.urlsafe_b64encode(_jsonj.dumps(d).encode()).rstrip(b"=").decode()  # noqa: E731
+    _forged = ".".join([_seg({"alg": "RS256", "kid": "not-googles", "typ": "JWT"}),
+                        _seg({**_tokens["new"], "exp": 4102444800, "iat": 1700000000}),
+                        _seg({"sig": "x"})])
+    expect_http("a forged token is refused by Google's verifier",
+                lambda: google_login(GoogleLoginRequest(credential=_forged), db), 401)
+    os.environ.pop("GOOGLE_CLIENT_ID", None)
+
     print("\nauth -- addresses the API will actually accept")
     # EmailStr rejects special-use/reserved domains. This caught a real bug:
     # init_db --demo-user used to create demo@fixation.local, which meant the
@@ -353,6 +431,85 @@ try:
           pipeline.to_document_space(pts, None)[0][1]["y"] == 0.5)
     check("incomplete capture metadata is a no-op, not a crash",
           pipeline.to_document_space(pts, {"scope": "document"})[0][1]["y"] == 0.5)
+
+    print("\nsessions -- image mode: an uploaded screenshot with drawn boxes")
+    import base64 as _b64
+    import io as _io
+
+    from PIL import Image as _Image
+    from pydantic import ValidationError as _VE
+
+    def _png(w, h, fmt="PNG"):
+        buf = _io.BytesIO()
+        _Image.new("RGB", (w, h), (240, 240, 240)).save(buf, format=fmt)
+        return _b64.b64encode(buf.getvalue()).decode()
+
+    _boxes = [
+        {"label": "Buy now", "type": "CTA", "importance": "high", "bbox": [0.1, 0.05, 0.3, 0.04]},
+        {"label": "Buy now", "type": "CTA", "importance": "medium", "bbox": [0.1, 0.8, 0.3, 0.04]},
+        {"label": "Hero photo", "type": "image", "importance": "medium", "bbox": [0.5, 0.0, 0.5, 0.2]},
+    ]
+    img_session = run(session_routes.create_session(
+        CreateSessionRequest(mode="image", label="Checkout mock-up",
+                             image_base64="data:image/jpeg;base64," + _png(1200, 2400, "JPEG"),
+                             elements=_boxes),
+        alice_user, db))
+    _row = db.get(SessionModel, img_session.id)
+    _meta = _row.capture_meta
+    check("image session created with the drawn boxes as its layout",
+          set(_row.element_layout) == {"buy_now", "buy_now_2", "hero_photo"}
+          and _row.element_layout["buy_now"]["type"] == "CTA"
+          and _row.element_layout["hero_photo"]["label"] == "Hero photo")
+    check("image layout is real, not a placeholder", _row.layout_is_placeholder is False)
+    check("a tall image is document scope in a 16:9 window",
+          _meta["scope"] == "document" and _meta["document_size"] == [1200, 2400]
+          and _meta["viewport"] == [1200, 675])
+    check("upload stored as PNG, re-encoded",
+          Path(_meta["screenshot_path"]).read_bytes()[:8] == b"\x89PNG\r\n\x1a\n")
+    check("report heatmap can use the uploaded image",
+          pipeline.page_screenshot("uploaded_image", _meta, None, DATA_DIR, "x") == _meta["screenshot_path"])
+    _scrolled, _ = pipeline.to_document_space(
+        [{"x": 0.2, "y": 0.5, "scroll_y": 1200.0}], _meta)
+    check("gaze on a scrolled image lands lower down the image",
+          abs(_scrolled[0]["y"] - (0.5 * 675 + 1200) / 2400) < 1e-9)
+    _short = run(session_routes.create_session(
+        CreateSessionRequest(mode="image", image_base64=_png(1000, 400), elements=_boxes[:1]),
+        alice_user, db))
+    check("a short image is shown whole (window = image)",
+          db.get(SessionModel, _short.id).capture_meta["viewport"] == [1000, 400])
+
+    for req, why in (
+        (CreateSessionRequest(mode="image", elements=_boxes), "image mode without an image"),
+        (CreateSessionRequest(mode="image", image_base64=_png(800, 600)), "image mode without boxes"),
+        (CreateSessionRequest(mode="image", image_base64=_b64.b64encode(b"not an image").decode(),
+                              elements=_boxes), "a file that isn't an image"),
+        (CreateSessionRequest(mode="image", image_base64="%%%", elements=_boxes), "invalid base64"),
+        (CreateSessionRequest(mode="image", image_base64=_png(200, 600), elements=_boxes),
+         "an image narrower than 320 px"),
+        (CreateSessionRequest(mode="image", image_base64=_png(800, 600, "GIF"), elements=_boxes),
+         "a GIF"),
+        (CreateSessionRequest(mode="image", image_base64=_png(800, 600), elements=[
+            {"label": "Dot", "type": "CTA", "importance": "high", "bbox": [0.1, 0.1, 0.005, 0.005]}]),
+         "a box too small to measure"),
+    ):
+        expect_http(why, session_routes.create_session(req, alice_user, db), 422)
+
+    def _box_refused(**over):
+        try:
+            CreateSessionRequest(mode="image", image_base64="x",
+                                 elements=[{**_boxes[0], **over}])
+        except _VE:
+            return True
+        return False
+
+    check("a box with an unknown type is refused", _box_refused(type="button"))
+    check("a box with an unknown importance is refused", _box_refused(importance="urgent"))
+    check("a box with no name is refused", _box_refused(label="   "))
+    check("a box outside the image is refused", _box_refused(bbox=[0.8, 0.1, 0.5, 0.1]))
+    # The listing checks below count alice's sessions.
+    for _sid in (img_session.id, _short.id):
+        db.delete(db.get(SessionModel, _sid))
+    db.commit()
 
     print("\nsessions -- ownership boundary")
     bob_session = run(session_routes.create_session(

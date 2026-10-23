@@ -73,7 +73,7 @@ def _build_narrative(pipeline_result: dict, ui_page: str) -> dict:
     if behavior.get("narrative"):
         sentences = [html.escape(behavior["narrative"])]
     if quality.get("level") == "limited":
-        sentences.append("Tracking accuracy was only fair, so no finding is rated above \"worth fixing\".")
+        sentences.append("Eye-tracking precision was only fair, so no finding is rated above \"worth fixing\".")
 
     return {
         "banner_level": banner_level,
@@ -124,6 +124,7 @@ def _build_before_after(pipeline_result: dict) -> list[dict]:
 
 
 PAGE_NAMES = {
+    "uploaded_image": "the uploaded screenshot",
     "ecommerce_product_page": "the shop product page",
     "form_page": "the sign-up form",
     "dashboard_page": "the dashboard page",

@@ -57,7 +57,9 @@ TERMINAL_STATUSES = (STATUS_COMPLETE, STATUS_FAILED)
 
 MODE_TEST_UI = "test_ui"
 MODE_URL = "url"
-SESSION_MODES = (MODE_TEST_UI, MODE_URL)
+# A screenshot or mock-up the tester uploads, with boxes drawn by hand.
+MODE_IMAGE = "image"
+SESSION_MODES = (MODE_TEST_UI, MODE_URL, MODE_IMAGE)
 
 
 # ----------------------------------------------------------------------
@@ -72,6 +74,10 @@ class User(Base):
     # Required at sign-up; nullable only because accounts made before it was
     # collected have none (the app then falls back to the email).
     full_name: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    # Google's stable account id ("sub"), set once the account has signed in
+    # with Google. Accounts created through Google have no usable password:
+    # their password_hash is "" and bcrypt can never match it.
+    google_sub: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
                                                  default=_utcnow)
@@ -79,6 +85,10 @@ class User(Base):
     sessions: Mapped[list["Session"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+
+    @property
+    def has_google(self) -> bool:
+        return bool(self.google_sub)
 
 
 class Session(Base):
@@ -196,4 +206,5 @@ __all__ = [
     "STATUS_FAILED",
     "MODE_TEST_UI",
     "MODE_URL",
+    "MODE_IMAGE",
 ]

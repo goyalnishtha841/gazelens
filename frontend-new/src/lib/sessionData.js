@@ -8,12 +8,15 @@ export const PAGE_NAME = {
   dashboard_page: "Dashboard",
   login_page: "Login page",
   article_page: "News article",
+  uploaded_image: "Uploaded screenshot",
 };
 
 /** A readable name for what a session tested: a sample page or a website. */
 export function pageName(s) {
   if (!s) return "";
   if (s.target_url) return s.target_url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  // an uploaded screenshot is named by the tester when they upload it
+  if ((s.mode === "image" || s.ui_page === "uploaded_image") && s.label) return s.label;
   const key = s.ui_page || s.mode || "";
   if (PAGE_NAME[key]) return PAGE_NAME[key];
   const t = key.replace(/_/g, " ");

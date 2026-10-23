@@ -123,7 +123,7 @@ def init_db(drop: bool = False) -> None:
 # migration tool: once anything here needs a backfill, add Alembic instead.
 _ADDED_COLUMNS = {
     "sessions": {"processing_started_at": "DATETIME"},
-    "users": {"full_name": "VARCHAR(80)"},
+    "users": {"full_name": "VARCHAR(80)", "google_sub": "VARCHAR(64)"},
 }
 
 

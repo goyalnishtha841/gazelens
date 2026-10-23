@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 import AuthLayout, { Field } from "../components/AuthLayout.jsx";
+import GoogleSignIn from "../components/GoogleSignIn.jsx";
 
 export default function SignIn({ onSwitchToSignup, onBackToHome }) {
   const { login } = useAuth();
@@ -41,6 +42,7 @@ export default function SignIn({ onSwitchToSignup, onBackToHome }) {
           {submitting ? "Signing in…" : "Sign in"}
         </button>
       </form>
+      <GoogleSignIn mode="signin" onError={setError} />
     </AuthLayout>
   );
 }

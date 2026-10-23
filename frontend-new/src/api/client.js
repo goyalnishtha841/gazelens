@@ -46,7 +46,7 @@ async function handleResponse(res) {
 }
 
 /** mode="test_ui" needs ui_page; mode="url" needs target_url. */
-export async function startSession(token, { mode = "test_ui", uiPage, targetUrl, label, calibrationSessionId } = {}) {
+export async function startSession(token, { mode = "test_ui", uiPage, targetUrl, label, calibrationSessionId, imageBase64, elements } = {}) {
   const res = await fetch(BASE, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
@@ -56,6 +56,9 @@ export async function startSession(token, { mode = "test_ui", uiPage, targetUrl,
       target_url: targetUrl ?? null,
       label: label ?? null,
       calibration_session_id: calibrationSessionId ?? null,
+      // mode="image": the uploaded screenshot and the boxes drawn on it
+      image_base64: imageBase64 ?? null,
+      elements: elements ?? null,
     }),
   });
   return handleResponse(res);
