@@ -38,7 +38,7 @@ export default function AuthLayout({ title, subtitle, onBackToHome, children, fo
           <div className="rounded-[18px] border border-white/10 bg-bg/60 p-4">
             <div className="mb-3 flex items-center justify-between text-[13px]">
               <span className="font-semibold text-text-primary">Your heatmap</span>
-              <span className="rounded-full bg-accent/15 px-2.5 py-0.5 font-semibold text-accent">Accuracy: good</span>
+              <span className="rounded-full bg-accent/15 px-2.5 py-0.5 font-semibold text-accent">Eye-tracking precision: good</span>
             </div>
             <MiniHeatmap />
           </div>

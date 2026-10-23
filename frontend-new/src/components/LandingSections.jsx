@@ -99,11 +99,11 @@ export function HeroFloaters() {
         </motion.div>
       </motion.div>
 
-      {/* bottom left: accuracy check */}
+      {/* bottom left: precision check */}
       <motion.div {...slot("left", "top-[60%]", 1.1)}>
         <motion.div {...float(2.4)} className={card(lit === 3)}>
           <div className="flex items-center justify-between text-[12px]">
-            <span className="font-semibold text-text-primary">Accuracy check</span>
+            <span className="font-semibold text-text-primary">Precision check</span>
             <span className="text-text-secondary">5 dots</span>
           </div>
           <div className="flex items-center gap-3">

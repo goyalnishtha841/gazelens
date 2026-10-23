@@ -66,7 +66,7 @@ export function AccuracyMeter() {
   return (
     <div className="rounded-[12px] border border-border bg-surface p-4">
       <div className="flex items-center justify-between text-[13px]">
-        <span className="text-text-secondary">Tracking accuracy</span>
+        <span className="text-text-secondary">Eye-tracking precision</span>
         <span className="rounded-full bg-accent/15 px-2.5 py-0.5 font-semibold text-accent">Good</span>
       </div>
       <div className="relative mt-3 h-2 rounded-full bg-gradient-to-r from-coral via-amber to-accent opacity-90">

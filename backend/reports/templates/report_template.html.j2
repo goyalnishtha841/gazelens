@@ -173,7 +173,7 @@
 
 <div class="stats">
   <div class="stat">
-    <div class="k">Tracking accuracy</div>
+    <div class="k">Eye-tracking precision</div>
     {% if quality and quality.gaze_error_px is not none %}
     <div class="v {{ quality.level }}">{{ {"good": "Good", "limited": "Fair", "insufficient": "Too low"}[quality.level] }} <small>{{ "%.0f"|format(quality.gaze_error_px) }} px off</small></div>
     {% else %}<div class="v">–</div>{% endif %}
@@ -185,7 +185,7 @@
 
 {% if heatmap_path %}
 <div class="keep"><h2>Where people <span class="serif">looked</span></h2>
-<p class="lead">Warm colours show where eyes stayed longest. The blur matches how accurate the tracking was, so the map is never sharper than the measurement.</p>
+<p class="lead">Warm colours show where eyes stayed longest. The blur matches how precise the eye tracking was, so the map is never sharper than the measurement.</p>
 <div class="figure"><img src="{{ heatmap_path }}" alt="Gaze heatmap over the page"></div></div>
 {% endif %}
 
@@ -242,7 +242,7 @@
   </div>
   {% endfor %}
 {% elif insufficient %}
-<div class="empty">Not evaluated: the tracking in this session wasn't accurate enough to support findings. Recalibrate and run the test again.</div>
+<div class="empty">Not evaluated: the eye tracking in this session wasn't precise enough to support findings. Recalibrate and run the test again.</div>
 {% else %}
 <div class="empty">No usability problems were found against the current thresholds.</div>
 {% endif %}
@@ -284,15 +284,15 @@
 </div>
 {% if quality %}
 <div class="quality">
-  <strong>Tracking quality:</strong>
+  <strong>Eye-tracking precision:</strong>
   {% if quality.gaze_error_px is not none %}
     on average {{ "%.0f"|format(quality.gaze_error_px) }} px ({{ "%.1f"|format(quality.gaze_error_pct_diagonal) }}% of the screen) from the true spot,
-    measured by the {{ "accuracy check after calibration" if quality.error_source == "accuracy_check" else "calibration itself" }}.
+    measured by the {{ "precision check after calibration" if quality.error_source == "accuracy_check" else "calibration itself" }}.
   {% endif %}
-  {% if quality.level == "limited" %}Because accuracy was only fair, no finding is rated above "Worth fixing".{% endif %}
+  {% if quality.level == "limited" %}Because eye-tracking precision was only fair, no finding is rated above "Worth fixing".{% endif %}
   {% if quality.reasons %}{{ quality.reasons|join("; ") }}.{% endif %}
   {% if quality.low_confidence_elements %}
-  <br>Too small to measure reliably at this accuracy: {{ quality.low_confidence_elements|map("label")|list|unique|list|truncate_list(8)|join(", ") }}.
+  <br>Too small to measure reliably at this precision: {{ quality.low_confidence_elements|map("label")|list|unique|list|truncate_list(8)|join(", ") }}.
   {% endif %}
 </div>
 {% endif %}

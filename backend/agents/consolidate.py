@@ -94,7 +94,7 @@ def merge_issues(
         ratio = reliability.get(eid)
         if ratio is not None and ratio < 1.0:
             severity = SEVERITY_ORDER[max(0, _rank(severity) - 1)]
-            caveat = (f"This element is smaller than the measured gaze error"
+            caveat = (f"This element is smaller than how far off the eye tracking was"
                       f"{f' ({gaze_error_px:.0f}px)' if gaze_error_px else ''}, so this "
                       f"finding is indicative rather than measured.")
         merged.append({

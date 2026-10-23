@@ -32,7 +32,7 @@ const CARDS = [
     tone: "accent",
     pill: "Quick setup",
     title: <>Ready in about <Accent className="text-accent">a minute.</Accent></>,
-    text: "Look at a few dots on your screen while your webcam finds your eyes. GazeLens learns how they move, checks its own accuracy, then follows your gaze while you use the page.",
+    text: "Look at a few dots on your screen while your webcam finds your eyes. GazeLens learns how they move, checks how precisely it is tracking you, then follows your gaze while you use the page.",
     points: ["Works with the camera you already have", "Nothing for your visitor to install"],
     pointIcon: "check",
     visual: <CalibrationDemo />,

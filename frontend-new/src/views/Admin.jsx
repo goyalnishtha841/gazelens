@@ -405,7 +405,7 @@ function UserPanel({ token, user, onClose }) {
                 <div className="mt-3 flex flex-wrap gap-2 text-[12px]">
                   <span className="rounded-full bg-white/[0.06] px-2.5 py-1">{s.gaze_points} gaze points</span>
                   {s.issues != null && <span className="rounded-full bg-amber/15 px-2.5 py-1 text-amber">{s.issues} problems{s.high_issues ? ` · ${s.high_issues} urgent` : ""}</span>}
-                  {s.gaze_error_px != null && <span className="rounded-full bg-accent/15 px-2.5 py-1 text-accent">accuracy {s.accuracy} · {Math.round(s.gaze_error_px)} px</span>}
+                  {s.gaze_error_px != null && <span className="rounded-full bg-accent/15 px-2.5 py-1 text-accent">precision {s.accuracy} · {Math.round(s.gaze_error_px)} px off</span>}
                   {s.target_url && <span className="rounded-full bg-cool/15 px-2.5 py-1 text-cool">own website</span>}
                 </div>
                 {s.error && <div className="mt-2 truncate text-[12px] text-coral" title={s.error}>{s.error}</div>}

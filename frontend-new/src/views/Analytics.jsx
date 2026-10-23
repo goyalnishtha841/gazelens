@@ -24,7 +24,7 @@ export default function Analytics({ onNavigate, onOpenSession }) {
       <PageHeader
         title="Your"
         accent="analytics"
-        subtitle="How your pages are doing across every test: what keeps coming up, how accurate the tracking was, and whether the important parts get noticed."
+        subtitle="How your pages are doing across every test: what keeps coming up, how precise the eye tracking was, and whether the important parts get noticed."
       />
       {loading && <Loading />}
       {error && <ErrorNote error={error} />}
@@ -58,7 +58,7 @@ export default function Analytics({ onNavigate, onOpenSession }) {
             </Panel>
           </div>
 
-          <Panel title="Tracking accuracy" note="Average distance between where we think eyes looked and where they really did. Lower is better.">
+          <Panel title="Eye-tracking precision (px off)" note="How far, on average, our estimate of where eyes looked was from where they really looked. Lower is better. This measures the eye tracking, not the report.">
             <AccuracyLine rows={data.accuracy} />
           </Panel>
         </div>
@@ -226,7 +226,7 @@ function HBars({ rows, unit = "", max, gradient = false, empty }) {
 }
 
 function AccuracyLine({ rows }) {
-  if (rows.length === 0) return <p className="py-8 text-center text-[15px] text-text-secondary">No accuracy measurements yet.</p>;
+  if (rows.length === 0) return <p className="py-8 text-center text-[15px] text-text-secondary">No tracking measurements yet.</p>;
   const shown = rows.slice(-14);
   const W = 1100, H = 190, P = 32;
   const max = Math.max(200, ...shown.map((r) => r.px)) * 1.1;

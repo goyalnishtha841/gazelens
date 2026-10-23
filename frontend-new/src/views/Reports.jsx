@@ -7,9 +7,9 @@ import { useReports, pageName, shortDate } from "../lib/sessionData.js";
 import { PageShell, PageHeader, Loading, NoReports, ErrorNote } from "../components/AppPage.jsx";
 
 const QUALITY = {
-  good: { label: "Accuracy: good", cls: "text-accent" },
-  limited: { label: "Accuracy: fair", cls: "text-amber" },
-  insufficient: { label: "Accuracy: too low", cls: "text-coral" },
+  good: { label: "Eye-tracking precision: good", cls: "text-accent" },
+  limited: { label: "Eye-tracking precision: fair", cls: "text-amber" },
+  insufficient: { label: "Eye-tracking precision: too low", cls: "text-coral" },
 };
 
 /** Every finished report, as cards with a heatmap preview and a PDF. */

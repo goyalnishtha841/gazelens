@@ -55,7 +55,7 @@ const VALIDATION_POINTS = [
 ];
 
 const VERDICT_TEXT = {
-  good: "Accurate enough to tell which button or link you were looking at.",
+  good: "Precise enough to tell which button or link you were looking at.",
   fair: "Good enough for larger areas of a page. Small buttons might get mixed up.",
   poor: "The tracking was too far off to trust. A second try usually fixes it.",
   insufficient: "We couldn't see your eyes during the check. Let's run the setup again.",
@@ -253,7 +253,7 @@ export default function Calibration({ onComplete, onExit }) {
           if (!cancelled) {
             // 422 = the calibration couldn't train a model at all
             streamRef.current?.getTracks().forEach((t) => t.stop());
-            setValidationError(err.message || "Couldn't check calibration accuracy.");
+            setValidationError(err.message || "Couldn't run the precision check.");
             setStatus("done");
           }
           return;
@@ -387,7 +387,7 @@ export default function Calibration({ onComplete, onExit }) {
           Let's teach GazeLens <span className="font-serif font-normal italic text-accent">your eyes</span>
         </h1>
         <p className="mx-auto mt-4 max-w-lg text-[17px] leading-relaxed text-text-secondary">
-          A dot will move around the screen. Just look at it until its ring fills up. It takes about a minute and a half, and it's what makes your results accurate.
+          A dot will move around the screen. Just look at it until its ring fills up. It takes about a minute and a half, and it's what makes the eye tracking precise.
         </p>
         <div className="mt-10 grid gap-3 text-left sm:grid-cols-3">
           {TIPS.map((t) => (
@@ -447,17 +447,17 @@ export default function Calibration({ onComplete, onExit }) {
               <span className="text-[26px] font-bold tabular-nums text-text-primary">
                 {validation?.median_error_px != null ? Math.round(validation.median_error_px) : "–"}
               </span>
-              <span className="text-[12px] text-text-secondary">pixels off</span>
+              <span className="text-[12px] text-text-secondary">px off</span>
             </div>
           </div>
           <div>
             <span className="rounded-full px-3 py-1 text-[14px] font-semibold" style={{ color: `rgb(${look.color})`, background: `rgb(${look.color} / 0.15)` }}>
-              Accuracy: {look.label}
+              Eye-tracking precision: {look.label}
             </span>
             <p className="mt-3 text-[15px] leading-relaxed text-text-secondary">
               {pct != null
                 ? <>On average, where we think you looked was {pct.toFixed(1)}% of the screen away from the real spot.</>
-                : <>We couldn't measure accuracy this time.</>}
+                : <>We couldn't measure eye-tracking precision this time.</>}
             </p>
             {quality && (
               <p className="mt-2 text-[13px] text-text-secondary">
@@ -478,7 +478,7 @@ export default function Calibration({ onComplete, onExit }) {
         </button>
         {!blocked && verdict === "fair" && (
           <button onClick={begin} className="mx-auto mt-4 block text-[14px] text-text-secondary hover:text-text-primary">
-            Redo it for better accuracy
+            Redo it for better precision
           </button>
         )}
       </>,
@@ -509,7 +509,7 @@ export default function Calibration({ onComplete, onExit }) {
         {captureRig}
         {themeCorner}
         <div className="fixed left-1/2 top-10 z-10 -translate-x-1/2 text-center">
-          <span className="rounded-full border border-white/10 bg-surface/70 px-4 py-1.5 text-[14px] font-medium text-text-primary backdrop-blur">Checking accuracy · {currentIndex + 1} of {VALIDATION_POINTS.length}</span>
+          <span className="rounded-full border border-white/10 bg-surface/70 px-4 py-1.5 text-[14px] font-medium text-text-primary backdrop-blur">Precision check · {currentIndex + 1} of {VALIDATION_POINTS.length}</span>
           <p className="mx-auto mt-3 max-w-sm text-[14px] text-text-secondary">Same as before: look at each dot until it fills.</p>
         </div>
         <div className="fixed -translate-x-1/2 -translate-y-1/2" style={{ left: `${vx * 100}vw`, top: `${vy * 100}vh` }}>

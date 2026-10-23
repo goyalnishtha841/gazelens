@@ -230,7 +230,7 @@ def generate_gaze_heatmap(
                 color="white", fontweight="bold", zorder=5)
 
     caption = (f"{len(pts)} gaze samples   ·   numbers mark the hottest spots   ·   "
-               f"blur matches the measured tracking error ({sigma:.0f}px)")
+               f"blur matches the eye-tracking precision ({sigma:.0f}px off)")
     if not pts:
         caption = "No valid gaze samples were recorded on this page."
     _footer(fig, fig_h, footer_in, caption, legend="heat" if pts else None)
