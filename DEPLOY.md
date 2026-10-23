@@ -93,9 +93,36 @@ Open the Vercel URL, then:
 
 If something fails, the Space's **Logs** tab shows the API's errors.
 
+## Before you deploy: checklist
+
+Your local `.env` lists every backend setting with comments; `.env.example` is the
+same file without secrets. Go through it once and copy these to the hosts:
+
+**API host** (Hugging Face Space / Render / any Docker host):
+- [ ] `GAZELENS_SECRET_KEY`: a **new** key, not your local one:
+      `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`
+- [ ] `GAZELENS_CORS_ORIGINS`: the web app's address, e.g. `https://gazelens.vercel.app`
+- [ ] `GOOGLE_CLIENT_ID`: the same client ID as locally (if you use Google sign-in)
+- [ ] `GAZELENS_ADMIN_PASSWORD`: a long password (or leave unset to keep admin off)
+- [ ] `GROQ_API_KEY` or `ANTHROPIC_API_KEY`: optional, for AI-written report text
+- [ ] Storage on a **persistent disk** (the image already uses `/data`; see above)
+- [ ] At least ~2 GB RAM (MediaPipe, headless Chromium and the OCR model)
+
+**Vercel** (web app), then redeploy so the build picks them up:
+- [ ] `VITE_API_BASE_URL`: the API's `https://` address
+- [ ] `VITE_ADMIN_PATH`: optional, a less guessable admin address
+
+**Google Cloud** (only if you use Google sign-in):
+- [ ] Add the web app's `https://` address under **Clients → Authorized JavaScript origins**
+- [ ] **Audience → Publish app**, so any Google account can sign in (not just test users)
+
+**Then check:** `https://<api>/health` answers, the web app signs in (password and
+Google), and the camera works (webcams need HTTPS everywhere except localhost).
+
 ## Configuration reference
 
-All configuration is environment variables. See [`.env.example`](.env.example).
+All configuration is environment variables. [`.env.example`](.env.example) lists every
+one with its default; the table below is the deployment view.
 
 | Variable | Where | Default | Purpose |
 |---|---|---|---|
@@ -107,6 +134,11 @@ All configuration is environment variables. See [`.env.example`](.env.example).
 | `GAZELENS_ADMIN_PASSWORD` | Space secret | none | Turns on the private admin page (`/admin`) and sets its password. Unset = admin routes return 404 |
 | `VITE_ADMIN_PATH` | Vercel env var (build time) | `/admin` | Address of the admin page; set a less guessable path for production |
 | `GROQ_API_KEY` / `ANTHROPIC_API_KEY` | Space secret | none | Optional LLM writing for the report agents |
+| `GAZELENS_LLM_PROVIDER`, `GAZELENS_LLM_MODEL`, `GAZELENS_LLM_EFFORT`, `GAZELENS_LLM` | Space variable | see `.env.example` | Choose / override / switch off the LLM |
+| `FIXATION_TOKEN_TTL_MINUTES` | Space variable | `720` | Login length |
+| `GAZELENS_ADMIN_TOKEN_TTL_MINUTES`, `GAZELENS_ADMIN_MAX_FAILURES`, `GAZELENS_ADMIN_WINDOW_SECONDS` | Space variable | `120` / `5` / `900` | Admin login length and lockout |
+| `GAZELENS_ANALYSIS_TIMEOUT_SECONDS` | Space variable | `600` | When a stuck report counts as failed |
+| `GOOGLE_CLIENT_ID` | Space variable | none | Turns on "Sign in with Google". Add the deployed web app's address to the OAuth client's *Authorized JavaScript origins* in Google Cloud |
 | `GAZELENS_ENV` | set in the image | `production` | Refuses to start without a secret key |
 | `FIXATION_DATABASE_URL`, `FIXATION_DATA_DIR`, `GAZELENS_CALIBRATION_DIR`, `GAZELENS_GAZE_MODEL_DIR` | set in the image | everything under `/data` | Storage locations |
 | `VITE_API_BASE_URL` | Vercel, build time | empty, same origin | The API's URL |

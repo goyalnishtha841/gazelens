@@ -266,7 +266,7 @@ export default function GazeHero() {
 
       {/* measurement-quality chip */}
       <div className="absolute -left-4 bottom-[18%] z-20 hidden rounded-full border border-accent/40 bg-raised px-3.5 py-1.5 text-[12px] font-medium text-text-primary shadow-lg sm:block">
-        <span className="text-accent">●</span> tracking accuracy: good
+        <span className="text-accent">●</span> eye-tracking precision: good
       </div>
     </div>
   );

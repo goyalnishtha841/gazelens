@@ -86,6 +86,70 @@ def head_moved(head_proxy: Optional[Dict[str, float]], pose_ref: Dict[str, float
                 and abs(z - ref_z) / abs(ref_z) > HEAD_DRIFT_DEPTH_FRAC)
 
 
+# Pre-test position check: a short burst of frames taken just before a new
+# test starts, compared with the calibration pose. Same thresholds as the
+# per-frame "head_moved" note above, but on the MEDIAN of the burst, so one
+# odd frame can't block a test and a real move can't hide behind one good
+# frame. Fewer usable frames than this and nothing can be said.
+MIN_POSITION_FRAMES = 3
+
+
+def position_check(head_proxies: Sequence[Optional[Dict[str, float]]],
+                   pose_ref: Dict[str, float]) -> Dict:
+    """Has the participant moved since calibrating? -> a dict for the API.
+
+    status: "ok" | "moved" | "no_face" (too few frames with a face) |
+    "unknown" (the model predates pose references, so there is nothing to
+    compare against -- the test is allowed, as it was before this check).
+    """
+    frames = len(head_proxies)
+    usable = [h for h in head_proxies if h]
+    result: Dict = {
+        "status": "unknown", "moved": False, "frames": frames,
+        "frames_with_face": len(usable), "reasons": [],
+        "yaw_change_deg": None, "pitch_change_deg": None, "distance_change_pct": None,
+        "thresholds": {"angle_deg": HEAD_DRIFT_DEG,
+                       "distance_pct": round(100 * HEAD_DRIFT_DEPTH_FRAC, 1)},
+    }
+    if not pose_ref:
+        return result
+    if len(usable) < MIN_POSITION_FRAMES:
+        result["status"] = "no_face"
+        return result
+
+    def median(col: str) -> Optional[float]:
+        vals = sorted(h[col] for h in usable if h.get(col) is not None)
+        if not vals:
+            return None
+        m = len(vals) // 2
+        return vals[m] if len(vals) % 2 else (vals[m - 1] + vals[m]) / 2
+
+    reasons: List[str] = []
+    for col, key, turn in (("head_yaw", "yaw_change_deg", "turned left or right"),
+                           ("head_pitch", "pitch_change_deg", "tilted up or down")):
+        now = median(col)
+        if col in pose_ref and now is not None:
+            delta = now - pose_ref[col]
+            result[key] = round(delta, 1)
+            if abs(delta) > HEAD_DRIFT_DEG:
+                reasons.append(f"your head is {turn} by {abs(delta):.0f}° "
+                               f"(more than {HEAD_DRIFT_DEG:.0f}°)")
+
+    ref_z, z = pose_ref.get("head_tz"), median("head_tz")
+    if ref_z and z is not None:
+        change = (abs(z) - abs(ref_z)) / abs(ref_z)
+        result["distance_change_pct"] = round(100 * change, 1)
+        if abs(change) > HEAD_DRIFT_DEPTH_FRAC:
+            side = "farther from" if change > 0 else "closer to"
+            reasons.append(f"you are {abs(change) * 100:.0f}% {side} the screen "
+                           f"(more than {HEAD_DRIFT_DEPTH_FRAC * 100:.0f}%)")
+
+    result["reasons"] = reasons
+    result["moved"] = bool(reasons)
+    result["status"] = "moved" if reasons else "ok"
+    return result
+
+
 class LiveGazeEstimator:
     """A loaded per-session model, ready to call per frame."""
 
@@ -282,4 +346,5 @@ __all__ = [
     "clear_cache",
     "set_model_dir",
     "gaze_stream",
+    "position_check",
 ]

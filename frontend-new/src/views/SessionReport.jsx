@@ -33,7 +33,7 @@ export const SEVERITY = {
 };
 
 const QUALITY = {
-  good: { label: "Good", text: "text-accent", stroke: "rgb(var(--color-accent))", note: "Accurate enough to point at individual parts of the page." },
+  good: { label: "Good", text: "text-accent", stroke: "rgb(var(--color-accent))", note: "Precise enough to point at individual parts of the page." },
   limited: { label: "Fair", text: "text-amber", stroke: "rgb(var(--color-amber))", note: "Good for larger areas; small buttons are less certain." },
   insufficient: { label: "Too low", text: "text-coral", stroke: "rgb(var(--color-coral))", note: "Not reliable enough to draw conclusions." },
 };
@@ -142,7 +142,7 @@ function ReportBody({ report, onBack, pdfState, onDownload }) {
 
   const summary = useMemo(() => {
     if (insufficient) {
-      return "The gaze tracking in this session wasn't accurate enough to say which parts of the page people looked at, so GazeLens didn't draw any conclusions. Recalibrate and run it again.";
+      return "The eye tracking in this session wasn't precise enough to say which parts of the page people looked at, so GazeLens didn't draw any conclusions. Recalibrate and run it again.";
     }
     const b = pr.behavior_summary || {};
     // LLM mode: the behaviour agent's critic-verified account
@@ -327,7 +327,7 @@ export function SectionTitle({ eyebrow, title }) {
   );
 }
 
-/** Circular gauge of how accurate the gaze tracking was. */
+/** Circular gauge of eye-tracking precision (how precisely eyes were tracked -- not the report). */
 function AccuracyRing({ quality }) {
   const reduce = useReducedMotion();
   const level = quality?.level;
@@ -358,16 +358,16 @@ function AccuracyRing({ quality }) {
           {px != null ? (
             <>
               <span className="text-[34px] font-bold leading-none tabular-nums text-text-primary">{shown}<span className="text-[16px] font-medium text-text-secondary"> px</span></span>
-              <span className="mt-1 text-[12px] text-text-secondary">tracking error</span>
+              <span className="mt-1 text-[12px] text-text-secondary">off on average</span>
             </>
           ) : (
-            <span className="px-6 text-[13px] text-text-secondary">Accuracy not measured</span>
+            <span className="px-6 text-[13px] text-text-secondary">Precision not measured</span>
           )}
         </div>
       </div>
       {q && (
         <div className="mt-3 max-w-[220px] text-center">
-          <span className={`text-[15px] font-semibold ${q.text}`}>Accuracy: {q.label}</span>
+          <span className={`text-[15px] font-semibold ${q.text}`}>Eye-tracking precision: {q.label}</span>
           <p className="mt-1 text-[12px] leading-snug text-text-secondary">{q.note}</p>
         </div>
       )}
@@ -599,7 +599,7 @@ export function RecommendationCard({ rec, nameOf, index }) {
         <p className="mt-2 text-[16px] leading-relaxed text-text-primary">{rec.recommendation.replace(/\s*\(Evidence:.*\)\s*$/, "")}</p>
         {rec.also?.length > 0 && <p className="mt-2 text-[13px] text-text-secondary">Also consider: {rec.also.map((a) => a.replace(/\s*\(Evidence:.*\)\s*$/, "")).join(" ")}</p>}
         {rec.measurability != null && rec.measurability < 1 && (
-          <p className="mt-2 text-[12px] text-text-secondary">Confidence lowered from {Math.round(rec.confidence_raw * 100)}: this element is small compared with the tracking error.</p>
+          <p className="mt-2 text-[12px] text-text-secondary">Confidence lowered from {Math.round(rec.confidence_raw * 100)}: this element is small compared with how far off the eye tracking can be.</p>
         )}
       </div>
     </motion.article>
@@ -616,7 +616,7 @@ function ReliabilityCard({ quality, nameOf, rejected, warnings }) {
       <div>
         <h3 className="text-[22px] font-semibold text-text-primary">How reliable is this report?</h3>
         <p className="mt-2 text-[15px] leading-relaxed text-text-secondary">
-          {q ? <>Tracking accuracy was <span className={`font-semibold ${q.text}`}>{q.label.toLowerCase()}</span>{quality?.gaze_error_px != null && <> ({Math.round(quality.gaze_error_px)} px, {quality.gaze_error_pct_diagonal?.toFixed(1)}% of the screen, measured by the accuracy check)</>}. {q.note}</> : "Tracking accuracy wasn't measured for this session, so treat the findings with care."}
+          {q ? <>Eye-tracking precision was <span className={`font-semibold ${q.text}`}>{q.label.toLowerCase()}</span>{quality?.gaze_error_px != null && <> ({Math.round(quality.gaze_error_px)} px off on average, {quality.gaze_error_pct_diagonal?.toFixed(1)}% of the screen, measured by the precision check)</>}. {q.note}</> : "Eye-tracking precision wasn't measured for this session, so treat the findings with care."}
           {" "}Every suggestion was re-checked against the measurements by a separate checking step{rejected ? `, which dropped ${rejected} that the data didn't support` : ""}.
         </p>
         {quality?.reasons?.length > 0 && (
@@ -625,7 +625,7 @@ function ReliabilityCard({ quality, nameOf, rejected, warnings }) {
         {quality?.low_confidence_elements?.length > 0 && (
           <p className="mt-3 text-[14px] text-text-secondary">Too small to measure precisely: {quality.low_confidence_elements.map(nameOf).join(", ")}.</p>
         )}
-        {quality?.level === "limited" && <p className="mt-2 text-[14px] text-amber">Because accuracy was only fair, nothing is marked “Fix first”.</p>}
+        {quality?.level === "limited" && <p className="mt-2 text-[14px] text-amber">Because eye-tracking precision was only fair, nothing is marked “Fix first”.</p>}
         {warnings.length > 0 && <p className="mt-2 text-[13px] text-text-secondary/80">{warnings.join(" ")}</p>}
       </div>
     </div>

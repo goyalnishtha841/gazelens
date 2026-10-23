@@ -41,9 +41,9 @@ const FAQS = [
   { q: "Do I need any special equipment?", a: "No. A laptop with a built-in webcam is enough. An external webcam placed at eye level can work even better." },
   { q: "Is my camera video saved?", a: "No. Each video frame is only used to work out where your eyes are pointing, then it's thrown away. GazeLens keeps where you looked, not what the camera saw." },
   { q: "How long does it take?", a: "Setup takes about a minute. After that, a test can be as short or as long as you like, and your report is ready a few seconds after you finish." },
-  { q: "How accurate is it?", a: "Accurate enough to tell which part of a page someone looked at, like a button, an image or a headline, but not single words. Before every test, a quick check shows how well tracking works for you. If it isn't accurate enough, GazeLens tells you to try again instead of guessing." },
+  { q: "How precise is the eye tracking?", a: "Precise enough to tell which part of a page someone looked at, like a button, an image or a headline, but not single words. Before every test, a quick precision check measures how precisely your eyes are tracked. If it isn't precise enough, GazeLens tells you to try again instead of guessing." },
   { q: "Can I test my own website?", a: "Yes. Paste a link and GazeLens takes a snapshot of the page and finds its buttons, images and text for you. You can also start with one of our five sample pages." },
-  { q: "Does it work if I wear glasses?", a: "Usually, yes. Reflections on lenses can lower accuracy, so sit facing your light rather than with a window behind you. The accuracy check will tell you how well it's working." },
+  { q: "Does it work if I wear glasses?", a: "Usually, yes. Reflections on lenses can make tracking less precise, so sit facing your light rather than with a window behind you. The precision check will tell you how well it's working." },
   { q: "Who is GazeLens for?", a: "Designers, developers, students and researchers who want to know whether people notice the right things on a page, without booking an eye-tracking lab." },
 ];
 

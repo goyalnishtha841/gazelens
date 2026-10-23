@@ -75,14 +75,14 @@ def assess(q: QualityInput) -> QualityVerdict:
     if q.gaze_error_px is not None and q.screen_diagonal_px:
         frac = q.gaze_error_px / q.screen_diagonal_px
         pct = 100.0 * frac
-        source = "accuracy check" if q.error_source == "accuracy_check" else "calibration"
-        msg = f"gaze error {q.gaze_error_px:.0f}px ({pct:.1f}% of the screen, from the {source})"
+        source = "precision check" if q.error_source == "accuracy_check" else "calibration"
+        msg = f"eye tracking {q.gaze_error_px:.0f}px off on average ({pct:.1f}% of the screen, from the {source})"
         if frac > ERROR_INSUFFICIENT_FRACTION:
             insufficient.append(f"{msg} is too large to attribute gaze to page elements")
         elif frac > ERROR_LIMITED_FRACTION:
             limited.append(f"{msg} only supports conclusions about larger page regions")
     else:
-        limited.append("gaze accuracy was never measured for this calibration")
+        limited.append("eye-tracking precision was never measured for this calibration")
 
     if q.tracked_pct < TRACKED_INSUFFICIENT_PCT:
         insufficient.append(f"only {q.tracked_pct:.0f}% of the session was tracked")

@@ -92,7 +92,7 @@ export default function SystemStatus({ hasCalibration, onNavigate }) {
             />
           </div>
           <p className="mt-4 text-[14px] leading-relaxed text-text-secondary">
-            Your latest setup is reused across sign-ins as long as it passed the accuracy check and this window is the same size. It's tied to where you sit, your lighting and your camera, so redo it whenever any of those change. Viewing sessions and reports never needs the camera.
+            Your latest setup is reused across sign-ins as long as it passed the precision check and this window is the same size. It's tied to where you sit, your lighting and your camera, so redo it whenever any of those change. Viewing sessions and reports never needs the camera.
           </p>
           <button
             onClick={() => onNavigate?.("calibration")}

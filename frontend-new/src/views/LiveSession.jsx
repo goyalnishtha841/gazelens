@@ -3,12 +3,13 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { startSession, linkCalibration, estimateGazeFrame, finalizeSession, listTestUis } from "../api/client.js";
 import { renderUrl } from "../api/render.js";
 import { apiUrl } from "../api/base.js";
-import { CAMERA_CONSTRAINTS } from "../api/calibration.js";
+import { CAMERA_CONSTRAINTS, checkPosition } from "../api/calibration.js";
 import { GazeStabilizer } from "../lib/gazeStabilizer.js";
 import { motion } from "framer-motion";
 import { Reveal, StaggerGroup, StaggerItem } from "../components/Motion.jsx";
 import IrisMark from "../components/IrisMark.jsx";
 import { useCameraConsent } from "../components/CameraConsent.jsx";
+import ImageBoxEditor, { uploadProblem } from "../components/ImageBoxEditor.jsx";
 
 // Target spacing between frames. MUST stay under backend/attribution/
 // fixations.py's MAX_GAP (150ms) -- see frontend/src/views/LiveSession.jsx's
@@ -62,12 +63,14 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
   const [rendering, setRendering] = useState(false);
   const [renderError, setRenderError] = useState(null);
   const [renderedPage, setRenderedPage] = useState(null);
+  const [upload, setUpload] = useState(null);
 
   const [session, setSession] = useState(null);
   const [cameraError, setCameraError] = useState(null);
   const [startError, setStartError] = useState(null);
   const [startErrorDetail, setStartErrorDetail] = useState(null);
   const [needsRecalibration, setNeedsRecalibration] = useState(false);
+  const [checkingPosition, setCheckingPosition] = useState(false);
   const [starting, setStarting] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [tab, setTab] = useState("insights");
@@ -139,24 +142,40 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
     };
   }, []);
 
+  // Website captures and uploaded screenshots are both one tall image shown
+  // in a fixed window and scrolled; everything below treats them alike.
+  // An upload's window mirrors backend/api/uploads.py: the image's width and
+  // a 16:9 height, or the whole image if it is shorter than that.
+  const isShot = mode === "url" || mode === "image";
+  const shotPage = mode === "image"
+    ? (upload && {
+        title: upload.title,
+        src: upload.dataUrl,
+        viewport: [upload.width, Math.min(upload.height, Math.round(upload.width * 9 / 16))],
+      })
+    : renderedPage && {
+        ...renderedPage,
+        src: renderedPage.screenshot_base64 ? `data:image/png;base64,${renderedPage.screenshot_base64}` : null,
+      };
+
   // A captured page is one tall screenshot shown at the stage's width. The
   // server needs the scroll in the page's own CSS pixels, so the on-screen
   // offset is scaled by (captured width / shown width).
   const pageScrollY = useCallback(() => {
     const el = scrollerRef.current;
     if (!el || !el.clientWidth) return 0;
-    const capturedWidth = renderedPage?.viewport?.[0] || el.clientWidth;
+    const capturedWidth = shotPage?.viewport?.[0] || el.clientWidth;
     return el.scrollTop * (capturedWidth / el.clientWidth);
-  }, [renderedPage]);
+  }, [shotPage?.viewport?.[0]]);
 
   // URL sessions: the stage keeps the captured window's shape (e.g. 1280x720)
   // so one screen of the page on this monitor is one screen of it as captured
   // -- that's what lets pipeline.to_document_space line gaze up with the boxes.
   useEffect(() => {
-    if (!session || mode !== "url") return;
+    if (!session || !isShot) return;
     const area = areaRef.current;
     if (!area) return;
-    const [vw, vh] = renderedPage?.viewport || [16, 9];
+    const [vw, vh] = shotPage?.viewport || [16, 9];
     const fit = () => {
       const { width, height } = area.getBoundingClientRect();
       const w = Math.min(width, height * (vw / vh));
@@ -166,7 +185,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
     const ro = new ResizeObserver(fit);
     ro.observe(area);
     return () => ro.disconnect();
-  }, [session, mode, renderedPage]);
+  }, [session, isShot, shotPage?.viewport?.[0], shotPage?.viewport?.[1]]);
 
   useEffect(() => {
     if (!session) return;
@@ -219,8 +238,35 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
     }
   }
 
+  // ~1 s of frames for the pre-test position check. Returns null when the
+  // check can't run (no frames, network or server error): the test then
+  // starts as before, and the in-test "you've moved" warning still applies.
+  async function checkSeatedPosition() {
+    const video = videoRef.current;
+    const t0 = performance.now();
+    while (video && video.readyState < 2 && performance.now() - t0 < 3000) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const frames = [];
+    for (let i = 0; i < 8; i += 1) {
+      const frame = captureFrame();
+      if (frame) frames.push(frame);
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    if (!frames.length) return null;
+    try {
+      return await checkPosition(token, calibrationSessionId, frames);
+    } catch {
+      return null;
+    }
+  }
+
   async function handleStart() {
     if (mode === "url" && !renderedPage) return;
+    if (mode === "image" && uploadProblem(upload)) {
+      setStartError(uploadProblem(upload));
+      return;
+    }
     if (!calibrationSessionId) {
       setStartError("No calibration on file for this sitting. Calibrate first.");
       return;
@@ -249,11 +295,34 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
       return;
     }
 
+    // Still sitting where you calibrated? The gaze model only holds for that
+    // head position, so a moved chair or a new desk means a new setup.
+    setCheckingPosition(true);
+    const position = await checkSeatedPosition();
+    setCheckingPosition(false);
+    if (position?.status === "moved" || position?.status === "no_face") {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      if (position.status === "moved") {
+        setStartError("You've moved since your camera setup, so gaze tracking would be off for this test. Please redo the camera setup from where you're sitting now.");
+        setStartErrorDetail(position.reasons.join("; "));
+        setNeedsRecalibration(true);
+      } else {
+        setStartError("We couldn't see your face clearly. Face the camera with light in front of you, then try again.");
+      }
+      setStarting(false);
+      return;
+    }
+
     try {
       const created = await startSession(token, {
-        mode: mode === "url" ? "url" : "test_ui",
+        mode: mode === "url" ? "url" : mode === "image" ? "image" : "test_ui",
         uiPage: mode === "fixed" ? selectedPage : undefined,
         targetUrl: mode === "url" ? renderedPage.url : undefined,
+        label: mode === "image" ? upload.title.trim() : undefined,
+        imageBase64: mode === "image" ? upload.dataUrl : undefined,
+        elements: mode === "image"
+          ? upload.boxes.map(({ label, type, importance, bbox }) => ({ label: label.trim(), type, importance, bbox }))
+          : undefined,
       });
 
       const link = await linkCalibration(token, created.id, calibrationSessionId, true);
@@ -261,7 +330,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
         setStartError(
           link.screen_mismatch
             ? "Your screen has changed since you calibrated. The gaze mapping is tied to that exact screen, so please recalibrate here."
-            : "Calibration wasn't accurate enough to train a gaze model. Try even lighting on your face, sit square to the camera, and remove glasses glare if you can."
+            : "Calibration wasn't precise enough to train a gaze model. Try even lighting on your face, sit square to the camera, and remove glasses glare if you can."
         );
         setStartErrorDetail(link.message);
         setNeedsRecalibration(true);
@@ -304,7 +373,9 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
     setNoteDraft("");
   }
 
-  const pageLabel = mode === "url" ? (renderedPage?.url || urlInput).replace(/^https?:\/\//, "") : pageInfo(selectedPage).name;
+  const pageLabel = mode === "url" ? (renderedPage?.url || urlInput).replace(/^https?:\/\//, "")
+    : mode === "image" ? (upload?.title.trim() || "your screenshot")
+    : pageInfo(selectedPage).name;
   const btn = "rounded-full bg-accent font-semibold text-[#0A0E14] transition-shadow hover:shadow-[0_0_30px_-6px_rgb(var(--color-accent)/0.7)]";
   const errorBox = "rounded-[16px] border border-coral/40 bg-coral/10 px-4 py-3 text-[15px] text-text-primary";
 
@@ -331,7 +402,8 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
   }
 
   if (!session) {
-    const canStart = !starting && !(mode === "url" && !renderedPage) && !(mode === "fixed" && !selectedPage);
+    const canStart = !starting && !(mode === "url" && !renderedPage) && !(mode === "fixed" && !selectedPage)
+      && !(mode === "image" && uploadProblem(upload));
     return (
       <div className="mx-auto max-w-[1100px] px-4 py-10 sm:px-8 sm:py-14">
         <Reveal>
@@ -339,12 +411,12 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
             What do you want to <span className="font-serif font-normal italic text-accent">test?</span>
           </h1>
           <p className="mt-3 max-w-xl text-[17px] leading-relaxed text-text-secondary">
-            Pick one of our sample pages, or paste a link to your own site. When you press start, use the page the way a visitor would.
+            Pick one of our sample pages, paste a link to your own site, or upload a screenshot. When you press start, use the page the way a visitor would.
           </p>
         </Reveal>
 
         <div className="mt-8 flex w-fit rounded-full border border-white/10 bg-surface/60 p-1 backdrop-blur">
-          {[["fixed", "Sample pages"], ["url", "My own website"]].map(([id, label]) => (
+          {[["fixed", "Sample pages"], ["url", "My own website"], ["image", "Upload a screenshot"]].map(([id, label]) => (
             <button
               key={id}
               onClick={() => setMode(id)}
@@ -463,6 +535,8 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
           </div>
         )}
 
+        {mode === "image" && <ImageBoxEditor value={upload} onChange={setUpload} />}
+
         {cameraError && <div className={`mt-6 ${errorBox}`}>{cameraError}</div>}
         {startError && (
           <div className={`mt-6 ${errorBox}`}>
@@ -488,7 +562,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
             <span className="truncate font-semibold text-text-primary">{pageLabel || "pick a page"}</span>
           </div>
           <button onClick={handleStart} disabled={!canStart} className={`h-12 w-full px-7 text-[15px] disabled:opacity-50 sm:w-auto ${btn}`}>
-            {starting ? "Starting…" : "Turn on camera and start"}
+            {checkingPosition ? "Checking your position…" : starting ? "Starting…" : "Turn on camera and start"}
           </button>
         </div>
 
@@ -519,12 +593,12 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
         <section ref={areaRef} className="relative flex flex-1 items-center justify-center overflow-hidden">
           <div
             ref={stageRef}
-            className={`relative overflow-hidden rounded-[20px] border border-white/10 bg-surface ${mode === "url" ? "" : "h-full w-full"}`}
-            style={mode === "url" && boxSize ? { width: boxSize.w, height: boxSize.h } : undefined}
+            className={`relative overflow-hidden rounded-[20px] border border-white/10 bg-surface ${isShot ? "" : "h-full w-full"}`}
+            style={isShot && boxSize ? { width: boxSize.w, height: boxSize.h } : undefined}
           >
-            {mode === "url" && renderedPage?.screenshot_base64 ? (
+            {isShot && shotPage?.src ? (
               <div ref={scrollerRef} className="h-full w-full overflow-y-auto overflow-x-hidden" style={{ scrollbarWidth: "none" }}>
-                <img src={`data:image/png;base64,${renderedPage.screenshot_base64}`} alt="Page being tested" className="block h-auto w-full" draggable={false} />
+                <img src={shotPage.src} alt="Page being tested" className="block h-auto w-full" draggable={false} />
               </div>
             ) : mode === "url" && renderedPage ? (
               <div className="flex h-full w-full items-center justify-center p-8 text-center">
@@ -533,7 +607,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
             ) : (
               <iframe key={selectedPage} src={apiUrl(`/test-uis/${selectedPage}/index.html`)} title={`Test page: ${pageLabel}`} className="h-full w-full border-0" />
             )}
-            {mode === "url" && renderedPage?.screenshot_base64 && (
+            {isShot && shotPage?.src && shotPage.viewport && (mode === "url" || upload?.height > shotPage.viewport[1]) && (
               <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-bg/75 px-3 py-1 text-[12px] text-text-secondary backdrop-blur">
                 Scroll to see the rest of the page
               </div>

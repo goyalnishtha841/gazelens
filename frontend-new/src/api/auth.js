@@ -47,6 +47,22 @@ export async function login({ email, password }) {
   return handleResponse(res);
 }
 
+/** Sign in or sign up with the ID token Google's button gave us. */
+export async function googleLogin(credential) {
+  const res = await fetch(`${BASE}/google`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ credential }),
+  });
+  return handleResponse(res);
+}
+
+/** Which sign-in options this server offers ({ google_client_id } or null). */
+export async function fetchAuthConfig() {
+  const res = await fetch(`${BASE}/config`);
+  return handleResponse(res);
+}
+
 export async function fetchCurrentUser(token) {
   const res = await fetch(`${BASE}/me`, {
     headers: { Authorization: `Bearer ${token}` },

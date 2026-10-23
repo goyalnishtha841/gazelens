@@ -39,8 +39,8 @@ const FEATURES = [
     ),
   },
   {
-    icon: <TargetIcon />, tone: "cool", title: "Accuracy check first",
-    text: "A quick test before you start shows how well tracking works for you.",
+    icon: <TargetIcon />, tone: "cool", title: "Precision check first",
+    text: "A quick test before you start measures how precisely your eyes are tracked.",
     visual: <AccuracyMeter />,
   },
   {

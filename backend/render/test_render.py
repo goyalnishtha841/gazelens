@@ -399,6 +399,86 @@ else:
         internal.shutdown()
         public.shutdown()
 
+print("\nimage detection -- elements found on an uploaded screenshot")
+try:
+    import rapidocr_onnxruntime  # noqa: F401
+    _have_ocr = True
+except ImportError:
+    _have_ocr = False
+if not _have_ocr:
+    skip("image detection", "rapidocr-onnxruntime not installed")
+else:
+    import base64 as _b64
+    import io as _io
+
+    import numpy as _np
+    from fastapi import HTTPException as _HTTPException
+    from PIL import Image as _Image, ImageDraw as _Draw, ImageFont as _Font
+
+    from render.image_detect import detect_from_png
+    from render.routes import DetectImageRequest, detect_image
+
+    # A small shop page: menu bar, photo, heading, price, field, button.
+    _W, _H = 1280, 900
+    _img = _Image.new("RGB", (_W, _H), (245, 245, 240))
+    _d = _Draw.Draw(_img)
+    _f = lambda n: _Font.load_default(size=n)  # noqa: E731
+    _d.rectangle([60, 20, 1220, 80], fill=(0, 88, 96))
+    for _x, _word in ((90, "Home"), (200, "Shop"), (310, "Deals"), (430, "Help")):
+        _d.text((_x, 38), _word, fill=(255, 255, 255), font=_f(22))
+    _rng = _np.random.default_rng(3)
+    _photo = (_rng.random((360, 500, 3)) * 255).astype("uint8")
+    _photo[:, :, 0] = _np.linspace(40, 220, 500).astype("uint8")
+    _img.paste(_Image.fromarray(_photo), (60, 130))
+    _d.text((640, 130), "Summer sale", fill=(30, 30, 30), font=_f(44))
+    _d.text((640, 200), "Lightweight trail shoes for long days out", fill=(60, 60, 60), font=_f(20))
+    _d.rectangle([640, 270, 1100, 340], fill=(255, 255, 255), outline=(200, 200, 200), width=2)
+    _d.text((656, 280), "Email", fill=(130, 130, 130), font=_f(15))
+    _d.text((656, 305), "you@example.com", fill=(30, 30, 30), font=_f(20))
+    _d.rectangle([640, 390, 940, 460], fill=(30, 110, 120))
+    _d.text((735, 412), "Buy now", fill=(255, 255, 255), font=_f(24))
+    _buf = _io.BytesIO()
+    _img.save(_buf, format="PNG")
+    _png = _buf.getvalue()
+
+    _found = detect_from_png(_png)
+
+    def _over(el, x0, y0, x1, y1):
+        x, y, w, h = el["bbox"]
+        ix = max(0, min(x + w, x1 / _W) - max(x, x0 / _W))
+        iy = max(0, min(y + h, y1 / _H) - max(y, y0 / _H))
+        return ix * iy > 0.5 * ((x1 - x0) / _W) * ((y1 - y0) / _H)
+
+    _by = lambda t: [e for e in _found if e["type"] == t]  # noqa: E731
+    check(f"elements found ({len(_found)})", 4 <= len(_found) <= 12)
+    check("the menu bar is one navigation element",
+          any(_over(e, 60, 20, 1220, 80) for e in _by("nav")))
+    _btn = [e for e in _by("CTA") if _over(e, 640, 390, 940, 460)]
+    check("the button is a CTA, named from its text, high importance (above the fold)",
+          bool(_btn) and "buy" in _btn[0]["label"].lower() and _btn[0]["importance"] == "high")
+    check("the photo is an image", any(_over(e, 60, 130, 560, 490) for e in _by("image")))
+    _field = [e for e in _by("text") if _over(e, 640, 270, 1100, 340)]
+    check("the input box is a form field named from its label",
+          bool(_field) and _field[0]["label"].lower().startswith("email"))
+    _head = [e for e in _by("text") if "summer" in e["label"].lower()]
+    check("the big text is a heading (medium importance)",
+          bool(_head) and _head[0]["importance"] == "medium")
+    check("every element says why it was suggested", all(e.get("why") for e in _found))
+    check("boxes are fractions inside the image",
+          all(0 <= e["bbox"][0] and 0 <= e["bbox"][1] and e["bbox"][0] + e["bbox"][2] <= 1.0001
+              and e["bbox"][1] + e["bbox"][3] <= 1.0001 for e in _found))
+    check("every element type is one the agents understand",
+          {e["type"] for e in _found} <= {"CTA", "text", "image", "nav", "non-interactive"})
+
+    _resp = detect_image(DetectImageRequest(image_base64="data:image/png;base64," + _b64.b64encode(_png).decode()))
+    check("POST /api/render/detect-image returns the same suggestions",
+          _resp.width == _W and _resp.height == _H and len(_resp.elements) == len(_found))
+    try:
+        detect_image(DetectImageRequest(image_base64=_b64.b64encode(b"not an image").decode()))
+        check("a file that isn't an image is refused (422)", False)
+    except _HTTPException as _exc:
+        check("a file that isn't an image is refused (422)", _exc.status_code == 422)
+
 print(f"\n{'=' * 40}\n{passed} passed, {failed} failed, {skipped} skipped\n{'=' * 40}")
 
 if failed:

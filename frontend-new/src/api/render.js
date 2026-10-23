@@ -48,3 +48,19 @@ export async function renderUrl(token, url) {
   const data = await res.json();
   return adaptCaptureResponse(data);
 }
+
+/**
+ * Suggested element boxes for an uploaded screenshot (OCR + OpenCV on the
+ * server, backend/render/image_detect.py). Nothing is stored. Returns
+ * { width, height, elements: [{ label, type, importance, bbox, confidence, why }], seconds }.
+ */
+export async function detectImageElements(token, imageBase64) {
+  const res = await fetch(apiUrl("/api/render/detect-image"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ image_base64: imageBase64 }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : `Detection failed (${res.status})`);
+  return data;
+}
