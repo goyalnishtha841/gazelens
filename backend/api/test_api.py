@@ -155,25 +155,48 @@ try:
     # ------------------------------------------------------------------
     print("\nauth -- signup and login")
     db = db_session()
-    alice = run(signup(SignupRequest(email="Alice@Example.com",
-                                     password="alice-password-1"), db))
+    alice = run(signup(SignupRequest(email="Alice@Example.com", full_name="Alice Smith",
+                                     password="Garden-Lamp-41"), db))
     check("signup returns a bearer token", alice.token_type == "bearer")
     check("signup returns the user", alice.user.email == "alice@example.com")
     check("email is normalised to lowercase", alice.user.email == "alice@example.com")
 
-    bob = run(signup(SignupRequest(email="bob@example.com",
-                                   password="bob-password-1"), db))
+    bob = run(signup(SignupRequest(email="bob@example.com", full_name="Bob",
+                                   password="River-Stone-82"), db))
     check("second user created", bob.user.id != alice.user.id)
+    check("signup stores and returns the name", alice.user.full_name == "Alice Smith")
+
+    from pydantic import ValidationError                           # noqa: E402
+
+    def _signup_refused(**fields):
+        try:
+            SignupRequest(email="carol@example.com", password="Garden-Lamp-41", **fields)
+        except ValidationError:
+            return True
+        return False
+
+    check("signup without a name is refused", _signup_refused())
+    check("a blank name is refused", _signup_refused(full_name="   "))
+    check("a name with no letters is refused", _signup_refused(full_name="12345"))
+    check("extra spaces in the name are collapsed",
+          SignupRequest(email="c@example.com", password="Garden-Lamp-41",
+                        full_name="  Carol   Jones ").full_name == "Carol Jones")
+    for weak, why in (("garden-lamp-41", "no uppercase"), ("GARDEN-LAMP-41", "no lowercase"),
+                      ("Garden-Lamp-xy", "no number"), ("GardenLamp41", "no symbol"),
+                      ("Carol-Pass-1", "contains the email name")):
+        expect_http(f"weak password refused ({why})",
+                    signup(SignupRequest(email="carol@example.com", full_name="Carol",
+                                         password=weak), db), 422)
 
     expect_http("duplicate email",
-                signup(SignupRequest(email="alice@example.com",
-                                     password="another-password"), db), 409)
+                signup(SignupRequest(email="alice@example.com", full_name="Alice",
+                                     password="Another-Pass-1"), db), 409)
     expect_http("duplicate email in different case",
-                signup(SignupRequest(email="ALICE@example.com",
-                                     password="another-password"), db), 409)
+                signup(SignupRequest(email="ALICE@example.com", full_name="Alice",
+                                     password="Another-Pass-1"), db), 409)
 
     relogin = run(login(LoginRequest(email="alice@example.com",
-                                     password="alice-password-1"), db))
+                                     password="Garden-Lamp-41"), db))
     check("login works", relogin.user.id == alice.user.id)
     expect_http("login with wrong password",
                 login(LoginRequest(email="alice@example.com", password="nope"), db), 401)
@@ -186,11 +209,10 @@ try:
     # init_db --demo-user used to create demo@fixation.local, which meant the
     # demo account could never log in -- /api/auth/login 422s on the address
     # before it ever checks the password.
-    from pydantic import ValidationError
 
     for bad in ("demo@fixation.local", "user@localhost", "not-an-email"):
         try:
-            SignupRequest(email=bad, password="whatever-123")
+            SignupRequest(email=bad, full_name="Test User", password="whatever-123")
             check(f"rejects {bad}", False)
         except ValidationError:
             check(f"rejects {bad}", True)
@@ -208,7 +230,7 @@ try:
     ]
     check("the demo account's address is one the API accepts",
           bool(demo_emails) and all(
-              SignupRequest(email=e, password="demo-password-123") for e in demo_emails))
+              SignupRequest(email=e, full_name="Demo User", password="demo-password-123") for e in demo_emails))
 
     alice_user = db.get(User, alice.user.id)
     bob_user = db.get(User, bob.user.id)
@@ -809,7 +831,7 @@ _saved_max = _limiter.max_failures
 _limiter.max_failures = 3
 _limiter.reset("testclient")
 _bad = {"email": "alice@example.com", "password": "wrong-password"}
-_good = {"email": "alice@example.com", "password": "alice-password-1"}
+_good = {"email": "alice@example.com", "password": "Garden-Lamp-41"}
 _codes = [_client.post("/api/auth/login", json=_bad).status_code for _ in range(3)]
 check("failed logins under the limit are plain 401s", _codes == [401, 401, 401])
 _blocked = _client.post("/api/auth/login", json=_good)

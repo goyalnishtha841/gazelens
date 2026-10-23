@@ -21,6 +21,7 @@ from .security import (
     PasswordError,
     create_access_token,
     hash_password,
+    validate_new_password,
     verify_password,
 )
 
@@ -45,13 +46,14 @@ async def signup(payload: SignupRequest, db: DBSession = Depends(get_db)) -> Tok
         )
 
     try:
+        validate_new_password(payload.password, email)
         password_hash = hash_password(payload.password)
     except PasswordError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
 
-    user = User(email=email, password_hash=password_hash)
+    user = User(email=email, full_name=payload.full_name, password_hash=password_hash)
     db.add(user)
     db.commit()
     db.refresh(user)

@@ -6,6 +6,7 @@ import {
 import { motion } from "framer-motion";
 import GazeField from "../components/GazeField.jsx";
 import IrisMark from "../components/IrisMark.jsx";
+import { useCameraConsent } from "../components/CameraConsent.jsx";
 
 // Ported from frontend/src/views/Calibration.jsx -- same backend contract,
 // same 16-point default and dynamic grid shape, same on-screen-position
@@ -90,6 +91,7 @@ function describeNote(note) {
 
 export default function Calibration({ onComplete, onExit }) {
   const { user, token, logout } = useAuth();
+  const { askCameraPermission, cameraConsentDialog } = useCameraConsent();
   const [status, setStatus] = useState("idle"); // idle | running | validating | done | error
   const [calibrationId, setCalibrationId] = useState(null);
   // currentIndex counts steps; order[step] is the grid cell shown at that step
@@ -152,6 +154,11 @@ export default function Calibration({ onComplete, onExit }) {
     setPointFeedback(null);
     setValidation(null);
     setValidationError(null);
+    // Nothing touches the camera until the person says yes in our own dialog.
+    if (!(await askCameraPermission({ purpose: "calibration" }))) {
+      setCameraError("Setup needs your camera. Click the button below when you're ready to allow it.");
+      return;
+    }
     try {
       streamRef.current?.getTracks().forEach((t) => t.stop());
       const stream = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS);
@@ -191,7 +198,7 @@ export default function Calibration({ onComplete, onExit }) {
       setCameraError(err.message || "Couldn't start calibration.");
       streamRef.current?.getTracks().forEach((t) => t.stop());
     }
-  }, [user, token]);
+  }, [user, token, askCameraPermission]);
 
   const capturing = status === "running" || status === "validating";
 
@@ -356,6 +363,7 @@ export default function Calibration({ onComplete, onExit }) {
   const shell = (children, glow = "var(--color-accent)") => (
     <div className="relative isolate flex min-h-screen items-center justify-center px-4 py-20">
       {captureRig}
+      {cameraConsentDialog}
       <GazeField className="-z-10" />
       <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[560px]" style={{ background: `radial-gradient(50% 60% at 50% 0%, rgb(${glow} / 0.13), transparent 70%)` }} />
       {exitLink}
@@ -398,7 +406,7 @@ export default function Calibration({ onComplete, onExit }) {
         <button onClick={begin} className={`mt-10 h-12 px-8 text-[16px] ${btn}`}>
           {status === "error" ? "Try again" : "I'm ready, start"}
         </button>
-        <p className="mt-4 text-[13px] text-text-secondary">Your browser will ask to use the camera. Click Allow when it does.</p>
+        <p className="mt-4 text-[13px] text-text-secondary">We’ll ask for your permission before the camera turns on.</p>
       </>
     );
   }

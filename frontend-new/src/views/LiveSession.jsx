@@ -8,6 +8,7 @@ import { GazeStabilizer } from "../lib/gazeStabilizer.js";
 import { motion } from "framer-motion";
 import { Reveal, StaggerGroup, StaggerItem } from "../components/Motion.jsx";
 import IrisMark from "../components/IrisMark.jsx";
+import { useCameraConsent } from "../components/CameraConsent.jsx";
 
 // Target spacing between frames. MUST stay under backend/attribution/
 // fixations.py's MAX_GAP (150ms) -- see frontend/src/views/LiveSession.jsx's
@@ -52,6 +53,7 @@ function formatClock(ms) {
  * capture loop, same gating logic. */
 export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavigate }) {
   const { token } = useAuth();
+  const { askCameraPermission, cameraConsentDialog } = useCameraConsent();
   const [mode, setMode] = useState("fixed");
   const [testPages, setTestPages] = useState([]);
   const [selectedPage, setSelectedPage] = useState(null);
@@ -221,6 +223,11 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
     if (mode === "url" && !renderedPage) return;
     if (!calibrationSessionId) {
       setStartError("No calibration on file for this sitting. Calibrate first.");
+      return;
+    }
+    // Nothing touches the camera until the person says yes in our own dialog.
+    if (!(await askCameraPermission({ purpose: "session" }))) {
+      setCameraError("The test needs your camera. Click “Turn on camera and start” when you’re ready to allow it.");
       return;
     }
 
@@ -487,6 +494,7 @@ export default function LiveSession({ calibrationSessionId, onSessionEnd, onNavi
 
         <video ref={videoRef} muted playsInline style={{ position: "fixed", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
         <canvas ref={canvasRef} style={{ display: "none" }} />
+        {cameraConsentDialog}
       </div>
     );
   }

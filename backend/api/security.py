@@ -128,6 +128,31 @@ def validate_password(password: str) -> None:
         )
 
 
+# Strength rules for NEW passwords (sign-up). Kept out of validate_password,
+# which hash_password also runs: existing accounts and the demo user predate
+# these rules, and login must never start refusing a password that was valid
+# when it was set. frontend-new/src/views/SignUp.jsx shows the same list live.
+PASSWORD_RULES = (
+    ("an uppercase letter", lambda p: any(c.isupper() for c in p)),
+    ("a lowercase letter", lambda p: any(c.islower() for c in p)),
+    ("a number", lambda p: any(c.isdigit() for c in p)),
+    ("a symbol", lambda p: any(not c.isalnum() and not c.isspace() for c in p)),
+)
+
+
+def validate_new_password(password: str, email: Optional[str] = None) -> None:
+    """validate_password, plus the strength rules a new password must meet."""
+    validate_password(password)
+    if password != password.strip():
+        raise PasswordError("password can't start or end with a space")
+    missing = [name for name, ok in PASSWORD_RULES if not ok(password)]
+    if missing:
+        raise PasswordError("password needs " + ", ".join(missing))
+    local = (email or "").split("@")[0].lower()
+    if len(local) >= 3 and local in password.lower():
+        raise PasswordError("password can't contain your email name")
+
+
 def hash_password(password: str) -> str:
     validate_password(password)
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")

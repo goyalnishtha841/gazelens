@@ -27,7 +27,7 @@ const LINKS = [
 export default function Nav({ active, onNavigate, onSignIn, onLogout, loggedOut = false }) {
   const { user } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
-  const initials = (user?.email || "?").slice(0, 1).toUpperCase();
+  const initials = (user?.full_name || user?.email || "?").trim().slice(0, 1).toUpperCase();
 
   if (loggedOut) return <PublicNav onSignIn={onSignIn} />;
 
@@ -80,6 +80,7 @@ export default function Nav({ active, onNavigate, onSignIn, onLogout, loggedOut 
                 animate={{ opacity: 1, y: 0 }}
                 className="absolute right-0 top-12 w-52 overflow-hidden rounded-[16px] border border-white/10 bg-surface/95 p-1.5 shadow-[0_20px_50px_-15px_rgba(0,0,0,0.8)] backdrop-blur-xl"
               >
+                {user?.full_name && <div className="truncate px-3 pt-2 text-[14px] font-medium text-text-primary">{user.full_name}</div>}
                 {user?.email && <div className="truncate px-3 py-2 text-[12px] text-text-secondary">{user.email}</div>}
                 {[
                   { label: "Recalibrate", onClick: () => onNavigate("calibration") },
