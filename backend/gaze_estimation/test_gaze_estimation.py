@@ -692,6 +692,28 @@ pt = live.estimate(left=(0.5, 0.5), right=(0.5, 0.5),
                                "head_yaw": 20.0, "head_pitch": -5.0, "head_tz": -55.0})
 check("live point flags head_moved but stays valid", pt.valid and pt.note == "head_moved")
 
+print("\nposition check -- before a new test, still where you calibrated?")
+from gaze_estimation.estimator import position_check          # noqa: E402
+
+_still = {"head_yaw": 2.0, "head_pitch": -5.0, "head_tz": -55.0}
+_pc = position_check([_still] * 6, ref)
+check("same seat -> ok", _pc["status"] == "ok" and not _pc["moved"] and _pc["reasons"] == [])
+_pc = position_check([{**_still, "head_yaw": 14.0}] * 6, ref)
+check("turned 12 deg -> moved, with a reason", _pc["status"] == "moved"
+      and _pc["yaw_change_deg"] == 12.0 and "turned" in _pc["reasons"][0])
+_pc = position_check([{**_still, "head_tz": -70.0}] * 6, ref)
+check("sat 27% farther back -> moved", _pc["status"] == "moved"
+      and "farther from" in _pc["reasons"][0])
+_pc = position_check([{**_still, "head_tz": -44.0}] * 6, ref)
+check("leaned 20% closer -> moved", _pc["status"] == "moved" and "closer to" in _pc["reasons"][0])
+_pc = position_check([_still] * 5 + [{**_still, "head_yaw": 40.0}] * 2, ref)
+check("one odd frame can't block a test (median)", _pc["status"] == "ok")
+_pc = position_check([_still, None, None, None], ref)
+check("too few frames with a face -> no_face", _pc["status"] == "no_face" and _pc["frames_with_face"] == 1)
+_pc = position_check([_still] * 6, {})
+check("model without a pose reference -> unknown, test allowed",
+      _pc["status"] == "unknown" and not _pc["moved"])
+
 print("\nvalidation pass -- fresh dots after calibration")
 import cv                                                     # noqa: E402
 from cv.testing import StubPipeline                           # noqa: E402
@@ -786,6 +808,27 @@ try:
         point_index=3, target_x=0.5, target_y=0.5, frames=["x"] * 8), user=ME, db=None)
     check("a dot with no tracked frames is unusable, not zero error",
           resp.point["usable"] is False and resp.point["error_px"] is None)
+
+    from gaze_estimation.schemas import PositionCheckRequest
+
+    class _MovedStub(_IrisStub):
+        def _result(self, frame_id, timestamp):
+            r = super()._result(frame_id, timestamp)
+            r.head_proxy["head_yaw"] = 20.0
+            return r
+
+    expect_http("someone else can't run a position check on this model",
+                lambda: routes.check_position("cal_valtest", PositionCheckRequest(frames=["x"]),
+                                              user=SOMEONE_ELSE, db=None), 404)
+    pc = routes.check_position("cal_valtest", PositionCheckRequest(frames=["x"] * 6), user=ME, db=None)
+    check("POST /position-check: same seat -> ok", pc.status == "ok" and pc.frames_with_face == 6)
+    cv.set_pipeline(_MovedStub())
+    pc = routes.check_position("cal_valtest", PositionCheckRequest(frames=["x"] * 6), user=ME, db=None)
+    check("POST /position-check: turned away -> moved", pc.status == "moved" and pc.moved)
+    cv.set_pipeline(stub)
+    stub.fail_next = 6
+    pc = routes.check_position("cal_valtest", PositionCheckRequest(frames=["x"] * 6), user=ME, db=None)
+    check("POST /position-check: no face in view -> no_face", pc.status == "no_face")
     print("\noffline evaluation -- scoring variants on saved check frames")
     from gaze_estimation.offline_eval import (
         fit_variant,

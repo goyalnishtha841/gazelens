@@ -270,3 +270,25 @@ class ValidateResponse(BaseModel):
     point_index: int
     point: Dict           # validation.score_point output
     summary: Dict         # validation.summarise output, over all points so far
+
+
+class PositionCheckRequest(BaseModel):
+    """A short burst of webcam frames taken just before a new test starts."""
+
+    frames: List[str] = Field(..., min_length=1, max_length=30,
+                              description="base64 JPEGs, raw or data: URLs")
+
+
+class PositionCheckResponse(BaseModel):
+    """Has the participant moved since calibrating? See estimator.position_check."""
+
+    session_id: str
+    status: str                    # "ok" | "moved" | "no_face" | "unknown"
+    moved: bool
+    frames: int
+    frames_with_face: int
+    reasons: List[str]
+    yaw_change_deg: Optional[float] = None
+    pitch_change_deg: Optional[float] = None
+    distance_change_pct: Optional[float] = None
+    thresholds: Dict

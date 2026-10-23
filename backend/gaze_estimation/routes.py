@@ -10,6 +10,7 @@ FastAPI router for gaze estimation.
     POST   /api/gaze/models/{session_id}/estimate    one frame -> one GazePoint
     POST   /api/gaze/models/{session_id}/estimate/batch   a burst of frames
     POST   /api/gaze/models/{session_id}/validate    frames at a NEW dot -> error
+    POST   /api/gaze/models/{session_id}/position-check   moved since calibrating?
 
 Thin, same as backend/calibration/routes.py: validate, delegate, respond.
 
@@ -35,7 +36,7 @@ from api.deps import get_current_user, get_db, owned_calibration, owned_calibrat
 from api.models import User
 from calibration.storage import SessionNotFound
 
-from .estimator import clear_estimator, get_estimator
+from .estimator import clear_estimator, get_estimator, position_check
 from .features import InsufficientCalibrationData
 from .schemas import (
     EstimateBatchRequest,
@@ -44,6 +45,8 @@ from .schemas import (
     EstimateResponse,
     GazePointModel,
     ModelSummary,
+    PositionCheckRequest,
+    PositionCheckResponse,
     TrainRequest,
     TrainResponse,
     ValidateRequest,
@@ -373,3 +376,30 @@ def validate(
         session_id=session_id, point_index=payload.point_index,
         point=result, summary=summary,
     )
+
+
+@router.post("/models/{session_id}/position-check", response_model=PositionCheckResponse)
+def check_position(
+    session_id: str,
+    payload: PositionCheckRequest,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+) -> PositionCheckResponse:
+    """Before a new test: is the participant still sitting where they calibrated?
+
+    The gaze model maps eye position to the screen for the head pose it was
+    calibrated in. Someone who has moved their chair, turned, or sat closer
+    since then would get confidently wrong gaze for the whole test, so the
+    frontend runs this first and asks for a recalibration on "moved".
+
+    Frames go through the same cv pipeline as the live session and are not
+    stored. Sync for the same reason as validate().
+    """
+    import cv
+
+    _owned(session_id, user, db)
+    estimator = _estimator(session_id)
+    pipeline = cv.get_pipeline()
+    proxies = [pipeline.process_encoded(frame).head_proxy for frame in payload.frames]
+    return PositionCheckResponse(session_id=session_id,
+                                 **position_check(proxies, estimator.model.pose_ref))

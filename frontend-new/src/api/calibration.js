@@ -94,7 +94,7 @@ export function screenMatches(width, height, current = { width: window.innerWidt
 
 /**
  * The newest calibration a live session would accept right now: completed,
- * recorded on a window this size, and whose accuracy check passed (good or
+ * recorded on a window this size, and whose precision check passed (good or
  * fair -- the same verdicts Calibration lets you continue with). Returns
  * { id, screenWidth, screenHeight } or null. Only checks the few newest, so a
  * long history doesn't turn sign-in into dozens of requests.
@@ -132,6 +132,20 @@ export async function validateGaze(token, sessionId, pointIndex, frames, targetX
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify({ point_index: pointIndex, frames, target_x: targetX, target_y: targetY }),
+  });
+  return handleResponse(res);
+}
+
+/**
+ * Before a new test (backend/gaze_estimation/routes.py check_position): a
+ * short burst of frames compared with the head pose saved at calibration.
+ * status: ok | moved | no_face | unknown; `reasons` are plain sentences.
+ */
+export async function checkPosition(token, sessionId, frames) {
+  const res = await fetch(apiUrl(`/api/gaze/models/${sessionId}/position-check`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ frames }),
   });
   return handleResponse(res);
 }
